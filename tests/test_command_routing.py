@@ -322,6 +322,59 @@ class AtomicIntentRoutingTests(unittest.TestCase):
                                   f"{command!r} was hijacked as a window close")
 
 
+class ClickByNameRoutingTests(unittest.TestCase):
+    """Clicking a named control is atomic, so the label goes straight through.
+
+    Measured: asked to "click the save button" the small model called
+    list_windows and then asked which window the button was in - and asked again
+    after being pushed to look for itself. The label was in the sentence the
+    whole time.
+    """
+
+    @staticmethod
+    def _target(command):
+        from assistant.commands import _click_target
+        return _click_target(command)
+
+    def test_a_named_control_is_picked_out_however_it_is_phrased(self):
+        for command, expected in (
+            ("click the save button", "save"),
+            ("press the OK button", "OK"),
+            ("hit submit button", "submit"),
+            ("click on the Rename menu item", "Rename"),
+            ("tap the settings icon", "settings"),
+            ("tick the remember me checkbox", "remember me"),
+            ("uncheck the notify me box", "notify me"),
+            ("select the Drive tab", "Drive"),
+            ("open the file menu", "file"),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self._target(command), expected)
+
+    def test_a_click_with_no_label_is_left_alone(self):
+        # There is nothing to look up. "click at 400, 300" already has its own
+        # tool, and "click the button" names no button at all.
+        for command in ("click here", "click it", "click at 400, 300",
+                        "click the button", "tick the box", "press ctrl+s",
+                        "press enter", "double click"):
+            with self.subTest(command=command):
+                self.assertIsNone(self._target(command))
+
+    def test_a_compound_request_still_goes_to_the_model(self):
+        # One click is atomic; a click plus whatever comes after it is a plan.
+        for command in ("click the save button then close notepad",
+                        "open the file menu and click save as",
+                        "click save if the tests passed"):
+            with self.subTest(command=command):
+                self.assertIsNone(self._target(command))
+
+    def test_a_shortcut_still_wins_over_a_click(self):
+        # "open a new tab" reads as opening a tab called "new"; it is ctrl+t,
+        # and the keystroke table is consulted first so it stays that way.
+        from assistant.commands import _atomic_keystroke_intent
+        self.assertEqual(_atomic_keystroke_intent("open a new tab")[0], ["ctrl+t"])
+
+
 class LiteralTypingTests(unittest.TestCase):
     """"type X" must not swallow the rest of the instruction as text.
 
@@ -408,6 +461,42 @@ class ModelEscalationTests(unittest.TestCase):
             self.ai_brain._DISABLE_AFTER_MISSES
         self.assertEqual(
             self.ai_brain.select_model("research and summarise this"), self.fast)
+
+    def test_a_model_that_is_not_installed_is_only_looked_up_once(self):
+        # A missing model is a settled fact, so it is written off immediately
+        # rather than counted. This also caught a real crash: the write-off used
+        # to call a set method on what is now a dict, so every request on a
+        # machine without the big model raised AttributeError.
+        real = self.ai_brain.installed_models
+        self.ai_brain.installed_models = lambda: [self.fast]
+        try:
+            self.assertEqual(
+                self.ai_brain.select_model("research and summarise this"),
+                self.fast)
+            self.assertTrue(self.ai_brain._is_unserviceable(self.smart))
+        finally:
+            self.ai_brain.installed_models = real
+
+    def test_a_model_too_big_for_the_machine_is_dropped_on_the_first_refusal(self):
+        # Ollama answers a model that will not fit with a 500 whose body says
+        # "out-of-memory during startup". Measured on this machine: 13 seconds
+        # per attempt, failing identically every time. Counting that as one of
+        # three tolerated misses would spend most of a minute per task learning
+        # what the first answer already said.
+        self.assertTrue(self.ai_brain._looks_like_a_load_failure(
+            'llama-server reported out-of-memory during startup: '
+            'failed to allocate buffer of size 4684285952'))
+        self.ai_brain._write_off_model(self.smart, "too big")
+        self.assertTrue(self.ai_brain._is_unserviceable(self.smart))
+        self.assertEqual(
+            self.ai_brain.select_model("research and summarise this"), self.fast)
+
+    def test_an_ordinary_refusal_is_not_read_as_a_load_failure(self):
+        for detail in ("", "invalid request", "model requires more system memory"
+                       " than is availab", "unexpected token"):
+            with self.subTest(detail=detail):
+                self.assertFalse(
+                    self.ai_brain._looks_like_a_load_failure(detail))
 
     def test_a_single_blank_answer_does_not_disable_the_model(self):
         # One hiccup can be memory pressure that has since passed. Giving up

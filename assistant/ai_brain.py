@@ -91,6 +91,7 @@ AVAILABLE_FUNCTIONS = {
     "search_google": search_google,
     "search_youtube": search_youtube,
     "click_at": system_tasks.click_at,
+    "click_element": system_tasks.click_element,
     "double_click_at": system_tasks.double_click_at,
     "right_click_at": system_tasks.right_click_at,
     "move_mouse": system_tasks.move_mouse,
@@ -343,7 +344,8 @@ TOOL_GROUPS = {
          "battery", "lock", "shutdown", "restart", "file", "folder", "terminal",
          "command", "clipboard", "window"),
         ("open_app", "close_app", "set_volume", "mute_volume", "take_screenshot",
-         "read_screen", "analyze_screen", "get_clickable_elements", "click_at",
+         "read_screen", "analyze_screen", "get_clickable_elements",
+         "click_element", "click_at",
          "double_click_at", "right_click_at", "move_mouse", "type_text",
          "press_key", "press_hotkey", "wait", "list_windows", "focus_window",
          "close_window", "find_and_click_text", "scroll", "drag_and_drop",
@@ -381,8 +383,8 @@ DEFAULT_TOOL_NAMES = (
 # reach for clear_notes: the keyboard was simply not on the menu.
 CORE_TOOL_NAMES = (
     "list_windows", "focus_window", "get_clickable_elements", "read_screen",
-    "click_at", "double_click_at", "right_click_at", "type_text", "press_key",
-    "scroll", "wait", "close_window",
+    "click_element", "click_at", "double_click_at", "right_click_at",
+    "type_text", "press_key", "scroll", "wait", "close_window",
 )
 
 # Tools that work on windows and pixels. They are the whole toolkit for a
@@ -482,8 +484,8 @@ def _site_hint(text):
             "`browser_elements()` to see what is on the page and "
             "`browser_click(target)` with the number or the words shown. "
             "`list_windows`, `focus_window`, `get_clickable_elements`, "
-            "`click_at` and the Run dialog cannot see inside a web page, so "
-            "do not call them for this request."
+            "`click_element`, `click_at` and the Run dialog cannot see inside a "
+            "web page, so do not call them for this request."
         ),
     }
 
@@ -1181,8 +1183,23 @@ LLM_TOOLS = WEB_TOOLS + [
     {
         "type": "function",
         "function": {
+            "name": "click_element",
+            "description": "Clicks a button, menu item, link, tab or checkbox by its visible label. PREFER THIS over click_at: you name the button and VAVE finds it, so there are no coordinates to get wrong. Use the label exactly as get_clickable_elements printed it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The visible label of the element, e.g. 'Save', 'Rename', 'OK'"},
+                    "window_title": {"type": "string", "description": "Optional: the window to look in. Defaults to the window in focus."}
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "click_at",
-            "description": "Clicks at specific screen coordinates (x, y). Use get_clickable_elements first to find exact coordinates of buttons.",
+            "description": "Clicks at specific screen coordinates (x, y). Use this only when the target has no label - click_element is more reliable for anything named.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1417,17 +1434,19 @@ def get_system_prompt():
         "Keep your text answers brief and to the point (no markdown).\n\n"
         "CRITICAL RULE: NEVER ask for permission to use tools. When the user asks you to do something, IMMEDIATELY output the JSON tool call to execute it! Do NOT ask 'shall I proceed?'. Just DO IT.\n\n"
         "NATIVE APPS (Notepad, File Explorer, VS Code, etc): Use `open_app`, `read_screen`, `type_text`, `press_key`, `scroll`, `run_terminal_command`. "
-        "For clicking buttons inside native Windows apps, use `get_clickable_elements` then `click_at`.\n\n"
+        "For clicking buttons inside native Windows apps, use `get_clickable_elements` then `click_element` with the button's label.\n\n"
 
         "NO TOOL FOR IT? BUILD THE TASK OUT OF THE BASIC ONES. There is no such "
         "thing as a desktop task you cannot attempt. When nothing purpose-built "
         "exists, drive the computer the way a person would, with these:\n"
         "  LOOK:  `list_windows` (what is open, and what has focus), "
-        "`get_clickable_elements` (every button with its exact x/y - pass "
+        "`get_clickable_elements` (every button, with its label - pass "
         "window_title to inspect a window that is not in focus), `read_screen` "
         "(the text), `analyze_screen` (the layout).\n"
-        "  ACT:   `focus_window`, `click_at`, `double_click_at` (open a file from "
-        "a list), `right_click_at` (context menu), `move_mouse` (reveal a hover "
+        "  ACT:   `focus_window`, `click_element` (a button/menu item/link BY ITS "
+        "LABEL - use this for anything named), `click_at` / `double_click_at` "
+        "(only for things with no label), `right_click_at` (context menu), "
+        "`move_mouse` (reveal a hover "
         "menu), `type_text`, `press_key` (single keys AND shortcuts like "
         "'ctrl+s', 'ctrl+a', 'alt+f4', 'win+r'), `scroll`, `drag_and_drop`, "
         "`close_window`, `run_terminal_command`.\n"
@@ -1436,11 +1455,13 @@ def get_system_prompt():
         "ACTUALLY listed, wait, then LOOK again to confirm it worked. Examples: "
         "to open any app, `press_key('win+r')` then `type_text(name)` then "
         "`press_key('enter')`. To save, `press_key('ctrl+s')`. To rename a file, "
-        "`right_click_at` it and read the menu. To reach a menu item, click the "
+        "`right_click_at` it and then `click_element('Rename')`. To reach a menu "
+        "item, click the "
         "menu then `get_clickable_elements` again - the menu's items only exist "
         "once it is open.\n"
-        "Two rules while doing this: never invent coordinates, only ever click "
-        "an x/y that a tool actually returned; and if a scan comes back nearly "
+        "Two rules while doing this: never invent coordinates - prefer "
+        "`click_element` with a label, and only ever pass an x/y that a tool "
+        "actually returned; and if a scan comes back nearly "
         "empty the window is probably not in focus, so `focus_window` and scan "
         "again rather than guessing.\n\n"
 
@@ -1604,12 +1625,49 @@ def query_local_llm_chat(messages, model="qwen2.5:3b", tools=None):
         with urllib.request.urlopen(req, timeout=int(get_setting("llm_timeout_seconds", 300))) as response:
             result = json.loads(response.read().decode('utf-8'))
             return result.get("message", {})
+    except urllib.error.HTTPError as e:
+        # Ollama puts the real reason in the body and throws a bare 500 otherwise.
+        # Worth reading: "out-of-memory during startup" is a different problem
+        # from a bad request, and the user cannot act on "HTTP Error 500".
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", "replace").strip()
+        except Exception:
+            pass
+        logger.info(f"[AI Brain Error] {model} returned {e.code}: {detail or e}")
+        if _looks_like_a_load_failure(detail):
+            _write_off_model(model, f"{model} cannot be loaded on this machine "
+                                    f"right now (out of memory)")
+        return None
     except urllib.error.URLError as e:
         logger.info(f"[AI Brain Error] Could not connect to local LLM: {e}")
         return None
     except Exception as e:
         logger.info(f"[AI Brain Error] {e}")
         return None
+
+
+# Ollama's wording for "this model will not fit". Not a hiccup to be retried:
+# the next attempt spends the same 10-15 seconds trying to allocate the same
+# buffer and fails the same way, so a task that retries it three times pays
+# most of a minute for nothing.
+_LOAD_FAILURE_MARKERS = ("out-of-memory", "out of memory", "failed to allocate",
+                         "unable to allocate", "error loading model",
+                         "startup failed")
+
+
+def _looks_like_a_load_failure(detail):
+    """True when Ollama said the model could not be loaded, not merely refused."""
+    text = str(detail or "").lower()
+    return any(marker in text for marker in _LOAD_FAILURE_MARKERS)
+
+
+def _write_off_model(model, reason):
+    """Stop choosing `model` this session, and say why once."""
+    if not model or _is_unserviceable(model):
+        return
+    _unavailable_models[model] = _DISABLE_AFTER_MISSES
+    logger.info("[VAVE] %s. Continuing on the smaller model.", reason)
 
 # Models that answered with nothing this session, usually because they could
 # not be loaded into memory. A model is only given up on after several misses
@@ -1705,8 +1763,9 @@ def select_model(instruction=""):
         return fast
 
     if not _is_installed(smart):
-        logger.info("[VAVE] %s is not installed; staying on %s.", smart, fast)
-        _unavailable_models.add(smart)
+        # Not installed is settled, unlike a blank answer under memory pressure,
+        # so it goes straight past the tolerance instead of being counted.
+        _write_off_model(smart, f"{smart} is not installed")
         return fast
 
     text = str(instruction or "").lower()
@@ -1744,11 +1803,15 @@ def chat_with_fallback(messages, model=None, tools=None, instruction=""):
     if chosen == fast:
         return reply
 
-    misses = _unavailable_models.get(chosen, 0) + 1
-    _unavailable_models[chosen] = misses
-    if misses >= _DISABLE_AFTER_MISSES:
-        logger.info(f"[VAVE] {chosen} has missed {misses} times in a row; "
-                    f"continuing on {fast} until it answers again.")
+    # A refusal that named its own cause (a model too big for the machine) has
+    # already been written off inside the query, so counting it again would only
+    # log the same thing twice.
+    if not _is_unserviceable(chosen):
+        misses = _unavailable_models.get(chosen, 0) + 1
+        _unavailable_models[chosen] = misses
+        if misses >= _DISABLE_AFTER_MISSES:
+            logger.info(f"[VAVE] {chosen} has missed {misses} times in a row; "
+                        f"continuing on {fast} until it answers again.")
     return query_local_llm_chat(messages, model=fast, tools=tools)
 
 
@@ -2399,7 +2462,7 @@ SENSITIVE_TOOLS = [
     "create_google_slides", "enable_voice_input", "enable_speech_output",
     # Pointing and clicking: a click can submit a form, buy something or
     # confirm a dialog, and VAVE cannot know which until it has happened.
-    "click_at", "double_click_at", "right_click_at", "drag_and_drop",
+    "click_element", "click_at", "double_click_at", "right_click_at", "drag_and_drop",
     "close_window", "scroll", "move_mouse",
     # Typing is how most work gets done. The dangerous part is which keys, and
     # the guard reads the chord itself: alt+f4 and win+r are destructive, the

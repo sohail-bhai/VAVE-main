@@ -310,14 +310,238 @@ def check_routines(command):
             
     return False
 
+# Everyday desktop actions that have exactly one right answer, and the many ways
+# a person says them. These are all routed without asking the model, because the
+# model was measured getting them wrong in ways that damage things: asked to
+# copy the screen, the 3B model called type_text with "Copy everything on this
+# screen" and would have written that sentence into the user's document. There
+# is no judgement to make here - "undo that" is ctrl+z on any machine - so
+# guessing is strictly worse than knowing.
+#
+# Each entry is (regex, keystrokes, what to say afterwards). Anchored whole-
+# utterance so a passing mention inside a longer request still reaches the model,
+# which is where the composing belongs.
+_ATOMIC_INTENTS = (
+    (r"(?:please\s+)?undo(?:\s+(?:that|this|it|what\s+(?:i|you)\s+just\s+did|"
+     r"the\s+last\s+(?:thing|action|change)|my\s+last\s+(?:action|change)))?",
+     ["ctrl+z"], "Undone."),
+    (r"redo(?:\s+(?:that|this|it))?", ["ctrl+y"], "Redone."),
+    (r"(?:select|highlight)\s+(?:all|everything)(?:\s+(?:the\s+)?text)?"
+     r"(?:\s+(?:here|on\s+(?:the\s+)?screen|in\s+(?:this|the)\s+window))?",
+     ["ctrl+a"], "Selected everything."),
+    (r"copy\s+(?:all|everything|the\s+whole\s+(?:thing|screen|page|document))"
+     r"(?:\s+(?:the\s+)?text)?(?:\s+(?:here|on\s+(?:the\s+|this\s+)?screen|"
+     r"in\s+(?:this|the)\s+window|on\s+(?:the\s+)?page))?",
+     ["ctrl+a", "ctrl+c"], "Copied everything."),
+    (r"(?:copy|copy\s+that|copy\s+this|copy\s+it)", ["ctrl+c"], "Copied."),
+    (r"(?:paste|paste\s+(?:that|this|it)(?:\s+here)?)", ["ctrl+v"], "Pasted."),
+    (r"cut\s+(?:that|this|it)", ["ctrl+x"], "Cut."),
+    (r"(?:save(?:\s+(?:it|this|that))?|save\s+the\s+(?:file|document|changes)|"
+     r"save\s+(?:my\s+)?(?:work|changes))", ["ctrl+s"], "Saved."),
+    (r"(?:select|highlight)\s+all\s+and\s+delete(?:\s+it)?",
+     ["ctrl+a", "delete"], "Cleared it."),
+    (r"(?:find|search)\s+(?:in\s+)?(?:this|the)\s+(?:page|document|file)",
+     ["ctrl+f"], "Opened find."),
+    (r"(?:refresh|reload)(?:\s+(?:the\s+)?(?:page|window|tab))?",
+     ["f5"], "Refreshed."),
+    (r"(?:new\s+tab|open\s+a\s+new\s+tab)", ["ctrl+t"], "Opened a new tab."),
+    (r"(?:switch|next)\s+(?:to\s+the\s+)?(?:next\s+)?(?:window|app)",
+     ["alt+tab"], "Switched window."),
+    (r"(?:print(?:\s+(?:this|it|the\s+page))?)", ["ctrl+p"], "Opened print."),
+    (r"(?:zoom\s+in|make\s+(?:it|this)\s+bigger)", ["ctrl+plus"], "Zoomed in."),
+    (r"(?:zoom\s+out|make\s+(?:it|this)\s+smaller)", ["ctrl+-"], "Zoomed out."),
+    (r"(?:minimi[sz]e|minimi[sz]e\s+(?:this|the)\s+window)",
+     ["win+down"], "Minimised."),
+    (r"(?:maximi[sz]e|maximi[sz]e\s+(?:this|the)\s+window|full\s*screen)",
+     ["win+up"], "Maximised."),
+    # Before the close-window rules below, which would otherwise read "exit
+    # fullscreen" as a window called "fullscreen" and "close the tab" as the
+    # whole window. Both are keystrokes, and both would lose the user's work.
+    (r"(?:exit|leave|turn\s+off|get\s+out\s+of)\s+(?:the\s+)?full\s*screen"
+     r"(?:\s+mode)?", ["f11"], "Left fullscreen."),
+    (r"(?:close|quit|exit)\s+(?:the\s+|this\s+)?tab", ["ctrl+w"], "Closed the tab."),
+    (r"(?:escape|cancel\s+that|never\s*mind\s+that|dismiss\s+(?:this|that|it))",
+     ["esc"], "Dismissed."),
+)
+
+_ATOMIC_PATTERNS = tuple(
+    (re.compile(r"^\s*" + pattern + r"\s*[.!]?\s*$", re.IGNORECASE), keys, spoken)
+    for pattern, keys, spoken in _ATOMIC_INTENTS
+)
+
+# Getting rid of a window, however it is phrased. The title is whatever is left
+# after the phrasing is stripped; nothing left means the window in focus.
+_CLOSE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    # "close" on its own means the window in focus. The other verbs need a name:
+    # bare "exit" and "quit" are how the user shuts VAVE down, and "shut down"
+    # is about the machine, so none of them may default to a window. "shut" is
+    # left out entirely rather than competing with shutdown.
+    r"^\s*(?:please\s+)?close\b\s*"
+    r"(?:the\s+|my\s+|this\s+)?(?P<title>.*?)\s*(?:window|app|program)?\s*[.!]?\s*$",
+    r"^\s*(?:please\s+)?(?:quit|exit|kill)\s+"
+    r"(?:the\s+|my\s+|this\s+)?(?P<title>.+?)\s*(?:window|app|program)?\s*[.!]?\s*$",
+    r"^\s*(?:make|get)\s+(?:the\s+|my\s+|this\s+)?(?P<title>.*?)\s*"
+    r"(?:window|app|program)?\s*(?:go\s+away|disappear|off\s+(?:my\s+)?screen)"
+    r"\s*[.!]?\s*$",
+    r"^\s*get\s+rid\s+of\s+(?:the\s+|my\s+|this\s+)?(?P<title>.*?)\s*"
+    r"(?:window|app|program)?\s*[.!]?\s*$",
+))
+
+# Words that are the window rather than a name for one, so "close this window"
+# and "close it" both mean whatever is in focus.
+_FOCUSED_WINDOW_WORDS = frozenset({
+    "", "it", "this", "that", "current", "active", "the current", "the active",
+})
+
+
+def _atomic_keystroke_intent(command):
+    """The keystrokes for an unambiguous desktop request, or None."""
+    for pattern, keys, spoken in _ATOMIC_PATTERNS:
+        if pattern.match(command):
+            return keys, spoken
+    return None
+
+
+# Words that turn "type X" into a request with more to it than typing. "type
+# hello world into notepad and save it" used to type the words "hello world into
+# notepad and save it" into whatever had focus, because everything after "type "
+# was taken as the literal. Anything carrying one of these goes to the model,
+# which can open Notepad, type, and then save. Falling through costs a second;
+# typing the instruction into the user's document costs them their document.
+_COMPOUND_TYPING_MARKERS = re.compile(
+    r"\b(?:into|in\s+to|and\s+then|then\s+|and\s+(?:save|send|close|open|press|"
+    r"delete|clear|submit|post|copy|paste|print|search)\b)|\bin\s+(?:notepad|"
+    r"word|excel|chrome|brave|firefox|edge|the\s+(?:browser|editor|document|"
+    r"file|window|address\s+bar|search\s+bar))\b", re.IGNORECASE)
+
+
+def _literal_to_type(remainder):
+    """The exact text to type, or "" when the request is more than typing.
+
+    Quoting is the escape hatch: `type "save it into notepad"` types those words
+    and nothing else, because the user said where the literal ends.
+    """
+    text = remainder.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1]
+    if _COMPOUND_TYPING_MARKERS.search(text):
+        return ""
+    return text
+
+
+def _close_window_intent(command):
+    """The window title to close, or None if this is not a close request.
+
+    Returns "" for the window currently in focus. `close_window` already treats
+    a missing title that way, so the two agree.
+    """
+    for pattern in _CLOSE_PATTERNS:
+        match = pattern.match(command)
+        if not match:
+            continue
+        title = " ".join(match.group("title").split())
+        if title.lower() in _FOCUSED_WINDOW_WORDS:
+            return ""
+        return title
+    return None
+
+
+# Clicking a named thing. "click the save button" is as atomic as it gets, and
+# measured, the small model answered it by calling list_windows and then asking
+# which window the button was in - twice, even after being pushed to look for
+# itself. There is nothing to work out here: the label is in the sentence.
+#
+# Anchored whole-utterance, so "click save then close the window" still goes to
+# the model, which is where composing belongs.
+_CLICK_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"^\s*(?:please\s+)?(?:click|press|hit|tap|push)\s+(?:on\s+)?"
+    r"(?:the\s+|that\s+|a\s+)?(?P<name>.+?)\s*"
+    r"(?:button|link|tab|menu\s*item|menu|icon|option|item)\s*[.!]?\s*$",
+    r"^\s*(?:please\s+)?(?:tick|check|untick|uncheck|toggle)\s+"
+    r"(?:the\s+|that\s+)?(?P<name>.+?)\s*"
+    r"(?:checkbox|check\s*box|box|toggle|switch)\s*[.!]?\s*$",
+    r"^\s*(?:please\s+)?(?:select|choose|open)\s+(?:the\s+)?(?P<name>.+?)\s*"
+    r"(?:tab|menu)\s*[.!]?\s*$",
+))
+
+# Words that mean "whatever is under the pointer" rather than a label, plus the
+# shapes of a coordinate. "click at 400, 300" and "click here" are not this.
+_UNNAMED_CLICK_TARGETS = frozenset({
+    "", "it", "this", "that", "there", "here", "same", "one",
+})
+
+# A real label never starts with one of these. "click the button" captures "the"
+# and means nothing; stripping leaves nothing, which is the right answer.
+_LEADING_DETERMINERS = ("the ", "that ", "this ", "a ", "an ", "another ",
+                        "my ", "its ", "their ")
+
+
+def _click_target(command):
+    """The label of the control a request names, or None if it names none."""
+    for pattern in _CLICK_PATTERNS:
+        match = pattern.match(command)
+        if not match:
+            continue
+        name = " ".join(match.group("name").split())
+        lowered = name.lower()
+        for determiner in _LEADING_DETERMINERS:
+            if lowered.startswith(determiner):
+                name = name[len(determiner):].strip()
+                lowered = name.lower()
+                break
+        if lowered in _UNNAMED_CLICK_TARGETS or lowered in ("the", "a", "an"):
+            return None
+        # "click at 400, 300" is a coordinate click and has its own tool.
+        if re.fullmatch(r"[\d\s,.:x()-]+", name) or name.lower().startswith("at "):
+            return None
+        return name
+    return None
+
+
 def handle_atomic_gui_command(command: str) -> bool:
     """Directly executes atomic GUI actions like typing or key presses without LLM overhead."""
     clean = command.strip()
     clean_lower = clean.lower()
 
+    # The paraphrase table first: these are settled questions, and routing them
+    # here is both faster and more reliable than a round trip to the model.
+    keystrokes = _atomic_keystroke_intent(clean)
+    if keystrokes is not None:
+        from assistant.system_tasks import press_key
+        keys, spoken = keystrokes
+        for key in keys:
+            press_key(key)
+        speak(spoken)
+        return True
+
+    title = _close_window_intent(clean)
+    if title is not None:
+        from assistant.system_tasks import close_window
+        result = close_window(title) if title else close_window()
+        # "close the deal with the client" looks exactly like a close request
+        # until you check, and there is no window called that. Rather than
+        # reporting a failure the user did not ask about, hand the sentence on
+        # to the model, which may well have a better idea what it meant.
+        if title and result.lower().startswith("no open window"):
+            return False
+        speak(result)
+        return True
+
+    target = _click_target(clean)
+    if target:
+        from assistant.system_tasks import click_element
+        result = click_element(target)
+        # No control by that name: the sentence probably was not about a button
+        # at all ("check my email", "open the fridge door"), so let the model
+        # read it rather than reporting a button that was never mentioned.
+        if result.lower().startswith(("nothing labelled", "could not tell")):
+            return False
+        speak(result)
+        return True
+
     if clean_lower.startswith("type ") or clean_lower.startswith("write "):
         first_space = clean.find(" ")
-        text_to_type = clean[first_space + 1:].strip()
+        text_to_type = _literal_to_type(clean[first_space + 1:].strip())
         if text_to_type:
             from assistant.system_tasks import type_text
             type_text(text_to_type)
