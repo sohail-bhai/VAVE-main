@@ -14,7 +14,7 @@
 
 > *"The user thinks in goals. VAVE handles agents, devices, tools, permissions, services, and execution."*
 
-[Explore Architecture](#-system-architecture) • [Key Capabilities](#-core-capabilities) • [Live Demo Workflow](#-the-3-minute-demo-workflow) • [Zero-Trust Security](#-zero-trust-safety--human-in-the-loop) • [Quickstart](#-quickstart-guide)
+[Official Docs](docs/PROJECT_SUMMARY.md) • [Explore Architecture](#-system-architecture) • [Key Capabilities](#-core-capabilities) • [Live Demo Workflow](#-the-3-minute-demo-workflow) • [Zero-Trust Security](#-zero-trust-safety--human-in-the-loop) • [Quickstart](#-quickstart-guide)
 
 ---
 
