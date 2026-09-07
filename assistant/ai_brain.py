@@ -479,13 +479,10 @@ def _site_hint(text):
     return {
         "role": "system",
         "content": (
-            f"{name} is a website, not an installed app. Your FIRST tool call "
-            f"for this request must be `browse('{url}')`. After that, "
-            "`browser_elements()` to see what is on the page and "
-            "`browser_click(target)` with the number or the words shown. "
-            "`list_windows`, `focus_window`, `get_clickable_elements`, "
-            "`click_element`, `click_at` and the Run dialog cannot see inside a "
-            "web page, so do not call them for this request."
+            f"{name} might be an installed app or a website. FIRST, try `open_app('{name}')` or `open_app('{name}.exe')`. "
+            f"If that fails, then fall back to the browser: `browse('{url}')`. "
+            "When using the browser, follow up with `browser_elements()` to see what is on the page, "
+            "and `browser_click(target)` with the number or words shown."
         ),
     }
 

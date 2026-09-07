@@ -317,12 +317,9 @@ class WebsiteRoutingTests(unittest.TestCase):
         from assistant.ai_brain import _site_hint
 
         hint = _site_hint("open netflix")["content"]
+        self.assertIn("fall back to the browser", hint)
         self.assertIn("browse('https://www.netflix.com')", hint)
         self.assertIn("browser_click", hint)
-        self.assertIn("FIRST tool call", hint)
-        for desktop_tool in ("list_windows", "get_clickable_elements",
-                             "click_at"):
-            self.assertIn(desktop_tool, hint)
 
 
 class PromptContractTests(unittest.TestCase):
