@@ -380,6 +380,7 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(screenshot|capture screen|snapshot)\b"), ("take_screenshot",)),
     (re.compile(r"\b(volume|mute|unmute|sound|louder|quieter)\b"), ("set_volume", "mute_volume")),
     (re.compile(r"\b(notepad|calculator|calc|paint|cmd|terminal|explorer|launch|open app)\b"), ("open_app", "close_app")),
+    (re.compile(r"\b(click|press button|tap|select)\b"), ("click_element", "click_at", "get_clickable_elements")),
     (re.compile(r"\b(type|write|typing|press|key|enter|shortcut)\b"), ("type_text", "press_key")),
     (re.compile(r"\b(note|notes|remind|memo)\b"), ("add_note", "read_notes", "clear_notes")),
     (re.compile(r"\b(search|google for|look up online|find online)\b"), ("search_web", "browse")),
@@ -584,7 +585,7 @@ def select_tools(instruction, tools=None):
     # Determine domain intent
     is_web = bool(_site_for(text)) or any(g[1] == "web" for g in scored if g[0] > 0)
     is_desktop = any(g[1] == "computer" for g in scored if g[0] > 0) or any(
-        w in text for w in ("notepad", "calc", "app", "window", "volume", "battery", "type", "press", "screenshot", "time", "date")
+        w in text for w in ("notepad", "calc", "app", "window", "volume", "battery", "type", "press", "screenshot", "time", "date", "click")
     )
 
     # Domain isolation: do not send browser tools to desktop tasks or desktop coordinates to web tasks
@@ -595,7 +596,7 @@ def select_tools(instruction, tools=None):
 
     # Fill remaining budget with relevant core actions if needed
     if len(chosen) < MAX_TOOLS_PER_CALL:
-        core_subset = ("focus_window", "type_text", "press_key", "wait") if is_desktop else CORE_TOOL_NAMES
+        core_subset = ("focus_window", "type_text", "press_key", "wait", "click_element", "get_clickable_elements") if is_desktop else CORE_TOOL_NAMES
         for name in core_subset:
             offer(name)
             if len(chosen) >= MAX_TOOLS_PER_CALL:

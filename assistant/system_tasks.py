@@ -56,6 +56,36 @@ def activate_window(hwnd):
         logger.debug(f"activate_window failed for hwnd {hwnd}: {e}")
         return False
 
+
+def _ensure_com():
+    """Join the COM apartment and active desktop for this thread before touching UI Automation.
+
+    Every UIA call needs it, and the assistant's tools run on worker threads
+    that have not called it yet. Attaching to the interactive user desktop ("default")
+    ensures background threads and subshells can see all application windows.
+    """
+    if get_os() == "windows":
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hdesk = user32.OpenInputDesktop(0, False, 0x01FF) or user32.OpenDesktopW("default", 0, False, 0x01FF)
+            if hdesk:
+                user32.SetThreadDesktop(hdesk)
+        except Exception:
+            pass
+
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+    except Exception:
+        # Not fatal on its own: uiautomation may already hold the apartment.
+        pass
+
+
+# Ensure calling/importing thread is attached to user desktop & COM
+_ensure_com()
+
+
 _STARTAPPS_CACHE = None
 _STARTAPPS_CACHE_TIME = 0
 
@@ -214,6 +244,7 @@ def open_app(app_name):
         query = query[5:].strip()
 
     display_name = query.replace("_", " ").title()
+    _ensure_com()
 
     try:
         # Tier 1: Built-in known app aliases
@@ -1214,22 +1245,6 @@ def write_file(path, content):
     except Exception as e:
         return f"Failed to write file: {e}"
 
-def _ensure_com():
-    """Join the COM apartment for this thread before touching UI Automation.
-
-    Every UIA call needs it, and the assistant's tools run on worker threads
-    that have not called it yet - without this the first scan fails with
-    "CoInitialize has not been called" and UIAutomationCore.dll never loads.
-    Calling it more than once on a thread is harmless.
-    """
-    try:
-        import pythoncom
-        pythoncom.CoInitialize()
-    except Exception:
-        # Not fatal on its own: uiautomation may already hold the apartment.
-        pass
-
-
 def get_clickable_elements(window_title=None):
     """
     Scans a window and returns a list of clickable elements with their text and (x, y) coordinates.
@@ -1371,7 +1386,19 @@ def click_element(name, window_title=None):
                 return ("Could not tell which window is in focus. "
                         "Use focus_window first.")
 
+        if window and getattr(window, "NativeWindowHandle", None):
+            activate_window(window.NativeWindowHandle)
+            import time
+            time.sleep(0.15)
+
         lowered = wanted.lower()
+        alt_words = {
+            "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+            "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+            "+": "plus", "-": "minus", "*": "multiply", "/": "divide", "=": "equals"
+        }
+        alt_lowered = alt_words.get(lowered)
+
         exact, starts, contains = [], [], []
         for control, _depth in auto.WalkControl(window, maxDepth=10):
             if control.ControlType not in _clickable_control_types(auto):
@@ -1388,11 +1415,11 @@ def click_element(name, window_title=None):
             except Exception:
                 pass
             found = label.lower()
-            if found == lowered:
+            if found == lowered or (alt_lowered and found == alt_lowered):
                 exact.append(control)
-            elif found.startswith(lowered):
+            elif found.startswith(lowered) or (alt_lowered and found.startswith(alt_lowered)):
                 starts.append(control)
-            elif lowered in found:
+            elif lowered in found or (alt_lowered and alt_lowered in found):
                 contains.append(control)
 
         matches = exact or starts or contains
@@ -1423,6 +1450,7 @@ def click_element(name, window_title=None):
 
         x = rect.left + (rect.width() // 2)
         y = rect.top + (rect.height() // 2)
+        pyautogui = _get_pyautogui()
         pyautogui.click(x, y)
         kind = target.ControlTypeName.replace("Control", "")
         return f"Clicked '{target.Name}' ({kind}) at ({x}, {y})."
@@ -1512,6 +1540,8 @@ def focus_window(title):
         except Exception:
             pass
 
+        if getattr(win, "NativeWindowHandle", None):
+            activate_window(win.NativeWindowHandle)
         win.SetActive()
         try:
             win.SetTopmost(False)
