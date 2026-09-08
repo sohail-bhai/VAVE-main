@@ -138,6 +138,7 @@ AVAILABLE_FUNCTIONS = {
     "start_overwatch": __import__('assistant.overwatch', fromlist=['']).start_overwatch,
     "stop_overwatch": __import__('assistant.overwatch', fromlist=['']).stop_overwatch,
     "send_telegram_update": system_tasks.send_telegram_update,
+    "send_telegram_screenshot": lambda **kwargs: __import__('assistant.telegram_sync', fromlist=['']).send_telegram_screenshot(**kwargs),
     "write_to_screen_line": system_tasks.write_to_screen_line,
 
     # Driving a real browser, the way a person uses the web.
@@ -385,6 +386,8 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(window|windows|switch window|minimize)\b"), ("list_windows", "focus_window", "close_window")),
     (re.compile(r"\b(email|mail|inbox|gmail)\b"), ("read_unread_emails", "send_email", "summarize_gmail_inbox")),
     (re.compile(r"\b(calendar|meeting|schedule)\b"), ("get_schedule", "schedule_meeting", "create_google_calendar_event")),
+    (re.compile(r"\b(screen|read screen|see screen|analyze screen|what is on my screen|describe screen|look at screen)\b"), ("analyze_screen", "read_screen", "take_screenshot")),
+    (re.compile(r"\b(screenshot.*telegram|telegram.*screenshot|screenshot to phone|send me a screenshot)\b"), ("send_telegram_screenshot", "take_screenshot")),
     (re.compile(r"\b(telegram|message)\b"), ("send_telegram_update",)),
 )
 
@@ -758,6 +761,23 @@ LLM_TOOLS = WEB_TOOLS + [
                     }
                 },
                 "required": ["message_text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_telegram_screenshot",
+            "description": "Takes a live screenshot of the desktop and sends it directly as a photo to the user's paired Telegram phone.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "caption": {
+                        "type": "string",
+                        "description": "Optional caption to send with the screenshot."
+                    }
+                },
+                "required": []
             }
         }
     },

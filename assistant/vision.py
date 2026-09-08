@@ -201,6 +201,15 @@ def analyze_screen(prompt="Describe what is on the screen in detail.", image_pat
         if image_path:
             screenshot = Image.open(image_path)
         else:
+            # On Windows, attach thread to active desktop to prevent "screen grab failed"
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                hdesk = user32.OpenInputDesktop(0, False, 0x01FF)
+                if hdesk:
+                    user32.SetThreadDesktop(hdesk)
+            except Exception:
+                pass
             # 1. Take screenshot and compress it
             screenshot = ImageGrab.grab()
             
@@ -212,8 +221,8 @@ def analyze_screen(prompt="Describe what is on the screen in detail.", image_pat
         screenshot.save(buffered, format="JPEG", quality=80)
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
         
-        # 3. Get VLM model name from config (default to moondream)
-        vlm_model = get_setting("vlm_model", "moondream")
+        # 3. Get VLM model name from config (default to moondream:latest)
+        vlm_model = get_setting("vlm_model", "moondream:latest")
         
         # 4. Query Ollama API
         url = "http://localhost:11434/api/generate"
@@ -229,7 +238,8 @@ def analyze_screen(prompt="Describe what is on the screen in detail.", image_pat
         
         with urllib.request.urlopen(req, timeout=120) as response:
             result = json.loads(response.read().decode('utf-8'))
-            return result.get("response", "I could not analyze the screen.")
+            answer = result.get("response", "").strip()
+            return answer if answer else "I could not analyze the screen."
             
     except urllib.error.URLError as e:
         return f"Error: Could not connect to local Vision Model. Make sure Ollama is running and '{vlm_model}' is installed."

@@ -102,6 +102,112 @@ def send_telegram_message(token, chat_id, text, reply_markup=None):
         logger.info(f"[Telegram Error] Could not send message: {e}")
 
 
+def send_telegram_photo(token, chat_id, photo_path, caption=None):
+    """Send a photo file to Telegram via multipart/form-data."""
+    if not token or str(token).startswith("secret://"):
+        return False
+    if not os.path.exists(photo_path):
+        logger.info(f"[Telegram] Photo path does not exist: {photo_path}")
+        return False
+
+    try:
+        import uuid
+        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+        filename = os.path.basename(photo_path)
+        content_type = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+
+        with open(photo_path, "rb") as f:
+            photo_bytes = f.read()
+
+        body = bytearray()
+        # chat_id field
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="chat_id"\r\n\r\n{chat_id}\r\n'.encode("utf-8"))
+
+        # caption field
+        if caption:
+            body.extend(f"--{boundary}\r\n".encode("utf-8"))
+            body.extend(f'Content-Disposition: form-data; name="caption"\r\n\r\n{caption[:1000]}\r\n'.encode("utf-8"))
+
+        # photo file field
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="photo"; filename="{filename}"\r\n'.encode("utf-8"))
+        body.extend(f'Content-Type: {content_type}\r\n\r\n'.encode("utf-8"))
+        body.extend(photo_bytes)
+        body.extend(b"\r\n")
+
+        # closing boundary
+        body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+
+        url = f"https://api.telegram.org/bot{token}/sendPhoto"
+        req = urllib.request.Request(url, data=bytes(body), headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body))
+        })
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return bool(data.get("ok"))
+    except Exception as e:
+        logger.info(f"[Telegram Error] Could not send photo: {e}")
+        return False
+
+
+def send_telegram_screenshot(caption=None):
+    """Captures a live desktop screenshot and sends it directly to paired Telegram chat."""
+    from assistant.system_tasks import take_screenshot
+    from assistant.control.secrets import resolve_setting
+
+    shot_path = take_screenshot()
+    if not shot_path or not os.path.exists(shot_path):
+        return "Could not capture screenshot."
+
+    token = resolve_setting(get_setting("telegram_bot_token", ""))
+    chat_id = get_setting("telegram_chat_id", "")
+    if not token or not chat_id:
+        return "Telegram is not configured. Please set telegram_bot_token and telegram_chat_id."
+
+    import datetime
+    cap = caption or f"🖥️ Desktop Screenshot ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
+    ok = send_telegram_photo(token, chat_id, shot_path, caption=cap)
+    if ok:
+        return "Captured desktop and sent screenshot to your Telegram."
+    return "Failed to send screenshot to Telegram."
+
+
+def _analyze_telegram_photo(token, file_id, prompt="Describe what you see in this photo in detail."):
+    """Download photo from Telegram and analyze it using the local vision model."""
+    try:
+        import tempfile
+        from assistant.vision import analyze_screen
+
+        info_url = f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}"
+        with urllib.request.urlopen(info_url, timeout=10) as resp:
+            info = json.loads(resp.read().decode("utf-8"))
+        if not info.get("ok"):
+            return "Could not retrieve photo from Telegram."
+        file_path = info["result"]["file_path"]
+
+        dl_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+        with urllib.request.urlopen(dl_url, timeout=25) as resp_dl:
+            img_bytes = resp_dl.read()
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp.write(img_bytes)
+            tmp_path = tmp.name
+
+        try:
+            return analyze_screen(prompt=prompt, image_path=tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+    except Exception as e:
+        logger.warning(f"[Telegram Photo] Analysis failed: {e}")
+        return f"Error analyzing photo: {e}"
+
+
 def _answer_callback_query(token, callback_query_id, text=None):
     """Acknowledge an inline keyboard button click in Telegram."""
     try:
@@ -237,6 +343,16 @@ def _telegram_worker():
                                 logger.info(f"[VAVE] Unauthorized access attempt from Chat ID: {sender_chat_id}")
                             continue
 
+                        # Process photo if received
+                        photo = message.get("photo")
+                        if not text and photo:
+                            file_id = photo[-1]["file_id"]
+                            caption = (message.get("caption") or "").strip() or "Describe what you see in this photo in detail."
+                            send_telegram_message(token, chat_id, "🔍 Analyzing photo with local vision AI...")
+                            analysis = _analyze_telegram_photo(token, file_id, caption)
+                            send_telegram_message(token, chat_id, f"🔍 Vision Analysis:\n{analysis}")
+                            continue
+
                         # Transcribe voice note if received
                         if not text and voice:
                             file_id = voice.get("file_id")
@@ -254,6 +370,14 @@ def _telegram_worker():
                             logger.info(f"\n[Telegram Message Received]: {text}")
                             text_clean = text.strip()
                             text_lower = text_clean.lower()
+
+                            # Fast-path: Direct desktop screenshot send to phone
+                            if text_lower in ["screenshot", "send screenshot", "take screenshot", "/screenshot"]:
+                                send_telegram_message(token, chat_id, "📸 Capturing desktop screenshot...")
+                                res = send_telegram_screenshot()
+                                if not res.startswith("Captured"):
+                                    send_telegram_message(token, chat_id, f"⚠️ {res}")
+                                continue
                             
                             if text_lower in ["/start", "start"]:
                                 send_telegram_message(
@@ -269,12 +393,13 @@ def _telegram_worker():
                                     chat_id,
                                     "VAVE Telegram Bridge Commands:\n"
                                     "- Ask any question (uses local Ollama AI brain)\n"
+                                    "- Send a photo (analyzed with local moondream vision AI)\n"
                                     "- Send a voice note (transcribed and executed)\n"
+                                    "- 'screenshot' or 'send screenshot' (receives desktop snapshot)\n"
                                     "- 'time' or 'date' (check system clock)\n"
                                     "- 'battery' (hardware battery status)\n"
                                     "- 'take a note <text>' (save persistent note)\n"
                                     "- 'read notes' (view notes)\n"
-                                    "- 'screenshot' (capture screen)\n"
                                     "- Tap [Approve] / [Deny] buttons or '/yes <id>' / '/no <id>'\n"
                                     "- '/kill' (emergency kill switch)"
                                 )

@@ -445,31 +445,63 @@ def tell_date():
     return msg
 
 def search_web(query):
-    """Searches the web for factual information."""
+    """Searches the web for factual and real-time information."""
+    import urllib.request
+    import urllib.parse
+    import re
+    import html
+    import json
+
+    q = str(query).strip()
+    if not q:
+        return "Please specify a search query."
+
+    # 1. Primary: Live web search via DuckDuckGo HTML POST
     try:
-        import wikipedia
-        return wikipedia.summary(query, sentences=3)
-    except wikipedia.exceptions.DisambiguationError as e:
-        return f"Query is too ambiguous. Try one of these: {e.options[:3]}"
-    except wikipedia.exceptions.PageError:
-        pass
+        data = urllib.parse.urlencode({'q': q}).encode('utf-8')
+        req = urllib.request.Request(
+            'https://html.duckduckgo.com/html/',
+            data=data,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            body = resp.read().decode('utf-8', 'ignore')
+
+        snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', body, re.DOTALL)
+        titles = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', body, re.DOTALL)
+
+        out = []
+        for i in range(min(len(snippets), len(titles), 3)):
+            t = html.unescape(re.sub(r'<[^>]+>', '', titles[i][1])).strip()
+            s = html.unescape(re.sub(r'<[^>]+>', '', snippets[i])).strip()
+            out.append(f"Result {i+1}: {t}\n{s}")
+
+        if out:
+            return "\n\n".join(out)
+    except Exception as e:
+        logger.debug(f"[Web Search] DDG HTML search error: {e}")
+
+    # 2. Secondary: DuckDuckGo Instant Answer API
+    try:
+        url = 'https://api.duckduckgo.com/?' + urllib.parse.urlencode({'q': q, 'format': 'json'})
+        req_api = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req_api, timeout=5) as resp:
+            api_data = json.loads(resp.read().decode('utf-8'))
+            abstract = api_data.get('AbstractText', '').strip()
+            if abstract:
+                heading = api_data.get('Heading', 'Summary')
+                return f"{heading}: {abstract}"
     except Exception:
         pass
 
+    # 3. Fallback: Wikipedia Summary
     try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=3))
-            
-        if not results:
-            return "No results found on the web."
-            
-        summary = ""
-        for i, r in enumerate(results):
-            summary += f"Result {i+1}: {r['title']}\nSnippet: {r['body']}\n\n"
-        return summary
-    except Exception as e:
-        return f"Error searching the web: {e}"
+        import wikipedia
+        return wikipedia.summary(q, sentences=3)
+    except Exception:
+        pass
+
+    return "No results found on the web."
 
 def get_weather(city):
     """Fetches the current live weather for a given city."""
@@ -515,6 +547,16 @@ def tell_battery():
 
 def take_screenshot():
     try:
+        # On Windows, attach thread to active desktop to prevent capture failures
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hdesk = user32.OpenInputDesktop(0, False, 0x01FF)
+            if hdesk:
+                user32.SetThreadDesktop(hdesk)
+        except Exception:
+            pass
+
         pyautogui = _get_pyautogui()
         SCREENSHOT_FOLDER.mkdir(parents=True, exist_ok=True)
         
@@ -535,10 +577,12 @@ def take_screenshot():
 
         speak("Screenshot saved successfully.")
         logger.info(f"Saved at: {screenshot_path}")
+        return str(screenshot_path)
 
     except Exception as error:
         speak("Could not take screenshot.")
         logger.info("Error:", error)
+        return None
 
 def get_windows_volume_controller():
     """
