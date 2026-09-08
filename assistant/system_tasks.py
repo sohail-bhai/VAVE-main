@@ -6,6 +6,7 @@ import re
 import platform
 import subprocess
 import datetime
+import time
 from pathlib import Path
 
 from assistant.speech import speak
@@ -774,8 +775,12 @@ def move_mouse(x, y):
     pyautogui.moveTo(int(x), int(y), duration=0.15)
     return f"Moved mouse to ({int(x)}, {int(y)})."
 
-def type_text(text):
-    """Types the given text automatically."""
+def type_text(text, window_title=None):
+    """Types the given text automatically into the active window (or specified window_title)."""
+    _ensure_com()
+    if window_title:
+        focus_window(window_title)
+        time.sleep(0.2)
     pyautogui = _get_pyautogui()
     body = str(text)
 

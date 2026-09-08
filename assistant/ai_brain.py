@@ -3,6 +3,7 @@ import re
 logger = logging.getLogger(__name__)
 
 import json
+import time
 import urllib.request
 import urllib.error
 import traceback
@@ -1143,11 +1144,12 @@ LLM_TOOLS = WEB_TOOLS + [
         "type": "function",
         "function": {
             "name": "type_text",
-            "description": "Types text automatically using the keyboard.",
+            "description": "Types text automatically using the keyboard. Pass window_title to ensure focus before typing.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string", "description": "The text to type"}
+                    "text": {"type": "string", "description": "The text to type"},
+                    "window_title": {"type": "string", "description": "Optional window title to focus before typing (e.g. 'Notepad')"}
                 },
                 "required": ["text"]
             }

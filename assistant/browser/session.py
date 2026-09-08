@@ -251,7 +251,18 @@ class BrowserSession:
     def click(self, target):
         match = self.find(target)
         prev_pages = len(self._context.pages) if self._context and hasattr(self._context, "pages") else 1
-        match["handle"].click()
+        handle = match["handle"]
+        try:
+            handle.click(timeout=3000)
+        except Exception:
+            try:
+                handle.click(force=True, timeout=3000)
+            except Exception:
+                try:
+                    self._page.evaluate("(el) => el.click()", handle)
+                except Exception as e:
+                    logger.debug(f"[BrowserSession] Fallback DOM click failed: {e}")
+                    raise
         self._settle()
         if self._context and hasattr(self._context, "pages") and len(self._context.pages) > prev_pages:
             self._page = self._context.pages[-1]
@@ -260,14 +271,34 @@ class BrowserSession:
         return {"clicked": match["label"], **self.describe()}
 
     def type_text(self, target, text, submit=False):
+        # Auto-recover if target and text were swapped by small model
+        body_text = str(text or "")
+        target_str = str(target or "")
+        if not body_text and target_str:
+            # Check if target is not actually an element on the page
+            inputs = [e for e in self.elements() if e.get("role") in ("input", "combobox", "textbox", "search")]
+            if inputs and not any(target_str == str(e.get("index")) or target_str.lower() in e.get("label", "").lower() for e in self.elements()):
+                body_text = target_str
+                target = inputs[0]["index"]
+
         match = self.find(target)
         handle = match["handle"]
-        handle.click()
         try:
-            handle.fill(text)
+            handle.click(timeout=3000)
+        except Exception:
+            try:
+                handle.click(force=True, timeout=3000)
+            except Exception:
+                try:
+                    self._page.evaluate("(el) => el.focus()", handle)
+                except Exception:
+                    pass
+
+        try:
+            handle.fill(body_text)
         except Exception:
             # Rich editors (ChatGPT's box among them) are not real inputs.
-            self._page.keyboard.type(text)
+            self._page.keyboard.type(body_text)
 
         if submit:
             self._page.keyboard.press("Enter")

@@ -273,8 +273,11 @@ def handle_web_interact_ai_command(command):
     The AI brain chains: search_youtube/google → wait → get_clickable_elements → click_at.
     """
     c = command.lower()
-    has_web = "youtube" in c or "google" in c or "search" in c
-    has_interact = any(w in c for w in ["play", "click", "select", "watch", "open the video", "open the first", "open the link"])
+    has_web = any(w in c for w in ["youtube", "netflix", "spotify", "prime video", "hotstar", "twitch", "google", "search", "browse", "website"])
+    has_interact = any(w in c for w in [
+        "play", "click", "select", "pick", "choose", "watch", "open the video", "open the first",
+        "open the link", "profile", "movie", "song", "track", "trailer", "channel"
+    ])
     if has_web and has_interact:
         ask_ai(command, auto_confirm=True)
         return True
