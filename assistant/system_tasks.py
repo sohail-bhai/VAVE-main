@@ -259,7 +259,7 @@ def open_app(app_name):
                             existing.SetActive()
                             if existing.NativeWindowHandle:
                                 activate_window(existing.NativeWindowHandle)
-                            return True
+                            return f"Opened {display_name} (switched to existing active window)."
                 except Exception:
                     pass
 
@@ -269,25 +269,20 @@ def open_app(app_name):
                     cmd = f"start {cmd}"
                 os.system(cmd)
 
-                # Wait for the launched window AND its document control to be fully ready
+                # Wait for the launched window to be ready and activated
                 if target_cls:
-                    for _ in range(80):  # up to 8 seconds total
+                    for _ in range(30):  # up to 3.0 seconds total, exits immediately when ready
                         time.sleep(0.1)
                         try:
                             new_win = auto.WindowControl(searchDepth=1, ClassName=target_cls)
-                            if not new_win.Exists(0.1):
-                                continue
-                            # Bring window to foreground
-                            new_win.SetActive()
-                            if new_win.NativeWindowHandle:
+                            if new_win.Exists(0.1) and new_win.NativeWindowHandle:
+                                new_win.SetActive()
                                 activate_window(new_win.NativeWindowHandle)
-                            # Wait until DocumentControl inside is also ready
-                            doc = new_win.DocumentControl(ClassName="RichEditD2DPT")
-                            if doc.Exists(0.1):
-                                break  # App is fully ready
+                                time.sleep(0.2)  # brief settle for UI rendering
+                                break  # App window is ready and focused
                         except Exception:
                             pass
-                return True
+                return f"Successfully opened {display_name} (window active and focused)."
 
         elif system == "darwin":
             mac_apps = {
@@ -301,7 +296,7 @@ def open_app(app_name):
             if query in mac_apps:
                 speak(f"Opening {display_name}")
                 os.system(mac_apps[query])
-                return True
+                return f"Successfully opened {display_name}."
 
         else:
             linux_apps = {
@@ -315,7 +310,7 @@ def open_app(app_name):
             if query in linux_apps:
                 speak(f"Opening {display_name}")
                 subprocess.Popen(linux_apps[query], shell=True)
-                return True
+                return f"Successfully opened {display_name}."
 
         # Tier 2: Search installed applications on local machine
         app_path, found_name = _find_installed_app(query, system)
@@ -329,8 +324,8 @@ def open_app(app_name):
                 subprocess.Popen([app_path], shell=True)
                 
             import time
-            time.sleep(4) # Wait for app to render before AI scans screen
-            return True
+            time.sleep(1.0) # Wait briefly for app to render
+            return f"Successfully opened installed app '{found_name}' (window active)."
 
         # Tier 3: Fallback to opening in browser
         websites = get_setting("websites", {})

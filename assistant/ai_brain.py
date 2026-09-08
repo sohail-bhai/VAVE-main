@@ -313,10 +313,13 @@ WEB_TOOLS = [
 # plausibly needs, chosen by what the user actually asked for.
 TOOL_GROUPS = {
     "web": (
-        ("http", "https", "www.", ".com", ".org", ".io", "website", "site",
-         "web", "browser", "browse", "open ", "search", "google it", "look up",
-         "chatgpt", "perplexity", "online", "internet", "page", "click", "login",
-         "log in", "sign in", "form", "tab"),
+        ("http", "https", "www.", ".com", ".org", ".io", ".net", ".in", "website", "site",
+         "web", "browser", "browse", "search", "google it", "look up", "google search",
+         "webpage", "online", "internet", "page", "tab", "url", "login", "sign in",
+         "netflix", "youtube", "prime video", "hotstar", "spotify", "gmail",
+         "google drive", "google", "chatgpt", "perplexity", "github", "gitlab",
+         "linkedin", "instagram", "reddit", "twitter", "whatsapp", "amazon",
+         "flipkart", "wikipedia"),
         ("browse", "browser_read", "browser_elements", "browser_click",
          "browser_type", "browser_press", "browser_wait_for", "browser_screenshot",
          "browser_ask_site", "browser_fill_form", "browser_tabs", "browser_new_tab",
@@ -340,21 +343,22 @@ TOOL_GROUPS = {
          "get_schedule", "schedule_meeting", "create_google_calendar_event"),
     ),
     "computer": (
-        ("open ", "app", "volume", "screenshot", "screen", "click", "type",
-         "battery", "lock", "shutdown", "restart", "file", "folder", "terminal",
-         "command", "clipboard", "window"),
-        ("open_app", "close_app", "set_volume", "mute_volume", "take_screenshot",
-         "read_screen", "analyze_screen", "get_clickable_elements",
-         "click_element", "click_at",
-         "double_click_at", "right_click_at", "move_mouse", "type_text",
-         "press_key", "press_hotkey", "wait", "list_windows", "focus_window",
-         "close_window", "find_and_click_text", "scroll", "drag_and_drop",
-         "lock_laptop", "run_terminal_command",
-         "list_directory", "read_file", "write_file", "read_clipboard",
-         "write_clipboard", "tell_battery"),
+        ("open ", "launch", "start ", "app", "notepad", "calculator", "calc",
+         "terminal", "cmd", "command prompt", "powershell", "paint", "code", "vscode",
+         "volume", "sound", "mute", "unmute", "screenshot", "screen", "click", "type",
+         "write", "press", "key", "battery", "charge", "time", "clock", "date", "today",
+         "lock", "shutdown", "restart", "file", "folder", "directory",
+         "clipboard", "window", "windows"),
+        ("open_app", "close_app", "tell_battery", "tell_time", "tell_date",
+         "set_volume", "mute_volume", "take_screenshot",
+         "type_text", "press_key", "press_hotkey",
+         "focus_window", "list_windows", "close_window",
+         "read_screen", "analyze_screen", "get_clickable_elements", "click_element",
+         "wait", "list_directory", "read_file", "write_file",
+         "read_clipboard", "write_clipboard", "run_terminal_command", "lock_laptop"),
     ),
     "notes": (
-        ("note", "remember", "remind", "memory", "wrote down", "document",
+        ("note", "notes", "remember", "remind", "reminder", "memory", "wrote down",
          "pdf", "textbook"),
         ("add_note", "read_notes", "clear_notes", "remember_fact",
          "ingest_document", "ask_document"),
@@ -367,38 +371,57 @@ TOOL_GROUPS = {
     ),
 }
 
+# Direct semantic tool mappings: query intents mapped straight to exact tools
+SEMANTIC_TOOL_ALIASES = (
+    (re.compile(r"\b(battery|charge|percentage|power level)\b"), ("tell_battery",)),
+    (re.compile(r"\b(time|clock|current time)\b"), ("tell_time",)),
+    (re.compile(r"\b(date|today|current date|what day)\b"), ("tell_date",)),
+    (re.compile(r"\b(screenshot|capture screen|snapshot)\b"), ("take_screenshot",)),
+    (re.compile(r"\b(volume|mute|unmute|sound|louder|quieter)\b"), ("set_volume", "mute_volume")),
+    (re.compile(r"\b(notepad|calculator|calc|paint|cmd|terminal|explorer|launch|open app)\b"), ("open_app", "close_app")),
+    (re.compile(r"\b(type|write|typing|press|key|enter|shortcut)\b"), ("type_text", "press_key")),
+    (re.compile(r"\b(note|notes|remind|memo)\b"), ("add_note", "read_notes", "clear_notes")),
+    (re.compile(r"\b(search|google for|look up online|find online)\b"), ("search_web", "browse")),
+    (re.compile(r"\b(window|windows|switch window|minimize)\b"), ("list_windows", "focus_window", "close_window")),
+    (re.compile(r"\b(email|mail|inbox|gmail)\b"), ("read_unread_emails", "send_email", "summarize_gmail_inbox")),
+    (re.compile(r"\b(calendar|meeting|schedule)\b"), ("get_schedule", "schedule_meeting", "create_google_calendar_event")),
+    (re.compile(r"\b(telegram|message)\b"), ("send_telegram_update",)),
+)
+
 # When nothing in the request points anywhere, these are what a person most
 # often means.
 DEFAULT_TOOL_NAMES = (
-    "browse", "browser_ask_site", "web_api_get", "search_web", "tell_time",
-    "tell_date", "tell_battery", "open_app", "add_note", "remember_fact",
-    "read_screen", "send_telegram_update",
+    "open_app", "tell_time", "tell_date", "tell_battery", "type_text",
+    "press_key", "set_volume", "take_screenshot", "search_web", "browse",
+    "add_note", "read_notes",
 )
 
 # The atomic desktop actions, offered on every single request regardless of what
-# the request looked like. These are what a goal gets built out of when no
-# purpose-built tool exists - look at the screen, focus a window, click, type,
-# press a shortcut - so they are the one thing that must never be narrowed away.
-# Leaving them out is what made "select all the text in notepad and delete it"
-# reach for clear_notes: the keyboard was simply not on the menu.
+# the request looked like.
 CORE_TOOL_NAMES = (
     "list_windows", "focus_window", "get_clickable_elements", "read_screen",
     "click_element", "click_at", "double_click_at", "right_click_at",
     "type_text", "press_key", "scroll", "wait", "close_window",
 )
 
-# Tools that work on windows and pixels. They are the whole toolkit for a
-# desktop task and useless for a web one: a browser page is not a window they
-# can read, and clicking at coordinates over it is guesswork.
+# Tools that work on windows and pixels.
 DESKTOP_ONLY_TOOLS = frozenset({
     "open_app", "close_app", "focus_window", "list_windows", "close_window",
     "get_clickable_elements", "click_at", "double_click_at", "right_click_at",
     "move_mouse", "drag_and_drop", "find_and_click_text", "press_hotkey",
 })
 
-# A ceiling on the task-specific tools, because two matching groups should not
-# undo the point of this. The core actions above sit outside the budget.
-MAX_TOOLS_PER_CALL = 22
+# Tools that work in web browser.
+BROWSER_ONLY_TOOLS = frozenset({
+    "browse", "browser_read", "browser_elements", "browser_click",
+    "browser_type", "browser_press", "browser_wait_for", "browser_screenshot",
+    "browser_ask_site", "browser_fill_form", "browser_tabs", "browser_new_tab",
+    "browser_switch_tab", "browser_wait_for_login", "remember_about_site",
+})
+
+# A tight ceiling on tools per call (12 tools max) to keep local LLM prompt
+# prefill under 2.5s and prevent small-model tool hallucination.
+MAX_TOOLS_PER_CALL = 12
 
 
 def _trigger_regex(trigger):
@@ -508,13 +531,17 @@ def _named_tools(candidates, text):
 
 
 def select_tools(instruction, tools=None):
-    """The tools worth offering for this request, plus the atomic ones always."""
+    """The tools worth offering for this request, tightly capped for small LLM speed and IQ."""
     catalogue = tools if tools is not None else LLM_TOOLS
     text = str(instruction or "").lower()
 
-    # Score each group by how much of the request points at it, so "fix the
-    # login issue in gitlab repo x" leads with GitLab rather than with the
-    # browser tools that "login" happens to match too.
+    # 1. Direct semantic tool detection: user intent mapped straight to exact tools
+    semantic_wanted = []
+    for pattern, names in SEMANTIC_TOOL_ALIASES:
+        if pattern.search(text):
+            semantic_wanted.extend(names)
+
+    # 2. Group scoring
     scored = []
     for group, (patterns, names) in _COMPILED_GROUPS.items():
         hits = sum(1 for pattern in patterns if pattern.search(text))
@@ -522,19 +549,16 @@ def select_tools(instruction, tools=None):
             scored.append((hits, group, names))
 
     wanted = []
+    # Direct semantic matches take highest precedence
+    wanted.extend(semantic_wanted)
+
     for _, _, names in sorted(scored, key=lambda item: item[0], reverse=True):
         wanted.extend(names)
 
     if not wanted:
         wanted = list(DEFAULT_TOOL_NAMES)
 
-    # A tool the request spells out goes first, whatever the budget. Asked to
-    # "take a screenshot and tell me the battery level", tell_battery sat last
-    # in a group of 24 against a budget of 22 and was dropped - the one thing
-    # named out loud - so the model went hunting for the battery with
-    # screenshots. Only an exact naming counts: every word of the tool's name
-    # has to be in the request, which is why "save the document" does not drag
-    # in create_google_doc.
+    # Add legacy named tools if request explicitly states tool words
     wanted = _named_tools(wanted, text) + wanted
 
     chosen, seen = [], set()
@@ -548,26 +572,33 @@ def select_tools(instruction, tools=None):
             chosen.append(schema)
             seen.add(name)
 
+    # Offer up to MAX_TOOLS_PER_CALL
     for name in wanted:
         offer(name)
         if len(chosen) >= MAX_TOOLS_PER_CALL:
             break
 
-    # Added last so a crowded group cannot push the fallback off the list.
-    for name in CORE_TOOL_NAMES:
-        offer(name)
+    # Determine domain intent
+    is_web = bool(_site_for(text)) or any(g[1] == "web" for g in scored if g[0] > 0)
+    is_desktop = any(g[1] == "computer" for g in scored if g[0] > 0) or any(
+        w in text for w in ("notepad", "calc", "app", "window", "volume", "battery", "type", "press", "screenshot", "time", "date")
+    )
 
-    chosen = chosen or catalogue
+    # Domain isolation: do not send browser tools to desktop tasks or desktop coordinates to web tasks
+    if is_web and not is_desktop:
+        chosen = [tool for tool in chosen if tool["function"]["name"] not in DESKTOP_ONLY_TOOLS]
+    elif is_desktop and not is_web:
+        chosen = [tool for tool in chosen if tool["function"]["name"] not in BROWSER_ONLY_TOOLS]
 
-    # A request that names a website is worked in the browser. Leaving the
-    # desktop clicking tools on the menu is what produced `open_app('chrome')`
-    # and `focus_window('YouTube')` in the middle of a task that was already on
-    # the page - none of which can see inside a web page anyway.
-    if _site_for(text):
-        chosen = [tool for tool in chosen
-                  if tool["function"]["name"] not in DESKTOP_ONLY_TOOLS]
+    # Fill remaining budget with relevant core actions if needed
+    if len(chosen) < MAX_TOOLS_PER_CALL:
+        core_subset = ("focus_window", "type_text", "press_key", "wait") if is_desktop else CORE_TOOL_NAMES
+        for name in core_subset:
+            offer(name)
+            if len(chosen) >= MAX_TOOLS_PER_CALL:
+                break
 
-    return chosen
+    return chosen or catalogue
 
 
 # The JSON schema describing our tools to the LLM
@@ -1710,17 +1741,16 @@ def _is_installed(name):
     return name in present or f"{name}:latest" in present
 
 # Words that mark work worth a bigger model: several moving parts, a judgement
-# to make, prose to write. Deliberately not the atomic desktop actions - the
-# small model was measured handling click/type/press/close well, and it answers
-# in a fraction of the time, so a window that needs closing stays on 3B.
+# to make, prose to write. Mechanical desktop actions (typing, clicking, volume,
+# launching apps) stay on 3B for sub-3s response speed.
 _ESCALATION_HINTS = (
-    "research", "compare", "summarise", "summarize", "summary", "explain",
-    "analyse", "analyze", "review", "plan", "draft", "write", "rewrite",
-    "essay", "report", "article", "email", "reply", "presentation", "slides",
-    "spreadsheet", "code", "debug", "refactor", "fix the", "why does",
-    "why is", "how should", "figure out", "work out", "decide", "recommend",
-    "suggest", "translate", "rename", "organize", "organise", "convert",
-    "and then", "after that", "step by step",
+    "think deeply", "in detail", "smart mode", "deep research",
+    "research", "compare", "summarise", "summarize", "summary",
+    "explain in detail", "explain why", "analyse", "analyze",
+    "review code", "code review", "debug", "refactor", "solve",
+    "algorithm", "architect", "write essay", "write report",
+    "write article", "draft email", "write code", "write script",
+    "write python", "how should", "figure out why", "recommend best",
 )
 
 
@@ -1768,8 +1798,8 @@ def select_model(instruction=""):
     text = str(instruction or "").lower()
     if any(hint in text for hint in _ESCALATION_HINTS):
         return smart
-    # A long request is usually a compound one, whatever words it happens to use.
-    if len(text.split()) >= 18:
+    # Long reasoning prompts (> 25 words) escalate to smart model
+    if len(text.split()) >= 25:
         return smart
     return fast
 
@@ -1778,37 +1808,35 @@ def chat_with_fallback(messages, model=None, tools=None, instruction=""):
     """Ask `model`, dropping to the fast model if it cannot answer at all.
 
     A large model that will not fit in memory returns nothing, and without this
-    the task simply dies - which is exactly what `switch to high performance`
-    did on a machine too full to load 9B. Losing the bigger brain should cost
-    quality, not the task.
+    the task simply dies. If fast model returns nothing, try smart model as backup.
     """
     chosen = model or select_model(instruction)
     fast = str(get_setting("llm_model_fast", "qwen2.5:3b") or "qwen2.5:3b")
+    smart = str(get_setting("llm_model_smart", "") or "")
 
-    # Already known not to load. Asking again costs a full timeout per step, so
-    # a multi-step task would crawl for no benefit.
+    # Already known not to load. Asking again costs a full timeout per step.
     if _is_unserviceable(chosen):
         chosen = fast
 
     reply = query_local_llm_chat(messages, model=chosen, tools=tools)
     if reply:
-        # A model that answers clears its miss count - the failure that put it
-        # there may have been memory pressure that has since passed.
         _unavailable_models.pop(chosen, None)
         return reply
 
-    if chosen == fast:
+    # If fast model returned nothing or failed, try escalating to smart model if available
+    if chosen == fast and smart and smart != fast:
+        if (not _is_unserviceable(smart) and _is_installed(smart)
+                and get_setting("model_escalation_enabled", True)):
+            logger.info(f"[VAVE] {fast} produced no reply; trying smart model {smart}...")
+            smart_reply = query_local_llm_chat(messages, model=smart, tools=tools)
+            if smart_reply:
+                return smart_reply
         return reply
 
-    # A refusal that named its own cause (a model too big for the machine) has
-    # already been written off inside the query, so counting it again would only
-    # log the same thing twice.
+    # If smart model timed out or failed, fall back to fast model
     if not _is_unserviceable(chosen):
         misses = _unavailable_models.get(chosen, 0) + 1
         _unavailable_models[chosen] = misses
-        if misses >= _DISABLE_AFTER_MISSES:
-            logger.info(f"[VAVE] {chosen} has missed {misses} times in a row; "
-                        f"continuing on {fast} until it answers again.")
     return query_local_llm_chat(messages, model=fast, tools=tools)
 
 
@@ -2184,6 +2212,10 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                                             _tool_name=func_name, **args_dict)
                         tools_run += 1
                         performed.append((func_name, args_dict))
+
+                        # If an app was opened or window focused, allow OS window manager to settle input focus
+                        if func_name in ("open_app", "focus_window"):
+                            time.sleep(0.3)
 
                         if func_name not in INSPECTION_TOOLS:
                             signature = (func_name, str(sorted(
