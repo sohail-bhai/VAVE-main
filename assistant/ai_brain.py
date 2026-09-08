@@ -1987,6 +1987,37 @@ def _wrap_untrusted(tool_name, result):
             f"---\n{result}\n--- end of content ---")
 
 
+def _extract_tool_calls_from_text(text):
+    """Fallback parser when smaller local models return JSON/markdown in content rather than tool_calls."""
+    if not text or not isinstance(text, str):
+        return []
+    import re
+    calls = []
+    blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if not blocks:
+        match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text)
+        if match:
+            blocks = [match.group(0)]
+
+    for block in blocks:
+        try:
+            data = json.loads(block)
+            if not isinstance(data, dict):
+                continue
+            name = data.get("name") or data.get("function") or data.get("tool")
+            args = data.get("arguments") or data.get("parameters") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    args = {}
+            if name and name in AVAILABLE_FUNCTIONS:
+                calls.append({"type": "function", "function": {"name": name, "arguments": args}})
+        except Exception:
+            continue
+    return calls
+
+
 def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps=12,
                 should_continue=None, authorize=None, resolve_secrets=None,
                 tools=None):
@@ -2086,7 +2117,12 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
         # Append Assistant's response to history
         conversation.append(message)
 
-        # Check if the LLM decided to call a tool
+        # Check if the LLM decided to call a tool, or emitted a markdown/json tool call in text
+        if "tool_calls" not in message or not message["tool_calls"]:
+            extracted_calls = _extract_tool_calls_from_text(message.get("content", ""))
+            if extracted_calls:
+                message["tool_calls"] = extracted_calls
+
         if "tool_calls" in message and message["tool_calls"]:
             current_tool_calls_repr = str(message["tool_calls"])
             if current_tool_calls_repr == previous_tool_calls_repr:
@@ -2409,6 +2445,9 @@ def run_task_step(instruction, context="", auto_confirm=True,
     Raises RuntimeError if the local model cannot be reached, so the control
     plane can record an honest failure instead of a silent success.
     """
+    if not context:
+        call_context.clear_taint()
+
     conversation = [
         {"role": "system", "content": get_system_prompt()},
         {"role": "system", "content": STEP_SYSTEM_NOTE},

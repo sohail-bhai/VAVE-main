@@ -250,8 +250,12 @@ class BrowserSession:
 
     def click(self, target):
         match = self.find(target)
+        prev_pages = len(self._context.pages) if self._context and hasattr(self._context, "pages") else 1
         match["handle"].click()
         self._settle()
+        if self._context and hasattr(self._context, "pages") and len(self._context.pages) > prev_pages:
+            self._page = self._context.pages[-1]
+            logger.info(f"[BrowserSession] Switched active page to newly opened tab: {self._page.url}")
         self._elements = []
         return {"clicked": match["label"], **self.describe()}
 

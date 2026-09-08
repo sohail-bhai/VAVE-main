@@ -439,11 +439,15 @@ def close_app(app_name):
 
 def tell_time():
     current_time = datetime.datetime.now().strftime("%I:%M %p")
-    speak(f"The time is {current_time}")
+    msg = f"The time is {current_time}"
+    speak(msg)
+    return msg
 
 def tell_date():
     current_date = datetime.datetime.now().strftime("%d %B %Y")
-    speak(f"Today's date is {current_date}")
+    msg = f"Today's date is {current_date}"
+    speak(msg)
+    return msg
 
 def search_web(query):
     """Searches the web for factual information."""
@@ -496,18 +500,23 @@ def tell_battery():
         battery = psutil.sensors_battery()
 
         if battery is None:
-            speak("Battery information is not available.")
-            return
+            msg = "Battery information is not available."
+            speak(msg)
+            return msg
 
         percent = battery.percent
         if battery.power_plugged:
-            speak(f"Battery is at {percent} percent and charging.")
+            msg = f"Battery is at {percent} percent and charging."
         else:
-            speak(f"Battery is at {percent} percent.")
+            msg = f"Battery is at {percent} percent."
+        speak(msg)
+        return msg
 
     except Exception as error:
+        msg = f"Could not check battery status: {error}"
         speak("Could not check battery status.")
-        logger.info("Error:", error)
+        logger.info("Error: %s", error)
+        return msg
 
 def take_screenshot():
     try:
@@ -708,6 +717,17 @@ def type_text(text):
     chords = _shortcut_sequence(body)
     if chords:
         return " ".join(press_key(chord) for chord in chords)
+
+    # If text contains non-ASCII characters, emojis, or symbols, use clipboard paste for 100% fidelity
+    needs_clipboard = any(ord(c) > 127 for c in body) or any(c in body for c in "@#%&~`|<>^")
+    if needs_clipboard:
+        try:
+            import pyperclip
+            pyperclip.copy(body)
+            pyautogui.hotkey("ctrl", "v")
+            return f"Typed {len(body)} characters."
+        except Exception:
+            pass
 
     pyautogui.write(body, interval=0.01)
     return f"Typed {len(body)} characters."
@@ -1356,6 +1376,12 @@ def click_element(name, window_title=None):
             pass
 
         rect = target.BoundingRectangle
+        if rect.left < -1000 or rect.top < -1000:
+            focus_window(window_title)
+            rect = target.BoundingRectangle
+            if rect.left < -1000 or rect.top < -1000:
+                return f"Cannot click '{wanted}': window '{window.Name}' is minimized or off-screen."
+
         x = rect.left + (rect.width() // 2)
         y = rect.top + (rect.height() // 2)
         pyautogui.click(x, y)
@@ -1435,6 +1461,18 @@ def focus_window(title):
         win = _find_window(title)
         if not win:
             return f"No open window matches '{title}'. Use list_windows to see what is available."
+
+        # If window is minimized, restore it first so coordinates and clicks become valid
+        try:
+            pattern = win.GetWindowPattern()
+            if pattern and hasattr(pattern, "WindowVisualState"):
+                if pattern.WindowVisualState == auto.WindowVisualState.Minimized:
+                    pattern.SetWindowVisualState(auto.WindowVisualState.Normal)
+            elif hasattr(win, "ShowWindow"):
+                win.ShowWindow(auto.SW.Restore)
+        except Exception:
+            pass
+
         win.SetActive()
         try:
             win.SetTopmost(False)
