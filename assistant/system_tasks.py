@@ -227,6 +227,9 @@ def _find_installed_app(query, system):
     return None, None
 
 
+_LAST_OPENED_APP = None
+
+
 def open_app(app_name):
     """
     3-tier smart application & website launcher:
@@ -234,6 +237,7 @@ def open_app(app_name):
     Tier 2: Search installed applications on local disk.
     Tier 3: Fallback to browser (configured websites or web search/URL).
     """
+    global _LAST_OPENED_APP
     import webbrowser
     import urllib.parse
     from assistant.config import get_setting
@@ -246,6 +250,7 @@ def open_app(app_name):
 
     display_name = query.replace("_", " ").title()
     _ensure_com()
+    _LAST_OPENED_APP = display_name
 
     try:
         # Tier 1: Built-in known app aliases
@@ -457,6 +462,9 @@ def close_app(app_name):
             pass
 
     if closed:
+        global _LAST_OPENED_APP
+        if _LAST_OPENED_APP and clean_name in _LAST_OPENED_APP.lower():
+            _LAST_OPENED_APP = None
         speak(f"Closed {display_name}.")
         return f"Closed {display_name} successfully."
     else:
@@ -777,9 +785,11 @@ def move_mouse(x, y):
 
 def type_text(text, window_title=None):
     """Types the given text automatically into the active window (or specified window_title)."""
+    global _LAST_OPENED_APP
     _ensure_com()
-    if window_title:
-        focus_window(window_title)
+    target_win = window_title or _LAST_OPENED_APP
+    if target_win:
+        focus_window(target_win)
         time.sleep(0.2)
     pyautogui = _get_pyautogui()
     body = str(text)

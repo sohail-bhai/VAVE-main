@@ -117,7 +117,7 @@ def browser_switch_tab(index):
     return _guarded(run)
 
 
-def browser_wait_for_login(seconds=180):
+def browser_wait_for_login(seconds=60):
     """Hand the window to the user to sign in, then carry on.
 
     VAVE never types a password. This waits for the page to stop asking for
@@ -168,6 +168,8 @@ def browser_type(target, text, submit=False):
     """Type into a box. `submit=True` presses Enter afterwards."""
     def run():
         result = _session().type_text(target, text, submit=_as_bool(submit))
+        if result.get("warning"):
+            return result["warning"]
         note = "and pressed Enter" if result["submitted"] else "without submitting"
         return (f"Typed into '{result['typed_into']}' {note}.\n\n"
                 f"{_page_summary()}")

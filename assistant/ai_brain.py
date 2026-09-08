@@ -323,9 +323,9 @@ TOOL_GROUPS = {
          "linkedin", "instagram", "reddit", "twitter", "whatsapp", "amazon",
          "flipkart", "wikipedia"),
         ("browse", "browser_read", "browser_elements", "browser_click",
-         "browser_type", "browser_press", "browser_wait_for", "browser_screenshot",
-         "browser_ask_site", "browser_fill_form", "browser_tabs", "browser_new_tab",
-         "browser_switch_tab", "browser_wait_for_login", "remember_about_site",
+         "browser_type", "browser_press", "browser_wait_for_login", "browser_wait_for",
+         "browser_screenshot", "browser_ask_site", "browser_fill_form", "browser_tabs",
+         "browser_new_tab", "browser_switch_tab", "remember_about_site",
          "web_api_get", "web_api_call", "search_web"),
     ),
     "gitlab": (
@@ -412,7 +412,7 @@ CORE_TOOL_NAMES = (
 # Tools that work on windows and pixels.
 DESKTOP_ONLY_TOOLS = frozenset({
     "open_app", "close_app", "focus_window", "list_windows", "close_window",
-    "get_clickable_elements", "click_at", "double_click_at", "right_click_at",
+    "get_clickable_elements", "click_element", "click_at", "double_click_at", "right_click_at",
     "move_mouse", "drag_and_drop", "find_and_click_text", "press_hotkey",
 })
 
@@ -507,10 +507,10 @@ def _site_hint(text):
     return {
         "role": "system",
         "content": (
-            f"{name} might be an installed app or a website. FIRST, try `open_app('{name}')` or `open_app('{name}.exe')`. "
-            f"If that fails, then fall back to the browser: `browse('{url}')`. "
-            "When using the browser, follow up with `browser_elements()` to see what is on the page, "
-            "and `browser_click(target)` with the number or words shown."
+            f"To access {name}, use `browse('{url}')`. "
+            "Then use `browser_elements()` to inspect what is on the page, "
+            "and `browser_click(target)` to select an item, profile, or play button. "
+            "If the page asks for sign-in, call `browser_wait_for_login`."
         ),
     }
 
@@ -585,20 +585,30 @@ def select_tools(instruction, tools=None):
 
     # Determine domain intent
     is_web = bool(_site_for(text)) or any(g[1] == "web" for g in scored if g[0] > 0)
-    is_desktop = any(g[1] == "computer" for g in scored if g[0] > 0) or any(
-        w in text for w in ("notepad", "calc", "app", "window", "volume", "battery", "type", "press", "screenshot", "time", "date", "click")
-    )
+    has_desktop_specifics = any(w in text for w in (
+        "notepad", "calculator", "calc", "paint", "cmd", "terminal", "powershell",
+        "folder", "directory", "window", "windows", "desktop", "volume", "battery",
+        "screenshot", "lock laptop", "shutdown", "restart"
+    ))
+    is_desktop = has_desktop_specifics or (not is_web and any(g[1] == "computer" for g in scored if g[0] > 0))
 
-    # Domain isolation: do not send browser tools to desktop tasks or desktop coordinates to web tasks
+    # Domain isolation: strict separation of web browser vs native desktop OS tools
     if is_web and not is_desktop:
+        web_core = ("browser_elements", "browser_click", "browser_type", "browser_press", "browser_wait_for", "browser_wait_for_login", "browser_read", "wait")
+        for name in web_core:
+            offer(name)
+            if len(chosen) >= MAX_TOOLS_PER_CALL:
+                break
         chosen = [tool for tool in chosen if tool["function"]["name"] not in DESKTOP_ONLY_TOOLS]
     elif is_desktop and not is_web:
+        desktop_core = ("focus_window", "type_text", "press_key", "wait", "click_element", "get_clickable_elements", "list_windows")
+        for name in desktop_core:
+            offer(name)
+            if len(chosen) >= MAX_TOOLS_PER_CALL:
+                break
         chosen = [tool for tool in chosen if tool["function"]["name"] not in BROWSER_ONLY_TOOLS]
-
-    # Fill remaining budget with relevant core actions if needed
-    if len(chosen) < MAX_TOOLS_PER_CALL:
-        core_subset = ("focus_window", "type_text", "press_key", "wait", "click_element", "get_clickable_elements") if is_desktop else CORE_TOOL_NAMES
-        for name in core_subset:
+    else:
+        for name in CORE_TOOL_NAMES:
             offer(name)
             if len(chosen) >= MAX_TOOLS_PER_CALL:
                 break
@@ -1651,7 +1661,7 @@ def query_local_llm_chat(messages, model="qwen2.5:3b", tools=None):
     # the next. Deciding which action to take is not a creative act, so sampling
     # is pulled right down whenever tools are on the table, and left alone when
     # the model is only talking.
-    options = {"num_ctx": 8192}
+    options = {"num_ctx": 4096}
     if offering_tools:
         options["temperature"] = float(get_setting("llm_tool_temperature", 0.1))
         options["top_p"] = 0.9
@@ -1704,7 +1714,8 @@ def query_local_llm_chat(messages, model="qwen2.5:3b", tools=None):
 # most of a minute for nothing.
 _LOAD_FAILURE_MARKERS = ("out-of-memory", "out of memory", "failed to allocate",
                          "unable to allocate", "error loading model",
-                         "startup failed")
+                         "startup failed", "cuda error", "0xc0000409",
+                         "exit status 0xc0000409")
 
 
 def _looks_like_a_load_failure(detail):
@@ -1821,8 +1832,9 @@ def select_model(instruction=""):
     text = str(instruction or "").lower()
     if any(hint in text for hint in _ESCALATION_HINTS):
         return smart
-    # Long reasoning prompts (> 25 words) escalate to smart model
-    if len(text.split()) >= 25:
+    # Long reasoning prompts (> 30 words) escalate ONLY if not an interactive automation task
+    interactive_keywords = ("open ", "click ", "type ", "press ", "browse ", "play ", "close ", "run ", "launch ")
+    if len(text.split()) >= 30 and not any(kw in text for kw in interactive_keywords):
         return smart
     return fast
 
@@ -2069,6 +2081,43 @@ def _extract_tool_calls_from_text(text):
     return calls
 
 
+def _prune_conversation_context(messages):
+    """Keep prompt lean and avoid Ollama VRAM/CUDA overload by pruning obsolete tool outputs.
+
+    Keeps the latest turn's tool outputs in full. Summarizes earlier element lists,
+    screen OCR dumps, and large outputs so context stays compact.
+    """
+    if len(messages) <= 3:
+        return [dict(m) for m in messages]
+
+    # Find the last assistant message that invoked tools
+    last_calling_assistant_idx = -1
+    for i in range(len(messages) - 1, -1, -1):
+        m = messages[i]
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            last_calling_assistant_idx = i
+            break
+
+    pruned = []
+    for i, m in enumerate(messages):
+        m_copy = dict(m)
+        # Any tool message before the latest assistant turn is an older turn
+        if m.get("role") == "tool" and i < last_calling_assistant_idx:
+            content = str(m.get("content") or "")
+            func_name = m.get("name", "")
+            if func_name in INSPECTION_TOOLS:
+                m_copy["content"] = f"[Inspection from {func_name} omitted; see latest state below]"
+            elif "Things you can click or type into:" in content:
+                # Strip the 60-item element list from earlier browse/click actions
+                prefix = content.split("Things you can click or type into:")[0].strip()
+                m_copy["content"] = f"{prefix}\n[Earlier elements omitted]"
+            elif len(content) > 300:
+                m_copy["content"] = content[:250] + "... [earlier output truncated]"
+        pruned.append(m_copy)
+
+    return pruned
+
+
 def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps=12,
                 should_continue=None, authorize=None, resolve_secrets=None,
                 tools=None):
@@ -2119,9 +2168,9 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                 + "\n".join(f"{i}. {step}" for i, step
                             in enumerate(planned_steps, 1))
                 + "\nCarry them out in order, one tool call at a time. After "
-                "each one, look at the result and start the next step. The "
-                "task is not finished until the last step is done, so do not "
-                "reply with words until then."
+                "each one, look at the result and start the next step. "
+                "If a step requires user sign-in, login credentials, or is blocked, "
+                "stop tool calling immediately and explain plainly to the user what is needed."
             ),
         })
 
@@ -2144,6 +2193,7 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
     # - together they say whether the last action actually did something.
     last_look = None
     acted_since_look = False
+    said = ""
 
     def _keep_going():
         if should_continue is not None and not should_continue:
@@ -2152,8 +2202,8 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
     for step in range(max_steps):
         _keep_going()
 
-        # Inject dynamic context into the payload without mutating history
-        current_messages = list(conversation)
+        # Inject dynamic context into the payload without mutating history, pruning older inspection outputs
+        current_messages = _prune_conversation_context(conversation)
         for extra in injected:
             current_messages.insert(-1, extra)
         if auto_confirm:
@@ -2281,6 +2331,11 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                             "name": func_name
                         })
 
+                        # If waiting for login timed out still on the sign-in page, inform user immediately
+                        if func_name == "browser_wait_for_login" and "Still on the sign-in page" in result_str:
+                            logger.info("[VAVE] browser_wait_for_login completed without sign-in; informing user.")
+                            return "I opened the page, but signing in is required to continue. Please log in directly in the browser window, then ask me again."
+
                     except guard.ToolDenied as e:
                         logger.info(f"Tool {func_name} denied: {e}")
                         conversation.append({
@@ -2329,6 +2384,17 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
         # close_window on the menu. So the turn gets one push back before it is
         # allowed to end, and if the model insists, its words stand.
         said = message.get("content", "")
+
+        # If model reports that it is blocked by user sign-in, authentication, or external action,
+        # return immediately instead of pushing into an impossible loop
+        lower_said = said.lower()
+        blocked_on_user = any(w in lower_said for w in (
+            "sign in", "sign-in", "log in", "login", "password", "credentials",
+            "authenticate", "not logged in", "need to log in", "please log in"
+        ))
+        if blocked_on_user:
+            logger.info("[VAVE] Task is blocked waiting on user sign-in/action: %s", said)
+            return said
         if not nudged and tools is not False and _stopped_short(latest_request, said,
                                                                tools_run):
             nudged = True
@@ -2368,8 +2434,20 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
 
         return said
 
-    # The loop ran out of steps. Report what was said last rather than nothing.
-    return ""
+    # The loop ran out of steps. Report what was said or wrap up state rather than nothing.
+    if said:
+        return said
+    try:
+        from assistant.browser.actions import _session
+        s = _session()
+        if s.started and s.looks_like_login():
+            return "I have opened the page, but signing in is required to continue. Please log in directly in the browser window."
+    except Exception:
+        pass
+    if performed:
+        last_tool = performed[-1][0]
+        return f"Completed actions up to {last_tool}."
+    return "I completed the available actions."
 
 
 # Openings that make an utterance a request for information rather than an
@@ -2397,6 +2475,8 @@ def _stopped_short(request, reply, tools_run):
         return False
 
     answer = str(reply or "").strip()
+    if any(w in answer.lower() for w in ("sign in", "sign-in", "log in", "login", "password", "authenticate")):
+        return False
     if tools_run == 0:
         return True
     # A question mark means the model is waiting on the user, not reporting.

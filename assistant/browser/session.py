@@ -294,6 +294,18 @@ class BrowserSession:
                 except Exception:
                     pass
 
+        # VAVE security policy: Never type passwords
+        try:
+            input_type = (handle.get_attribute("type") or "").lower()
+            if input_type == "password" or "password" in match.get("label", "").lower():
+                return {
+                    "typed_into": match["label"],
+                    "submitted": False,
+                    "warning": "VAVE security policy: VAVE does not type passwords. Please sign in directly in the browser window."
+                }
+        except Exception:
+            pass
+
         try:
             handle.fill(body_text)
         except Exception:
@@ -308,7 +320,30 @@ class BrowserSession:
 
     def press(self, key):
         page = self.start()
-        page.keyboard.press(key)
+        clean = str(key or "").strip()
+        key_map = {
+            "enter": "Enter",
+            "return": "Enter",
+            "esc": "Escape",
+            "escape": "Escape",
+            "tab": "Tab",
+            "space": "Space",
+            "backspace": "Backspace",
+            "delete": "Delete",
+            "del": "Delete",
+            "up": "ArrowUp",
+            "down": "ArrowDown",
+            "left": "ArrowLeft",
+            "right": "ArrowRight",
+            "arrowup": "ArrowUp",
+            "arrowdown": "ArrowDown",
+            "arrowleft": "ArrowLeft",
+            "arrowright": "ArrowRight",
+            "pageup": "PageUp",
+            "pagedown": "PageDown",
+        }
+        normalized = key_map.get(clean.lower(), clean)
+        page.keyboard.press(normalized)
         self._settle()
         return self.describe()
 
