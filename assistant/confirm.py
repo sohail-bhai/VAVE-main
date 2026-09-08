@@ -37,20 +37,29 @@ class ConfirmationBroker:
         if not self._bus:
             logger.warning("ConfirmationBroker has no EventBus. Denying.")
             return False
-            
-        req_id = uuid.uuid4().hex
+
+        # Short enough to type back on a phone. Only one phone command runs at a
+        # time, so a 6-character id is plenty to avoid a clash.
+        req_id = uuid.uuid4().hex[:6]
         q = queue.Queue(maxsize=1)
-        
+
         with self._lock:
             self._pending[req_id] = q
-            
+
         self._bus.emit(
-            events.EVENT_CONFIRM_REQUEST, 
-            message, 
-            req_id=req_id, 
+            events.EVENT_CONFIRM_REQUEST,
+            message,
+            req_id=req_id,
             origin=origin
         )
-        
+
+        # The bus event drives the GUI approval card. A phone command has no GUI
+        # in front of the user, so the request is also sent to Telegram, where
+        # "/yes <id>" and "/no <id>" resolve it. Without this the request was
+        # invisible and every phone command timed out after 60s.
+        if origin == "telegram":
+            self._send_to_telegram(message, req_id)
+
         try:
             result = q.get(timeout=60.0)
             return result
@@ -60,6 +69,33 @@ class ConfirmationBroker:
         finally:
             with self._lock:
                 self._pending.pop(req_id, None)
+
+    def _send_to_telegram(self, message: str, req_id: str) -> None:
+        try:
+            from assistant.config import get_setting
+            from assistant.control.secrets import resolve_setting
+            from assistant.telegram_sync import send_telegram_message
+            token = resolve_setting(get_setting("telegram_bot_token", ""))
+            chat_id = get_setting("telegram_chat_id", "")
+            if token and chat_id:
+                reply_markup = {
+                    "inline_keyboard": [
+                        [
+                            {"text": "✅ Approve", "callback_data": f"/yes {req_id}"},
+                            {"text": "❌ Deny", "callback_data": f"/no {req_id}"}
+                        ]
+                    ]
+                }
+                text = (
+                    f"VAVE needs your approval:\n{message}\n\n"
+                    f"Tap a button below, or reply  /yes {req_id}  to approve,  /no {req_id}  to cancel."
+                )
+                try:
+                    send_telegram_message(token, chat_id, text, reply_markup=reply_markup)
+                except TypeError:
+                    send_telegram_message(token, chat_id, text)
+        except Exception as e:
+            logger.debug(f"Could not forward confirmation to Telegram: {e}")
                 
     def resolve(self, req_id: str, approved: bool) -> bool:
         with self._lock:

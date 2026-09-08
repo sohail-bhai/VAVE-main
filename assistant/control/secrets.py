@@ -180,6 +180,22 @@ class SecretStore:
 
     # -- migration ----------------------------------------------------------
 
+    def resolve_setting(self, value, default=""):
+        """Resolve ``secret://`` references in a value, or return ``default``.
+
+        Unlike :meth:`resolve`, a failure here never propagates and never
+        leaks the reference: an outbound integration must not build a request
+        from ``secret://telegram_bot_token`` (that yields a permanent HTTP 404
+        on every poll). If nothing can be resolved, ``default`` is returned.
+        """
+        if not isinstance(value, str) or "secret://" not in value:
+            return value
+        try:
+            return self.resolve(value)
+        except Exception as error:                       # missing key/secret/db
+            logger.warning("Could not resolve secret reference: %s", error)
+            return default
+
     def import_from_config(self, config_get=None, config_set=None):
         """Move credentials out of config.json and leave references behind."""
         if config_get is None or config_set is None:
@@ -196,3 +212,25 @@ class SecretStore:
             config_set(setting, f"secret://{name}")
             moved.append(name)
         return moved
+
+
+def resolve_setting(value, default=""):
+    """Resolve ``secret://`` references in a config value at the last moment.
+
+    The outbound integrations (Telegram, e-mail) read a token or password
+    straight from config, where the stored value is normally a ``secret://name``
+    reference. A request built from an unresolved reference fails confusingly -
+    a Telegram token of ``secret://telegram_bot_token`` gives a permanent HTTP
+    404 on every poll. On any failure this returns ``default`` (empty string)
+    rather than the reference, so a caller never builds a request from one.
+    """
+    if not isinstance(value, str) or "secret://" not in value:
+        return value
+    try:
+        from assistant.control.store import ControlStore
+        store = SecretStore(ControlStore(), key=load_key())
+        return store.resolve_setting(value, default=default)
+    except Exception as error:                            # store/key unavailable
+        logger.warning("Could not open secret store to resolve reference: %s",
+                       error)
+        return default

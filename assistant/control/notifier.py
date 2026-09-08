@@ -83,9 +83,10 @@ class TelegramChannel:
             return
 
         from assistant.config import get_setting
+        from assistant.control.secrets import resolve_setting
         from assistant.telegram_sync import send_telegram_message
 
-        token = self._token or get_setting("telegram_bot_token", "")
+        token = resolve_setting(self._token or get_setting("telegram_bot_token", ""))
         chat_id = self._chat_id or get_setting("telegram_chat_id", "")
         if not token or not chat_id:
             return          # not configured; not an error

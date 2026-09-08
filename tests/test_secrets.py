@@ -168,6 +168,36 @@ class ResolutionTests(SecretTestCase):
         self.assertEqual(["email_app_password"], found)
 
 
+class ResolveSettingTests(SecretTestCase):
+    """resolve_setting must never leak the reference: an outbound integration
+    that builds a URL from `secret://...` gets a permanent 404."""
+
+    def setUp(self):
+        super().setUp()
+        self.secrets.put("telegram_bot_token", "12345:realtoken")
+
+    def test_a_known_reference_resolves_to_its_value(self):
+        self.assertEqual(
+            "12345:realtoken",
+            self.secrets.resolve_setting("secret://telegram_bot_token"))
+
+    def test_an_unknown_reference_yields_the_default_not_the_reference(self):
+        # The whole point: a failed lookup must not return "secret://..." to a
+        # caller that would then build https://api.telegram.org/botsecret://...
+        self.assertEqual("", self.secrets.resolve_setting("secret://missing"))
+        self.assertEqual(
+            "fallback",
+            self.secrets.resolve_setting("secret://missing", default="fallback"))
+
+    def test_a_plain_value_passes_straight_through(self):
+        self.assertEqual("12345:plain",
+                         self.secrets.resolve_setting("12345:plain"))
+
+    def test_empty_and_non_string_are_left_alone(self):
+        self.assertEqual("", self.secrets.resolve_setting(""))
+        self.assertIsNone(self.secrets.resolve_setting(None))
+
+
 class RedactionTests(SecretTestCase):
     def test_a_leaked_value_is_replaced_by_its_reference(self):
         self.secrets.put("email_app_password", "hunter2")

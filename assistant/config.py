@@ -58,6 +58,10 @@ DEFAULT_CONFIG = {
     # Seeing the browser matters: some sites serve an empty page to a headless
     # one, and a login has to be done by a person in a window they can see.
     "browser_headless": False,
+    # Attach to an existing browser via Chrome DevTools Protocol (CDP) if available.
+    "browser_cdp_url": "http://127.0.0.1:9222",
+    # Automatically pick up interrupted tasks on startup.
+    "auto_resume_tasks": True,
 
     # Folders a paired phone can reach. Nothing is shared until you list one.
     # Example: ["~/Documents", "~/Pictures"]
@@ -73,6 +77,12 @@ DEFAULT_CONFIG = {
     "notes_pause_seconds": 3.0,
     "normal_max_phrase_time": 25,
     "notes_max_phrase_time": 60,
+
+    # Hands-free wake word. openwakeword ships a handful of pretrained models;
+    # "hey_jarvis" is the closest fit and is downloaded on first use. A custom
+    # model can be pointed at by giving a path to a .onnx/.tflite file instead.
+    "wakeword_model": "hey_jarvis",
+    "wakeword_threshold": 0.6,
 
     "websites": {
         "youtube": "https://www.youtube.com",

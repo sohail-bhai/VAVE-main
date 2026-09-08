@@ -1209,19 +1209,7 @@ def get_clickable_elements(window_title=None):
         # scans only ever came back with window chrome.
         for control, depth in auto.WalkControl(active_window, maxDepth=10):
             # We look for things that might be clickable: Buttons, MenuItems, ListItems, Tabs, etc.
-            if control.ControlType in (
-                auto.ControlType.ButtonControl,
-                auto.ControlType.MenuItemControl,
-                auto.ControlType.TabItemControl,
-                auto.ControlType.ListItemControl,
-                auto.ControlType.HyperlinkControl,
-                auto.ControlType.EditControl,
-                auto.ControlType.CheckBoxControl,
-                auto.ControlType.RadioButtonControl,
-                auto.ControlType.ComboBoxControl,
-                auto.ControlType.TreeItemControl,
-                auto.ControlType.SliderControl,
-            ):
+            if control.ControlType in _clickable_control_types(auto):
                 name = control.Name
                 rect = control.BoundingRectangle
                 if name and rect.width() > 0 and rect.height() > 0:
@@ -1240,7 +1228,12 @@ def get_clickable_elements(window_title=None):
                         state = "" if control.IsEnabled else " [disabled]"
                     except Exception:
                         state = ""
-                    label = f"- '{name}' ({kind}{state}): click_at(x={center_x}, y={center_y})"
+                    # Both routes offered, name first: naming the control is the
+                    # reliable one, and the coordinates are still needed for a
+                    # right-click or when two controls share a label.
+                    label = (f"- '{name}' ({kind}{state}): "
+                             f"click_element(name='{name}')  "
+                             f"or click_at(x={center_x}, y={center_y})")
                     if label not in elements:
                         elements.append(label)
                 if len(elements) >= 120:
@@ -1265,6 +1258,111 @@ def get_clickable_elements(window_title=None):
         return header + "\n" + body
     except Exception as e:
         return f"Failed to get clickable elements: {e}"
+
+
+def _clickable_control_types(auto):
+    """The control kinds worth offering as something to click."""
+    return (
+        auto.ControlType.ButtonControl,
+        auto.ControlType.MenuItemControl,
+        auto.ControlType.TabItemControl,
+        auto.ControlType.ListItemControl,
+        auto.ControlType.HyperlinkControl,
+        auto.ControlType.EditControl,
+        auto.ControlType.CheckBoxControl,
+        auto.ControlType.RadioButtonControl,
+        auto.ControlType.ComboBoxControl,
+        auto.ControlType.TreeItemControl,
+        auto.ControlType.SliderControl,
+    )
+
+
+def click_element(name, window_title=None):
+    """Clicks the control with this label - a button, menu item, link or tab.
+
+    The coordinate route works, but only if the coordinates survive the trip:
+    handed a list of real buttons with real positions, the small model was
+    measured calling `click_at(x=100, y=200)` - a number from nowhere, landing
+    in the middle of the document. Naming the button removes the arithmetic, so
+    there is nothing left to get wrong.
+
+    An ambiguous name clicks nothing and says what matched, because guessing
+    between two buttons is how you press Delete instead of Details.
+    """
+    _ensure_com()
+    try:
+        import uiautomation as auto
+    except ImportError:
+        return ("ERROR: The 'uiautomation' module is missing. Please tell the "
+                "user to run 'pip install uiautomation' to enable clicking.")
+
+    wanted = str(name or "").strip()
+    if not wanted:
+        return "Tell me which element to click, by its label."
+
+    try:
+        if window_title:
+            window = _find_window(window_title)
+            if not window:
+                return (f"No open window matches '{window_title}'. "
+                        f"Use list_windows to see what is available.")
+        else:
+            window = auto.GetForegroundControl()
+            if not window:
+                return ("Could not tell which window is in focus. "
+                        "Use focus_window first.")
+
+        lowered = wanted.lower()
+        exact, starts, contains = [], [], []
+        for control, _depth in auto.WalkControl(window, maxDepth=10):
+            if control.ControlType not in _clickable_control_types(auto):
+                continue
+            label = control.Name
+            if not label:
+                continue
+            rect = control.BoundingRectangle
+            if rect.width() <= 0 or rect.height() <= 0:
+                continue
+            try:
+                if control.IsOffscreen:
+                    continue
+            except Exception:
+                pass
+            found = label.lower()
+            if found == lowered:
+                exact.append(control)
+            elif found.startswith(lowered):
+                starts.append(control)
+            elif lowered in found:
+                contains.append(control)
+
+        matches = exact or starts or contains
+        if not matches:
+            return (f"Nothing labelled '{wanted}' in the window "
+                    f"'{window.Name}'.\n" + get_clickable_elements(window_title))
+
+        if len(matches) > 1:
+            names = ", ".join(f"'{c.Name}'" for c in matches[:6])
+            return (f"'{wanted}' matches {len(matches)} elements: {names}. "
+                    f"Say which one exactly, or use click_at with its "
+                    f"coordinates from get_clickable_elements.")
+
+        target = matches[0]
+        try:
+            if not target.IsEnabled:
+                return (f"'{target.Name}' is greyed out and cannot be clicked "
+                        f"right now.")
+        except Exception:
+            pass
+
+        rect = target.BoundingRectangle
+        x = rect.left + (rect.width() // 2)
+        y = rect.top + (rect.height() // 2)
+        pyautogui.click(x, y)
+        kind = target.ControlTypeName.replace("Control", "")
+        return f"Clicked '{target.Name}' ({kind}) at ({x}, {y})."
+    except Exception as e:
+        return f"Failed to click '{wanted}': {e}"
 
 
 def list_windows():
@@ -1426,22 +1524,13 @@ def send_telegram_update(message_text):
     """Sends a Telegram message to the user."""
     from assistant.config import get_setting
     from assistant.telegram_sync import send_telegram_message
-    
-    token = get_setting("telegram_bot_token", "")
+    from assistant.control.secrets import resolve_setting
+
+    token = resolve_setting(get_setting("telegram_bot_token", ""))
     chat_id = get_setting("telegram_chat_id", "")
-    
-    if token.startswith("secret://"):
-        try:
-            from assistant.control.store import ControlStore
-            from assistant.control.secrets import SecretStore, load_key
-            store = ControlStore()
-            secrets = SecretStore(store, key=load_key())
-            token = secrets.resolve(token)
-        except Exception:
-            pass
 
     if not token or not chat_id:
         return "Telegram is not configured. Missing bot token or chat ID."
-        
+
     send_telegram_message(token, chat_id, message_text)
     return f"Message sent to Telegram successfully: {message_text}"

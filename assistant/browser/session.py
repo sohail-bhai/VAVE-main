@@ -77,19 +77,40 @@ class BrowserSession:
             self.profile_dir.mkdir(parents=True, exist_ok=True)
             self._playwright = sync_playwright().start()
 
-            try:
-                self._context = self._playwright.chromium.launch_persistent_context(
-                    user_data_dir=str(self.profile_dir),
-                    headless=self.headless,
-                    viewport={"width": 1280, "height": 900},
-                    args=["--disable-blink-features=AutomationControlled"],
-                )
-            except Exception as error:
-                self.close()
-                raise BrowserUnavailable(
-                    f"Could not start Chromium: {error}. "
-                    "Run: python -m playwright install chromium"
-                ) from error
+            cdp_url = get_setting("browser_cdp_url", "http://127.0.0.1:9222")
+            connected_via_cdp = False
+
+            if cdp_url:
+                try:
+                    import urllib.request
+                    # Non-blocking ping to verify if an active browser is listening on CDP port
+                    req = urllib.request.Request(f"{str(cdp_url).rstrip('/')}/json/version")
+                    with urllib.request.urlopen(req, timeout=0.3):
+                        pass
+                    browser_instance = self._playwright.chromium.connect_over_cdp(cdp_url)
+                    if browser_instance.contexts:
+                        self._context = browser_instance.contexts[0]
+                    else:
+                        self._context = browser_instance.new_context(viewport={"width": 1280, "height": 900})
+                    connected_via_cdp = True
+                    logger.info(f"[BrowserSession] Attached to active daily browser via CDP at {cdp_url}")
+                except Exception as e:
+                    logger.debug(f"[BrowserSession] CDP attach skipped ({e}), falling back to persistent profile.")
+
+            if not connected_via_cdp:
+                try:
+                    self._context = self._playwright.chromium.launch_persistent_context(
+                        user_data_dir=str(self.profile_dir),
+                        headless=self.headless,
+                        viewport={"width": 1280, "height": 900},
+                        args=["--disable-blink-features=AutomationControlled"],
+                    )
+                except Exception as error:
+                    self.close()
+                    raise BrowserUnavailable(
+                        f"Could not start Chromium: {error}. "
+                        "Run: python -m playwright install chromium"
+                    ) from error
 
             self._context.set_default_timeout(self.timeout_ms)
             self._page = (self._context.pages[0] if self._context.pages

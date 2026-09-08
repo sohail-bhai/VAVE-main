@@ -61,12 +61,40 @@ class AssistantController:
         except ImportError:
             pass
 
+        # Pre-import control plane modules on the main thread to prevent thread import race conditions
+        try:
+            import assistant.control.service
+            import assistant.control.secrets
+            import assistant.control.executor
+        except Exception:
+            pass
+
         # Register Telegram Remote Sync
         try:
             from assistant.telegram_sync import start_telegram_sync
             start_telegram_sync()
         except ImportError:
             pass
+
+        # Auto-resume interrupted control plane tasks
+        if get_setting("auto_resume_tasks", True):
+            self._start_task_auto_resume()
+
+    def _start_task_auto_resume(self):
+        def _runner():
+            try:
+                from assistant.control.service import get_control_plane
+                from assistant.control.executor import get_executor
+                plane = get_control_plane()
+                executor = get_executor(plane=plane)
+                resumed = executor.resume_interrupted()
+                if resumed:
+                    logger.info(f"[VAVE] Automatically resumed {len(resumed)} interrupted task(s).")
+            except Exception as e:
+                logger.debug(f"[VAVE] Task auto-resume skipped: {e}")
+
+        import threading
+        threading.Thread(target=_runner, daemon=True, name="task-auto-resume").start()
 
     def _on_wakeword_detected(self):
         """Called by the background thread when 'Hey Vave' is heard."""

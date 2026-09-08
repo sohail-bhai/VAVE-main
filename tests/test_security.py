@@ -229,7 +229,8 @@ class SecretStorageTests(unittest.TestCase):
             value = str(config.get(key, ""))
             with self.subTest(key=key):
                 self.assertTrue(
-                    value == "" or value.startswith(("REPLACE_", "DEMO_")),
+                    value == ""
+                    or value.startswith(("REPLACE_", "DEMO_", "secret://")),
                     f"{key} looks like a real credential in config.json")
 
     def test_a_secret_is_written_to_the_local_file(self):
