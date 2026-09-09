@@ -477,17 +477,61 @@ WEB_SERVICES = {
 }
 
 
-def _site_for(text):
-    """The address behind a site the request names, or None."""
-    lowered = str(text or "").lower()
+COMMON_APP_STOPWORDS = frozenset({
+    "open", "close", "play", "stop", "start", "search", "browse", "for", "and",
+    "the", "with", "from", "into", "onto", "that", "this", "then", "also",
+    "please", "some", "any", "all", "what", "how", "why", "when", "where", "a", "an"
+})
 
-    # A site the user configured wins over the built-in guess.
+
+def _has_installed_desktop_app(name):
+    """Check if a native application is installed locally before considering browser fallback."""
+    clean = str(name or "").lower().strip()
+    if not clean or clean in COMMON_APP_STOPWORDS or len(clean) <= 1:
+        return False
+    try:
+        from assistant.system_tasks import _find_installed_app, get_os
+        system = get_os()
+        # Fast check common aliases
+        if system == "windows":
+            known_windows = {
+                "netflix", "spotify", "whatsapp", "discord", "notepad", "calculator",
+                "calc", "chrome", "vscode", "paint", "cmd", "terminal", "word",
+                "excel", "powerpoint", "edge"
+            }
+            if clean in known_windows:
+                return True
+        path, _ = _find_installed_app(clean, system)
+        return bool(path)
+    except Exception:
+        return False
+
+
+def _site_for(text):
+    """The address behind a site the request names, or None if a native app is installed.
+
+    CRITICAL DIRECTIVE: Native desktop applications are ALWAYS prioritized over browser.
+    Only route to browser if:
+    1. User explicitly requested website/browser ('in browser', 'website', '.com', etc.), OR
+    2. No native desktop application is installed on the system.
+    """
+    lowered = str(text or "").lower()
+    explicit_web = any(w in lowered for w in (
+        "in browser", "on web", "website", "web page", "browser", "site",
+        ".com", ".org", ".net", ".io", "http://", "https://"
+    ))
+
+    # A site the user configured wins over the built-in guess
     for name, url in (get_setting("websites", {}) or {}).items():
         if re.search(r"\b" + re.escape(str(name).lower()) + r"\b", lowered):
+            if not explicit_web and _has_installed_desktop_app(name):
+                return None
             return str(name), str(url)
 
     for name, url in WEB_SERVICES.items():
         if re.search(r"\b" + re.escape(name) + r"\b", lowered):
+            if not explicit_web and _has_installed_desktop_app(name):
+                return None
             return name, url
 
     match = re.search(r"\b((?:www\.)?[a-z0-9-]+\.(?:com|org|net|io|in|co))\b",
@@ -499,7 +543,29 @@ def _site_for(text):
 
 
 def _site_hint(text):
-    """A system message pointing a website request at the browser tools."""
+    """A system message pointing the request at the right tools (Native App first, Browser second)."""
+    lowered = str(text or "").lower()
+    explicit_web = any(w in lowered for w in (
+        "in browser", "on web", "website", "web page", "browser", "site",
+        ".com", ".org", ".net", ".io", "http://", "https://"
+    ))
+
+    # Native App Priority: Check if a native desktop app exists for any named service
+    for name in WEB_SERVICES:
+        if re.search(r"\b" + re.escape(name) + r"\b", lowered):
+            if not explicit_web and _has_installed_desktop_app(name):
+                return {
+                    "role": "system",
+                    "content": (
+                        f"Native application for '{name}' is installed on this machine. "
+                        f"NATIVE APP PRIORITY: Use `open_app('{name}')` to open the desktop application. "
+                        "Then use `get_clickable_elements` or `read_screen` to inspect the app window, "
+                        "and `click_element`, `type_text`, or `press_key` to interact with it. "
+                        "Do NOT use browser tools since native app is installed."
+                    ),
+                }
+            break
+
     found = _site_for(text)
     if not found:
         return None
@@ -507,7 +573,8 @@ def _site_hint(text):
     return {
         "role": "system",
         "content": (
-            f"To access {name}, use `browse('{url}')`. "
+            f"No native app found for '{name}' or browser explicitly requested. "
+            f"Fallback to browser: use `browse('{url}')`. "
             "Then use `browser_elements()` to inspect what is on the page, "
             "and `browser_click(target)` to select an item, profile, or play button. "
             "If the page asks for sign-in, call `browser_wait_for_login`."
@@ -566,6 +633,40 @@ def select_tools(instruction, tools=None):
     # Add legacy named tools if request explicitly states tool words
     wanted = _named_tools(wanted, text) + wanted
 
+    # Determine domain intent: Native App Priority
+    explicit_web = any(w in text.lower() for w in (
+        "in browser", "on web", "website", "web page", "browser", "site",
+        ".com", ".org", ".net", ".io", "http://", "https://"
+    ))
+    has_installed_app_named = not explicit_web and any(_has_installed_desktop_app(word) for word in text.split() if len(word) > 2)
+    is_web = bool(_site_for(text)) or (not has_installed_app_named and any(g[1] == "web" for g in scored if g[0] > 0))
+    has_desktop_specifics = has_installed_app_named or any(w in text for w in (
+        "notepad", "calculator", "calc", "paint", "cmd", "terminal", "powershell",
+        "folder", "directory", "window", "windows", "desktop", "volume", "battery",
+        "screenshot", "lock laptop", "shutdown", "restart", "app", "application"
+    ))
+    is_desktop = has_desktop_specifics or (not is_web and any(g[1] == "computer" for g in scored if g[0] > 0))
+
+    if has_installed_app_named:
+        is_desktop = True
+        is_web = False
+    elif explicit_web:
+        is_web = True
+        is_desktop = False
+
+    desktop_core = ("open_app", "focus_window", "type_text", "press_key", "wait", "click_element", "get_clickable_elements", "list_windows", "close_app")
+    web_core = ("browser_elements", "browser_click", "browser_type", "browser_press", "browser_wait_for", "browser_wait_for_login", "browser_read", "wait")
+
+    # Filter wanted tools by domain BEFORE offering to avoid crowding out slots
+    if is_desktop and not is_web:
+        wanted = [name for name in wanted if name not in BROWSER_ONLY_TOOLS]
+        wanted = list(dict.fromkeys(list(desktop_core) + wanted))
+    elif is_web and not is_desktop:
+        wanted = [name for name in wanted if name not in DESKTOP_ONLY_TOOLS]
+        wanted = list(dict.fromkeys(list(web_core) + wanted))
+    else:
+        wanted = list(dict.fromkeys(list(CORE_TOOL_NAMES) + wanted))
+
     chosen, seen = [], set()
 
     def offer(name):
@@ -582,36 +683,6 @@ def select_tools(instruction, tools=None):
         offer(name)
         if len(chosen) >= MAX_TOOLS_PER_CALL:
             break
-
-    # Determine domain intent
-    is_web = bool(_site_for(text)) or any(g[1] == "web" for g in scored if g[0] > 0)
-    has_desktop_specifics = any(w in text for w in (
-        "notepad", "calculator", "calc", "paint", "cmd", "terminal", "powershell",
-        "folder", "directory", "window", "windows", "desktop", "volume", "battery",
-        "screenshot", "lock laptop", "shutdown", "restart"
-    ))
-    is_desktop = has_desktop_specifics or (not is_web and any(g[1] == "computer" for g in scored if g[0] > 0))
-
-    # Domain isolation: strict separation of web browser vs native desktop OS tools
-    if is_web and not is_desktop:
-        web_core = ("browser_elements", "browser_click", "browser_type", "browser_press", "browser_wait_for", "browser_wait_for_login", "browser_read", "wait")
-        for name in web_core:
-            offer(name)
-            if len(chosen) >= MAX_TOOLS_PER_CALL:
-                break
-        chosen = [tool for tool in chosen if tool["function"]["name"] not in DESKTOP_ONLY_TOOLS]
-    elif is_desktop and not is_web:
-        desktop_core = ("focus_window", "type_text", "press_key", "wait", "click_element", "get_clickable_elements", "list_windows")
-        for name in desktop_core:
-            offer(name)
-            if len(chosen) >= MAX_TOOLS_PER_CALL:
-                break
-        chosen = [tool for tool in chosen if tool["function"]["name"] not in BROWSER_ONLY_TOOLS]
-    else:
-        for name in CORE_TOOL_NAMES:
-            offer(name)
-            if len(chosen) >= MAX_TOOLS_PER_CALL:
-                break
 
     return chosen or catalogue
 

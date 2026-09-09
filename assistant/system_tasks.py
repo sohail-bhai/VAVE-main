@@ -114,12 +114,22 @@ def _get_windows_start_apps():
     _STARTAPPS_CACHE_TIME = now
     return apps
 
+COMMON_APP_STOPWORDS = frozenset({
+    "open", "close", "play", "stop", "start", "search", "browse", "for", "and",
+    "the", "with", "from", "into", "onto", "that", "this", "then", "also",
+    "please", "some", "any", "all", "what", "how", "why", "when", "where", "a", "an"
+})
+
+
 def _find_installed_app(query, system):
     """
     Search installed desktop applications on Windows, macOS, or Linux.
     Returns (path, display_name) or (None, None).
     """
-    clean_q = query.lower().replace(" ", "").replace("_", "").replace("-", "")
+    clean_raw = str(query or "").lower().strip()
+    if not clean_raw or clean_raw in COMMON_APP_STOPWORDS or len(clean_raw) <= 1:
+        return None, None
+    clean_q = clean_raw.replace(" ", "").replace("_", "").replace("-", "")
 
     if system == "windows":
         # 1. Search Windows Store / UWP & desktop applications via Get-StartApps
@@ -261,6 +271,10 @@ def open_app(app_name):
                 "notepad": "start notepad",
                 "calculator": "start calc",
                 "calc": "start calc",
+                "netflix": "start netflix:",
+                "spotify": "start spotify:",
+                "whatsapp": "start whatsapp:",
+                "discord": "start discord:",
                 "vscode": "start code",
                 "vs code": "start code",
                 "code": "start code",
@@ -468,6 +482,16 @@ def close_app(app_name):
         speak(f"Closed {display_name}.")
         return f"Closed {display_name} successfully."
     else:
+        # Fallback: close window directly if it's a UWP / frame-hosted app (like Netflix, Calculator)
+        try:
+            res = close_window(clean_name)
+            if "Closed the window" in res:
+                if _LAST_OPENED_APP and clean_name in _LAST_OPENED_APP.lower():
+                    _LAST_OPENED_APP = None
+                speak(f"Closed {display_name}.")
+                return f"Closed {display_name} successfully."
+        except Exception:
+            pass
         speak(f"No running process found for {display_name}.")
         return f"No running process found for {display_name}."
 
