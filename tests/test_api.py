@@ -670,7 +670,7 @@ class FileApiTests(ApiTestCase):
         import assistant.api.app as api_app
 
         self.files = files
-        self.share = Path(self.tempdir) / "Shared"
+        self.share = (Path(self.tempdir) / "Shared").resolve()
         (self.share / "reports").mkdir(parents=True)
         (self.share / "invoice.pdf").write_bytes(b"a bill")
         (self.share / "reports" / "q3.txt").write_text("numbers")

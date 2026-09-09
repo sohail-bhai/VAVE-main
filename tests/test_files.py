@@ -18,7 +18,7 @@ from assistant.files import FileAccessError
 
 class FileTestCase(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="vave-files-"))
+        self.root = Path(tempfile.mkdtemp(prefix="vave-files-")).resolve()
         self.shared = self.root / "Documents"
         self.private = self.root / "private"
         (self.shared / "reports").mkdir(parents=True)

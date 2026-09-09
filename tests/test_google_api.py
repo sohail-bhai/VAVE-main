@@ -28,6 +28,15 @@ class GoogleApiTestCase(unittest.TestCase):
         security = ApiSecurity(self.plane.store, trust_local=True,
                                trusted_hosts=("testclient", "127.0.0.1"))
         self.client = TestClient(create_app(control=self.plane, security=security))
+        self.patchers = [
+            mock.patch.object(workspace_auth, "load_saved_credentials", return_value=None),
+            mock.patch("assistant.workspace.docs_sheets.get_google_service", return_value=None),
+            mock.patch("assistant.workspace.slides.get_google_service", return_value=None),
+            mock.patch.object(workspace_auth, "get_google_service", return_value=None),
+        ]
+        for p in self.patchers:
+            p.start()
+            self.addCleanup(p.stop)
 
     def approve_everything(self):
         for approval in self.plane.list_approvals(pending_only=True):
@@ -36,6 +45,18 @@ class GoogleApiTestCase(unittest.TestCase):
 
 class HonestyTests(GoogleApiTestCase):
     """Google is not connected in a test, so every answer must admit it."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(
+            workspace_auth, "connection_state",
+            return_value={"state": workspace_auth.NOT_CONFIGURED,
+                          "connected": False,
+                          "mode": "demo",
+                          "detail": "credentials.json is missing."}
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_reading_says_it_is_showing_examples(self):
         body = self.client.get("/api/google/drive").json()
@@ -160,9 +181,8 @@ class AuthorizationTests(unittest.TestCase):
         with mock.patch.object(workspace_auth, "has_client_secrets", return_value=True), \
              mock.patch.object(workspace_auth, "load_saved_credentials", return_value=None):
             state = workspace_auth.connection_state()
-
-        self.assertEqual(workspace_auth.NEEDS_AUTHORIZATION, state["state"])
-        self.assertFalse(workspace_auth.is_workspace_live())
+            self.assertEqual(workspace_auth.NEEDS_AUTHORIZATION, state["state"])
+            self.assertFalse(workspace_auth.is_workspace_live())
 
     def test_the_gateway_reports_live_only_when_google_answers(self):
         gateway = WorkspaceGateway()

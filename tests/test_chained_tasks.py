@@ -291,20 +291,22 @@ class ToolBudgetTests(unittest.TestCase):
     def test_the_web_tools_survive_a_website_request(self):
         from assistant.ai_brain import select_tools
 
-        names = [tool["function"]["name"]
-                 for tool in select_tools("open netflix and open any profile")]
-        for tool in ("browse", "browser_elements", "browser_click"):
-            self.assertIn(tool, names)
+        with mock.patch("assistant.ai_brain._has_installed_desktop_app", return_value=False):
+            names = [tool["function"]["name"]
+                     for tool in select_tools("open netflix and open any profile")]
+            for tool in ("browse", "browser_elements", "browser_click"):
+                self.assertIn(tool, names)
 
 
 class WebsiteRoutingTests(unittest.TestCase):
-    """A brand name is a website, not an app to hunt for in the Run dialog."""
+    """A brand name falls back to website only when no native desktop app is installed."""
 
     def test_known_services_resolve_to_their_address(self):
         from assistant.ai_brain import _site_for
 
-        self.assertEqual(_site_for("open netflix and pick a profile"),
-                         ("netflix", "https://www.netflix.com"))
+        with mock.patch("assistant.ai_brain._has_installed_desktop_app", return_value=False):
+            self.assertEqual(_site_for("open netflix and pick a profile"),
+                             ("netflix", "https://www.netflix.com"))
         self.assertEqual(_site_for("go to example.com and log in")[1],
                          "https://example.com")
 
@@ -316,10 +318,20 @@ class WebsiteRoutingTests(unittest.TestCase):
     def test_the_hint_names_the_browser_flow(self):
         from assistant.ai_brain import _site_hint
 
-        hint = _site_hint("open netflix")["content"]
-        self.assertIn("fall back to the browser", hint)
-        self.assertIn("browse('https://www.netflix.com')", hint)
-        self.assertIn("browser_click", hint)
+        with mock.patch("assistant.ai_brain._has_installed_desktop_app", return_value=False):
+            hint = _site_hint("open netflix")["content"]
+            self.assertIn("Fallback to browser", hint)
+            self.assertIn("browse('https://www.netflix.com')", hint)
+            self.assertIn("browser_click", hint)
+
+    def test_native_app_priority_when_installed(self):
+        from assistant.ai_brain import _site_hint, _site_for
+
+        with mock.patch("assistant.ai_brain._has_installed_desktop_app", return_value=True):
+            self.assertIsNone(_site_for("open netflix and pick a profile"))
+            hint = _site_hint("open netflix")["content"]
+            self.assertIn("NATIVE APP PRIORITY", hint)
+            self.assertIn("open_app('netflix')", hint)
 
 
 class PromptContractTests(unittest.TestCase):

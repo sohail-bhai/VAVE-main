@@ -1,7 +1,6 @@
-"""Unit tests for the Phase 2 Google Workspace Gateway."""
-
 import unittest
 import datetime
+from unittest import mock
 
 from assistant.workspace import (
     WorkspaceGateway,
@@ -28,6 +27,20 @@ from assistant.workspace import (
 
 class TestGoogleWorkspaceGateway(unittest.TestCase):
     """Verifies all Google Workspace modules and gateway routing."""
+
+    def setUp(self):
+        self.patchers = [
+            mock.patch("assistant.workspace.auth.load_saved_credentials", return_value=None),
+            mock.patch("assistant.workspace.auth.get_google_service", return_value=None),
+            mock.patch("assistant.workspace.drive.get_google_service", return_value=None),
+            mock.patch("assistant.workspace.gmail.get_google_service", return_value=None),
+            mock.patch("assistant.workspace.calendar.get_google_service", return_value=None),
+            mock.patch("assistant.workspace.docs_sheets.get_google_service", return_value=None),
+            mock.patch("assistant.workspace.slides.get_google_service", return_value=None),
+        ]
+        for p in self.patchers:
+            p.start()
+            self.addCleanup(p.stop)
 
     def test_gateway_status_and_capabilities(self):
         gw = WorkspaceGateway()
