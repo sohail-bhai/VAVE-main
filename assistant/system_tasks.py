@@ -299,18 +299,12 @@ def open_app(app_name):
                 # If window is already open, activate it instead of launching a duplicate blank window
                 target_cls = None  # initialize before try so it's always defined below
                 try:
-                    import uiautomation as auto
                     import time
-                    app_classes = {"notepad": "Notepad", "calculator": "ApplicationFrameWindow", "calc": "ApplicationFrameWindow"}
-                    target_cls = app_classes.get(query)
-                    if target_cls:
-                        existing = auto.WindowControl(searchDepth=1, ClassName=target_cls)
-                        if existing.Exists(0.3):
-                            speak(f"Opening {display_name}")
-                            existing.SetActive()
-                            if existing.NativeWindowHandle:
-                                activate_window(existing.NativeWindowHandle)
-                            return f"Opened {display_name} (switched to existing active window)."
+                    existing = _find_window(display_name) or _find_window(query)
+                    if existing and getattr(existing, "NativeWindowHandle", None):
+                        speak(f"Opening {display_name}")
+                        activate_window(existing.NativeWindowHandle)
+                        return f"Opened {display_name} (switched to existing active window)."
                 except Exception:
                     pass
 
@@ -321,18 +315,16 @@ def open_app(app_name):
                 os.system(cmd)
 
                 # Wait for the launched window to be ready and activated
-                if target_cls:
-                    for _ in range(30):  # up to 3.0 seconds total, exits immediately when ready
-                        time.sleep(0.1)
-                        try:
-                            new_win = auto.WindowControl(searchDepth=1, ClassName=target_cls)
-                            if new_win.Exists(0.1) and new_win.NativeWindowHandle:
-                                new_win.SetActive()
-                                activate_window(new_win.NativeWindowHandle)
-                                time.sleep(0.2)  # brief settle for UI rendering
-                                break  # App window is ready and focused
-                        except Exception:
-                            pass
+                for _ in range(25):  # up to 2.5 seconds total, exits immediately when ready
+                    time.sleep(0.1)
+                    try:
+                        new_win = _find_window(display_name) or _find_window(query)
+                        if new_win and getattr(new_win, "NativeWindowHandle", None):
+                            activate_window(new_win.NativeWindowHandle)
+                            time.sleep(0.15)
+                            break
+                    except Exception:
+                        pass
                 return f"Successfully opened {display_name} (window active and focused)."
 
         elif system == "darwin":
