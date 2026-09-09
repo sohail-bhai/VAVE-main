@@ -104,6 +104,18 @@ DEFAULT_CONFIG = {
         "focus mode": [
             "set volume to 20",
             "open chatgpt"
+        ],
+        "dev mode": [
+            "split screen code and cmd",
+            "set volume to 30"
+        ],
+        "split screen": [
+            "split screen notepad and calculator"
+        ],
+        "movie mode": [
+            "open netflix",
+            "maximize netflix",
+            "set volume to 60"
         ]
     }
 }

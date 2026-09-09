@@ -281,9 +281,9 @@ def open_app(app_name):
                 "file_explorer": "start explorer",
                 "file explorer": "start explorer",
                 "explorer": "start explorer",
-                "cmd": "start cmd",
-                "terminal": "start cmd",
-                "command prompt": "start cmd",
+                "cmd": "start cmd /k",
+                "terminal": "start cmd /k",
+                "command prompt": "start cmd /k",
                 "powershell": "start powershell",
                 "paint": "start mspaint",
                 "task manager": "start taskmgr",
@@ -1324,9 +1324,27 @@ def get_clickable_elements(window_title=None):
         # WinUI) bury their buttons well below depth 4, which is why shallow
         # scans only ever came back with window chrome.
         for control, depth in auto.WalkControl(active_window, maxDepth=10):
-            # We look for things that might be clickable: Buttons, MenuItems, ListItems, Tabs, etc.
+            # We look for things that might be clickable: Buttons, MenuItems, ListItems, Tabs, Custom controls, Cards, Avatars, etc.
             if control.ControlType in _clickable_control_types(auto):
                 name = control.Name
+                # Deep XAML label extraction: if container/card/avatar has no direct name, inspect child text
+                if not name and control.ControlType in (
+                    auto.ControlType.CustomControl,
+                    auto.ControlType.ListItemControl,
+                    auto.ControlType.GroupControl,
+                    auto.ControlType.ImageControl,
+                    auto.ControlType.PaneControl,
+                ):
+                    try:
+                        for child in control.GetChildren():
+                            if child.ControlType == auto.ControlType.TextControl and child.Name:
+                                name = child.Name
+                                break
+                    except Exception:
+                        pass
+                if not name:
+                    name = control.AutomationId or getattr(control, "HelpText", "") or getattr(control, "ItemStatus", "")
+
                 rect = control.BoundingRectangle
                 if name and rect.width() > 0 and rect.height() > 0:
                     try:
@@ -1338,6 +1356,13 @@ def get_clickable_elements(window_title=None):
                     center_x = rect.left + (rect.width() // 2)
                     center_y = rect.top + (rect.height() // 2)
                     kind = control.ControlTypeName.replace("Control", "")
+                    if control.ControlType == auto.ControlType.CustomControl:
+                        kind = "Custom"
+                    elif control.ControlType == auto.ControlType.ImageControl:
+                        kind = "Image/Avatar"
+                    elif control.ControlType == auto.ControlType.GroupControl:
+                        kind = "Card/Group"
+
                     # Tell the model when a control cannot be actioned, so it
                     # stops retrying a greyed-out button forever.
                     try:
@@ -1390,6 +1415,10 @@ def _clickable_control_types(auto):
         auto.ControlType.ComboBoxControl,
         auto.ControlType.TreeItemControl,
         auto.ControlType.SliderControl,
+        auto.ControlType.CustomControl,
+        auto.ControlType.ImageControl,
+        auto.ControlType.GroupControl,
+        auto.ControlType.PaneControl,
     )
 
 
@@ -1446,6 +1475,22 @@ def click_element(name, window_title=None):
             if control.ControlType not in _clickable_control_types(auto):
                 continue
             label = control.Name
+            if not label and control.ControlType in (
+                auto.ControlType.CustomControl,
+                auto.ControlType.ListItemControl,
+                auto.ControlType.GroupControl,
+                auto.ControlType.ImageControl,
+                auto.ControlType.PaneControl,
+            ):
+                try:
+                    for child in control.GetChildren():
+                        if child.ControlType == auto.ControlType.TextControl and child.Name:
+                            label = child.Name
+                            break
+                except Exception:
+                    pass
+            if not label:
+                label = control.AutomationId or getattr(control, "HelpText", "") or getattr(control, "ItemStatus", "")
             if not label:
                 continue
             rect = control.BoundingRectangle
@@ -1470,7 +1515,7 @@ def click_element(name, window_title=None):
                     f"'{window.Name}'.\n" + get_clickable_elements(window_title))
 
         if len(matches) > 1:
-            names = ", ".join(f"'{c.Name}'" for c in matches[:6])
+            names = ", ".join(f"'{c.Name or c.AutomationId}'" for c in matches[:6])
             return (f"'{wanted}' matches {len(matches)} elements: {names}. "
                     f"Say which one exactly, or use click_at with its "
                     f"coordinates from get_clickable_elements.")
@@ -1478,7 +1523,7 @@ def click_element(name, window_title=None):
         target = matches[0]
         try:
             if not target.IsEnabled:
-                return (f"'{target.Name}' is greyed out and cannot be clicked "
+                return (f"'{target.Name or wanted}' is greyed out and cannot be clicked "
                         f"right now.")
         except Exception:
             pass
@@ -1498,8 +1543,20 @@ def click_element(name, window_title=None):
 
         x = rect.left + (rect.width() // 2)
         y = rect.top + (rect.height() // 2)
-        pyautogui = _get_pyautogui()
-        pyautogui.click(x, y)
+
+        # Prefer direct programmatic InvokePattern if supported
+        invoked = False
+        try:
+            pattern = target.GetInvokePattern()
+            if pattern:
+                pattern.Invoke()
+                invoked = True
+        except Exception:
+            invoked = False
+
+        if not invoked:
+            pyautogui = _get_pyautogui()
+            pyautogui.click(x, y)
         kind = target.ControlTypeName.replace("Control", "")
 
         # Closed-loop verification: check if focus switched or state transitioned
@@ -1515,7 +1572,9 @@ def click_element(name, window_title=None):
         except Exception:
             verification = " (Verified: Click delivered)"
 
-        return f"Clicked '{target.Name}' ({kind}) at ({x}, {y}).{verification}"
+        invoke_detail = " via InvokePattern" if invoked else f" at ({x}, {y})"
+        target_name = target.Name or wanted
+        return f"Clicked '{target_name}' ({kind}){invoke_detail}.{verification}"
     except Exception as e:
         return f"Failed to click '{wanted}': {e}"
 
@@ -1557,7 +1616,7 @@ def list_windows():
 
 
 def _find_window(title):
-    """Best-effort lookup of a top-level window by (partial) title."""
+    """Best-effort lookup of a top-level window by (partial) title or app alias."""
     _ensure_com()
     import uiautomation as auto
 
@@ -1565,15 +1624,37 @@ def _find_window(title):
     current_pid = os.getpid()
     windows = []
     for w in auto.GetRootControl().GetChildren():
-        if w.ControlType == auto.ControlType.WindowControl and w.Name and w.ProcessId != current_pid:
+        if w.ControlType == auto.ControlType.WindowControl and w.ProcessId != current_pid:
             windows.append(w)
 
+    # 1. Exact title match
     for w in windows:
-        if w.Name.strip().lower() == wanted:
+        if (w.Name or "").strip().lower() == wanted:
             return w
+
+    # 2. Substring title match
     for w in windows:
-        if wanted in w.Name.strip().lower():
+        name_lower = (w.Name or "").strip().lower()
+        if name_lower and wanted in name_lower:
             return w
+
+    # 3. Known app aliases (terminal/cmd, notepad, calc, etc.)
+    if wanted in ("cmd", "terminal", "command prompt"):
+        for w in windows:
+            name_lower = (w.Name or "").lower()
+            if "cmd" in name_lower or "command prompt" in name_lower or "terminal" in name_lower or w.ClassName == "CASCADIA_HOSTING_WINDOW_CLASS":
+                return w
+
+    if wanted in ("calc", "calculator"):
+        for w in windows:
+            if "calc" in (w.Name or "").lower():
+                return w
+
+    if wanted in ("notepad",):
+        for w in windows:
+            if "notepad" in (w.Name or "").lower() or w.ClassName == "Notepad":
+                return w
+
     return None
 
 
@@ -1939,4 +2020,56 @@ def snap_window(app_name, position="left"):
     user32.SetWindowPos(hwnd, HWND_TOP, target_x, target_y, target_w, target_h, SWP_SHOWWINDOW)
     activate_window(hwnd)
     return f"Snapped '{window.Name}' to {desc} ({target_w}x{target_h} at {target_x},{target_y})."
+
+
+def organize_workspace(left_app, right_app):
+    """
+    Organizes the desktop into a side-by-side split workspace.
+    Ensures both applications are running (launches them if necessary),
+    snaps left_app to the left half of the display, and snaps right_app to the right half.
+    """
+    system = get_os()
+    if system != "windows":
+        return f"Workspace organization is currently only supported on Windows (detected {system})."
+
+    clean_left = str(left_app or "").strip()
+    clean_right = str(right_app or "").strip()
+    if not clean_left or not clean_right:
+        return "Please specify both left and right applications (e.g. organize_workspace('code', 'cmd'))."
+
+    import time
+
+    # 1. Ensure left app is open
+    left_win = _find_window(clean_left)
+    if not left_win:
+        open_app(clean_left)
+        for _ in range(6):
+            time.sleep(0.5)
+            left_win = _find_window(clean_left)
+            if left_win:
+                break
+
+    # 2. Ensure right app is open
+    right_win = _find_window(clean_right)
+    if not right_win:
+        open_app(clean_right)
+        for _ in range(6):
+            time.sleep(0.5)
+            right_win = _find_window(clean_right)
+            if right_win:
+                break
+
+    # 3. Snap left app to left half
+    res_left = snap_window(clean_left, "left")
+    time.sleep(0.3)
+
+    # 4. Snap right app to right half
+    res_right = snap_window(clean_right, "right")
+    time.sleep(0.3)
+
+    left_name = getattr(left_win, "Name", clean_left) if left_win else clean_left
+    right_name = getattr(right_win, "Name", clean_right) if right_win else clean_right
+
+    return f"Workspace organized: '{left_name}' snapped to left half, '{right_name}' snapped to right half."
+
 

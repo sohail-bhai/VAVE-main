@@ -143,6 +143,7 @@ AVAILABLE_FUNCTIONS = {
     "write_to_screen_line": system_tasks.write_to_screen_line,
     "media_control": system_tasks.media_control,
     "snap_window": system_tasks.snap_window,
+    "organize_workspace": system_tasks.organize_workspace,
 
     # Driving a real browser, the way a person uses the web.
     "browse": browser.browse,
@@ -394,7 +395,7 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(screenshot.*telegram|telegram.*screenshot|screenshot to phone|send me a screenshot)\b"), ("send_telegram_screenshot", "take_screenshot")),
     (re.compile(r"\b(telegram|message)\b"), ("send_telegram_update",)),
     (re.compile(r"\b(pause|resume|next track|skip song|previous track|play song|media)\b"), ("media_control",)),
-    (re.compile(r"\b(snap|snap window|maximize|minimize|center window|split screen)\b"), ("snap_window", "list_windows")),
+    (re.compile(r"\b(snap|snap window|maximize|minimize|center window|split screen|tile|organize workspace|side by side)\b"), ("snap_window", "organize_workspace", "list_windows")),
 )
 
 # When nothing in the request points anywhere, these are what a person most
@@ -418,7 +419,7 @@ DESKTOP_ONLY_TOOLS = frozenset({
     "open_app", "close_app", "focus_window", "list_windows", "close_window",
     "get_clickable_elements", "click_element", "click_at", "double_click_at", "right_click_at",
     "move_mouse", "drag_and_drop", "find_and_click_text", "press_hotkey",
-    "media_control", "snap_window",
+    "media_control", "snap_window", "organize_workspace",
 })
 
 # Tools that work in web browser.
@@ -1601,6 +1602,27 @@ LLM_TOOLS = WEB_TOOLS + [
                 "required": ["app_name", "position"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "organize_workspace",
+            "description": "Arranges two applications side-by-side into a 50/50 split workspace layout on the primary display. Launches either app automatically if not open yet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "left_app": {
+                        "type": "string",
+                        "description": "The application name or window title to place on the left half of the display (e.g. 'code', 'calculator', 'notepad')."
+                    },
+                    "right_app": {
+                        "type": "string",
+                        "description": "The application name or window title to place on the right half of the display (e.g. 'cmd', 'terminal', 'chrome')."
+                    }
+                },
+                "required": ["left_app", "right_app"]
+            }
+        }
     }
 ]
 
@@ -2777,7 +2799,7 @@ for t in SENSITIVE_TOOLS:
 # the assistant unusable. These are the only tools that stay safe.
 SAFE_TOOLS = [
     "tell_time", "tell_date", "tell_battery", "read_notes", "list_windows",
-    "focus_window", "snap_window", "get_clickable_elements", "read_screen", "analyze_screen",
+    "focus_window", "snap_window", "organize_workspace", "get_clickable_elements", "read_screen", "analyze_screen",
     "list_directory", "list_shared_files", "find_shared_file",
     "shared_folders", "read_clipboard", "wait", "browser_read",
     "browser_elements", "browser_screenshot", "browser_tabs",

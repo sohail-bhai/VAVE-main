@@ -301,9 +301,11 @@ def check_routines(command):
     If it does, it executes the list of commands sequentially.
     """
     routines = get_setting("routines", {})
+    clean = str(command or "").strip().lower()
     
     for routine_name, commands_list in routines.items():
-        if routine_name in command:
+        r_name = routine_name.lower().strip()
+        if clean == r_name or clean in (f"run {r_name}", f"start {r_name}", f"activate {r_name}", f"routine {r_name}", f"run routine {r_name}"):
             speak(f"Running routine: {routine_name.title()}")
             for cmd in commands_list:
                 call_context.set_origin("routine")
@@ -706,6 +708,32 @@ def handle_window_snap_command(command: str) -> bool:
     return False
 
 
+_SPLIT_PATTERNS = (
+    re.compile(r"^\s*(?:please\s+)?(?:split\s+screen|organize\s+workspace|tile)(?:\s+(?:between|with))?\s+(?P<left>[a-zA-Z0-9_\-\s]+?)\s+and\s+(?P<right>[a-zA-Z0-9_\-\s]+?)\s*[.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?put\s+(?P<left>[a-zA-Z0-9_\-\s]+?)\s+(?:on\s+the\s+|to\s+the\s+|on\s+)left\s+and\s+(?P<right>[a-zA-Z0-9_\-\s]+?)\s+(?:on\s+the\s+|to\s+the\s+|on\s+)right\s*[.!]?\s*$", re.IGNORECASE),
+)
+
+
+def handle_workspace_split_command(command: str) -> bool:
+    """Fast path for dual-app split screen and workspace organization."""
+    clean = str(command or "").strip()
+    for pattern in _SPLIT_PATTERNS:
+        m = pattern.match(clean)
+        if not m:
+            continue
+        groups = m.groupdict()
+        left = groups.get("left", "").strip()
+        right = groups.get("right", "").strip()
+        if not left or not right:
+            continue
+        from assistant.system_tasks import organize_workspace
+        res = organize_workspace(left, right)
+        speak(res)
+        return True
+    return False
+
+
+
 # Shutting down is a whole-utterance decision. Matching the bare words
 # "stop", "exit" or "quit" anywhere in a sentence used to end the session on
 # "stop overwatch", "stop the music" and "exit fullscreen".
@@ -750,6 +778,9 @@ def execute_single_command(command, auto_confirm=False):
         return True
         
     if check_routines(command):
+        return True
+
+    if handle_workspace_split_command(command):
         return True
 
     if handle_media_command(command):

@@ -89,6 +89,7 @@ TOOL_CAPABILITIES = {
     "find_and_click_text": "system.input.control",
     "media_control": "system.action",
     "snap_window": "system.window.manage",
+    "organize_workspace": "system.window.manage",
     "open_website": "browser.navigate",
     "search_google": "web.search",
     "search_youtube": "web.search",
