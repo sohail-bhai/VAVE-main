@@ -631,6 +631,81 @@ def handle_line_write_command(command: str) -> bool:
 
     return False
 
+
+_MEDIA_PATTERNS = (
+    (re.compile(r"^\s*(?:please\s+)?(?:pause|resume|unpause)\s+(?:the\s+)?(?:music|playback|media|song|video)\s*[.!]?\s*$", re.IGNORECASE), "play_pause", "Paused media."),
+    (re.compile(r"^\s*(?:please\s+)?(?:pause|resume|unpause)\s*[.!]?\s*$", re.IGNORECASE), "play_pause", "Paused media."),
+    (re.compile(r"^\s*(?:please\s+)?(?:play|start)\s+(?:the\s+)?(?:music|playback|media)\s*[.!]?\s*$", re.IGNORECASE), "play_pause", "Resumed media."),
+    (re.compile(r"^\s*(?:please\s+)?(?:next|skip)\s+(?:the\s+)?(?:song|track|music|video)\s*[.!]?\s*$", re.IGNORECASE), "next", "Skipped to next track."),
+    (re.compile(r"^\s*(?:please\s+)?(?:next\s+track|skip\s+track)\s*[.!]?\s*$", re.IGNORECASE), "next", "Skipped to next track."),
+    (re.compile(r"^\s*(?:please\s+)?(?:previous|prev|back)\s+(?:the\s+)?(?:song|track|music|video)\s*[.!]?\s*$", re.IGNORECASE), "previous", "Playing previous track."),
+    (re.compile(r"^\s*(?:please\s+)?(?:previous\s+track|prev\s+track)\s*[.!]?\s*$", re.IGNORECASE), "previous", "Playing previous track."),
+    (re.compile(r"^\s*(?:please\s+)?stop\s+(?:the\s+)?(?:music|playback|media|song)\s*[.!]?\s*$", re.IGNORECASE), "stop", "Stopped media."),
+    (re.compile(r"^\s*(?:please\s+)?(?:mute|unmute)\s+(?:the\s+)?(?:audio|sound|volume|system)\s*[.!]?\s*$", re.IGNORECASE), "mute", "Toggled mute."),
+)
+
+
+def handle_media_command(command: str) -> bool:
+    """Fast path for global multimedia playback and mute controls."""
+    clean = str(command or "").strip()
+    for pattern, action, spoken in _MEDIA_PATTERNS:
+        if pattern.match(clean):
+            from assistant.system_tasks import media_control
+            media_control(action)
+            speak(spoken)
+            return True
+    return False
+
+
+_SNAP_PATTERNS = (
+    re.compile(r"^\s*(?:please\s+)?snap\s+(?:the\s+)?(?P<app>.+?)\s+(?:window\s+)?(?:to\s+(?:the\s+)?)?(?P<pos>left|right|top|bottom)\s*[.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?snap\s+(?:the\s+)?(?:window\s+)?(?:to\s+(?:the\s+)?)?(?P<pos>left|right|top|bottom)\s*[.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?(?:put|move)\s+(?:the\s+)?(?P<app>.+?)\s+(?:on\s+the\s+|to\s+the\s+|to\s+)(?P<pos>left|right|top|bottom)\s*[.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?maximi[sz]e\s+(?:the\s+)?(?P<app>.+?)(?:\s+window)?\s*[.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?minimi[sz]e\s+(?:the\s+)?(?P<app>.+?)(?:\s+window)?\s*[.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?center\s+(?:the\s+)?(?P<app>.+?)(?:\s+window)?\s*[.!]?\s*$", re.IGNORECASE),
+)
+
+
+def handle_window_snap_command(command: str) -> bool:
+    """Fast path for window layout, snapping and positioning."""
+    clean = str(command or "").strip()
+    clean_lower = clean.lower()
+
+    if clean_lower in ("maximize", "maximize window", "maximize the window",
+                       "minimize", "minimize window", "minimize the window"):
+        return False
+
+    for pattern in _SNAP_PATTERNS:
+        m = pattern.match(clean)
+        if not m:
+            continue
+        groups = m.groupdict()
+        app = groups.get("app", "current")
+        if "pos" in groups and groups["pos"]:
+            pos = groups["pos"]
+        elif "maximi" in clean_lower:
+            pos = "maximize"
+        elif "minimi" in clean_lower:
+            pos = "minimize"
+        elif "center" in clean_lower:
+            pos = "center"
+        else:
+            pos = "left"
+
+        if not app:
+            app = "current"
+
+        from assistant.system_tasks import snap_window
+        res = snap_window(app, pos)
+        if "could not find" in res.lower():
+            return False
+        speak(res)
+        return True
+
+    return False
+
+
 # Shutting down is a whole-utterance decision. Matching the bare words
 # "stop", "exit" or "quit" anywhere in a sentence used to end the session on
 # "stop overwatch", "stop the music" and "exit fullscreen".
@@ -675,6 +750,12 @@ def execute_single_command(command, auto_confirm=False):
         return True
         
     if check_routines(command):
+        return True
+
+    if handle_media_command(command):
+        return True
+
+    if handle_window_snap_command(command):
         return True
 
     if handle_volume_command(command):

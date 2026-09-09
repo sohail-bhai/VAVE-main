@@ -42,6 +42,8 @@ CATALOG = {
     "system.power": (RiskLevel.HIGH, "Lock, restart or shut down"),
     "system.settings.write": (RiskLevel.MEDIUM, "Change VAVE settings"),
     "system.notify": (RiskLevel.LOW, "Send you a message"),
+    "system.action": (RiskLevel.LOW, "Trigger multimedia or system events"),
+    "system.window.manage": (RiskLevel.LOW, "Resize, reposition or snap application windows"),
 
     # -- Cloud (Phase 2 builds on these names) ----------------------------
     "gcp.logging.read": (RiskLevel.MEDIUM, "Read cloud logs"),
@@ -85,6 +87,8 @@ TOOL_CAPABILITIES = {
     "scroll": "system.input.control",
     "drag_and_drop": "system.input.control",
     "find_and_click_text": "system.input.control",
+    "media_control": "system.action",
+    "snap_window": "system.window.manage",
     "open_website": "browser.navigate",
     "search_google": "web.search",
     "search_youtube": "web.search",

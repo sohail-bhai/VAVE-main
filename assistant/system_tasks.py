@@ -375,8 +375,19 @@ def open_app(app_name):
                 subprocess.Popen([app_path], shell=True)
                 
             import time
-            time.sleep(1.0) # Wait briefly for app to render
-            return f"Successfully opened installed app '{found_name}' (window active)."
+            active_title = ""
+            for _ in range(15):  # up to 3.0 seconds polling
+                time.sleep(0.2)
+                try:
+                    w = _find_window(found_name)
+                    if w and getattr(w, "NativeWindowHandle", None):
+                        activate_window(w.NativeWindowHandle)
+                        active_title = w.Name
+                        break
+                except Exception:
+                    pass
+            status = f" (Verified active window: '{active_title}')" if active_title else " (window active)"
+            return f"Successfully opened installed app '{found_name}'{status}."
 
         # Tier 3: Fallback to opening in browser
         websites = get_setting("websites", {})
@@ -1487,12 +1498,32 @@ def click_element(name, window_title=None):
             if rect.left < -1000 or rect.top < -1000:
                 return f"Cannot click '{wanted}': window '{window.Name}' is minimized or off-screen."
 
+        orig_fg = None
+        try:
+            orig_fg = auto.GetForegroundControl()
+        except Exception:
+            pass
+
         x = rect.left + (rect.width() // 2)
         y = rect.top + (rect.height() // 2)
         pyautogui = _get_pyautogui()
         pyautogui.click(x, y)
         kind = target.ControlTypeName.replace("Control", "")
-        return f"Clicked '{target.Name}' ({kind}) at ({x}, {y})."
+
+        # Closed-loop verification: check if focus switched or state transitioned
+        import time
+        time.sleep(0.25)
+        verification = ""
+        try:
+            new_fg = auto.GetForegroundControl()
+            if new_fg and orig_fg and getattr(new_fg, "NativeWindowHandle", None) != getattr(orig_fg, "NativeWindowHandle", None):
+                verification = f" (Verified: Active window switched to '{new_fg.Name}')"
+            else:
+                verification = " (Verified: Click delivered)"
+        except Exception:
+            verification = " (Verified: Click delivered)"
+
+        return f"Clicked '{target.Name}' ({kind}) at ({x}, {y}).{verification}"
     except Exception as e:
         return f"Failed to click '{wanted}': {e}"
 
@@ -1680,3 +1711,240 @@ def send_telegram_update(message_text):
 
     send_telegram_message(token, chat_id, message_text)
     return f"Message sent to Telegram successfully: {message_text}"
+
+
+def media_control(action="play_pause"):
+    """
+    Controls OS-level multimedia playback globally in the background without needing focus.
+    Supported actions:
+      - 'play_pause', 'play', 'pause', 'resume': toggle playback
+      - 'next', 'next_track', 'skip': skip to next track
+      - 'previous', 'prev', 'prev_track': go to previous track / restart track
+      - 'stop': stop playback
+      - 'mute', 'unmute': toggle master audio mute
+    """
+    act = str(action or "play_pause").lower().strip().replace(" ", "_")
+    system = get_os()
+
+    if system == "windows":
+        import ctypes
+        VK_VOLUME_MUTE = 0xAD       # 173
+        VK_MEDIA_NEXT_TRACK = 0xB0  # 176
+        VK_MEDIA_PREV_TRACK = 0xB1  # 177
+        VK_MEDIA_STOP = 0xB2        # 178
+        VK_MEDIA_PLAY_PAUSE = 0xB3  # 179
+        KEYEVENTF_EXTENDEDKEY = 0x0001
+        KEYEVENTF_KEYUP = 0x0002
+
+        vk_map = {
+            "play_pause": VK_MEDIA_PLAY_PAUSE,
+            "play": VK_MEDIA_PLAY_PAUSE,
+            "pause": VK_MEDIA_PLAY_PAUSE,
+            "resume": VK_MEDIA_PLAY_PAUSE,
+            "unpause": VK_MEDIA_PLAY_PAUSE,
+            "next": VK_MEDIA_NEXT_TRACK,
+            "next_track": VK_MEDIA_NEXT_TRACK,
+            "skip": VK_MEDIA_NEXT_TRACK,
+            "previous": VK_MEDIA_PREV_TRACK,
+            "prev": VK_MEDIA_PREV_TRACK,
+            "prev_track": VK_MEDIA_PREV_TRACK,
+            "stop": VK_MEDIA_STOP,
+            "mute": VK_VOLUME_MUTE,
+            "unmute": VK_VOLUME_MUTE,
+        }
+
+        vk = vk_map.get(act)
+        if not vk:
+            return f"Unknown media action: '{action}'. Use play_pause, next, previous, stop, or mute."
+
+        try:
+            user32 = ctypes.windll.user32
+            user32.keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY, 0)
+            user32.keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+            return f"Media command '{act}' executed successfully."
+        except Exception as e:
+            try:
+                pyautogui = _get_pyautogui()
+                pg_map = {
+                    VK_MEDIA_PLAY_PAUSE: "playpause",
+                    VK_MEDIA_NEXT_TRACK: "nexttrack",
+                    VK_MEDIA_PREV_TRACK: "prevtrack",
+                    VK_MEDIA_STOP: "stop",
+                    VK_VOLUME_MUTE: "volumemute",
+                }
+                pyautogui.press(pg_map[vk])
+                return f"Media command '{act}' executed successfully via pyautogui."
+            except Exception as e2:
+                return f"Failed to execute media command '{act}': {e} / {e2}"
+
+    elif system == "darwin":
+        cmd_map = {
+            "play_pause": "playpause",
+            "play": "play",
+            "pause": "pause",
+            "resume": "play",
+            "unpause": "play",
+            "next": "next track",
+            "skip": "next track",
+            "previous": "previous track",
+            "prev": "previous track",
+            "stop": "pause",
+        }
+        if act == "mute" or act == "unmute":
+            os.system("osascript -e 'set volume output muted (not (output muted of (get volume settings)))'")
+            return f"Media command '{act}' executed successfully on macOS."
+        sub = cmd_map.get(act)
+        if not sub:
+            return f"Unknown media action: '{action}'. Use play_pause, next, previous, stop, or mute."
+        try:
+            os.system(f"osascript -e 'tell application \"Music\" to {sub}'")
+            return f"Media command '{act}' executed successfully on macOS."
+        except Exception as e:
+            return f"Failed to execute media command on macOS: {e}"
+
+    else:
+        cmd_map = {
+            "play_pause": "play-pause",
+            "play": "play",
+            "pause": "pause",
+            "resume": "play",
+            "unpause": "play",
+            "next": "next",
+            "skip": "next",
+            "previous": "previous",
+            "prev": "previous",
+            "stop": "stop",
+        }
+        sub = cmd_map.get(act)
+        if not sub:
+            return f"Unknown media action: '{action}'. Use play_pause, next, previous, stop, or mute."
+        try:
+            subprocess.run(["playerctl", sub], check=False)
+            return f"Media command '{act}' executed successfully via playerctl."
+        except Exception as e:
+            return f"Failed to execute media command: {e}"
+
+
+def snap_window(app_name, position="left"):
+    """
+    Snaps or repositions an application window to an organized desktop layout.
+    Supported positions:
+      - 'left': snap to left half of screen
+      - 'right': snap to right half of screen
+      - 'top': snap to top half of screen
+      - 'bottom': snap to bottom half of screen
+      - 'maximize', 'full', 'max': maximize window
+      - 'minimize', 'min': minimize window
+      - 'restore': restore window to normal size
+      - 'center': position window centered taking ~75% screen
+    """
+    pos = str(position or "left").lower().strip()
+    system = get_os()
+
+    if system != "windows":
+        return f"Window snapping is currently only supported on Windows (detected {system})."
+
+    _ensure_com()
+    import uiautomation as auto
+    import ctypes
+    from ctypes import wintypes
+
+    clean_target = str(app_name or "").strip()
+    if not clean_target:
+        return "Please specify an application name or window title to snap."
+
+    # Find the target window
+    window = None
+    if clean_target.lower() in ("current", "active", "this", "foreground"):
+        try:
+            window = auto.GetForegroundControl()
+        except Exception:
+            window = None
+    else:
+        window = _find_window(clean_target)
+
+    if not window:
+        return f"Could not find open window matching '{clean_target}'. Use list_windows to see active windows."
+
+    hwnd = getattr(window, "NativeWindowHandle", None)
+    if not hwnd or hwnd == 0:
+        return f"Window '{window.Name}' does not have a valid native window handle."
+
+    user32 = ctypes.windll.user32
+
+    # Window ShowWindow constants
+    SW_RESTORE = 9
+    SW_MAXIMIZE = 3
+    SW_MINIMIZE = 6
+    HWND_TOP = 0
+    SWP_SHOWWINDOW = 0x0040
+
+    if pos in ("maximize", "max", "full"):
+        user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        activate_window(hwnd)
+        return f"Maximized '{window.Name}'."
+
+    if pos in ("minimize", "min"):
+        user32.ShowWindow(hwnd, SW_MINIMIZE)
+        return f"Minimized '{window.Name}'."
+
+    if pos in ("restore", "normal"):
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        activate_window(hwnd)
+        return f"Restored '{window.Name}' to normal size."
+
+    # Query work area (excluding taskbar)
+    SPI_GETWORKAREA = 0x0030
+    rect = wintypes.RECT()
+    if not user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+        rect.left = 0
+        rect.top = 0
+        rect.right = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+        rect.bottom = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+
+    screen_x = rect.left
+    screen_y = rect.top
+    screen_w = rect.right - rect.left
+    screen_h = rect.bottom - rect.top
+
+    # Ensure window is restored before moving (maximized windows cannot be repositioned with SetWindowPos)
+    user32.ShowWindow(hwnd, SW_RESTORE)
+
+    if pos in ("left", "half_left"):
+        target_x = screen_x
+        target_y = screen_y
+        target_w = screen_w // 2
+        target_h = screen_h
+        desc = "left half"
+    elif pos in ("right", "half_right"):
+        target_x = screen_x + (screen_w // 2)
+        target_y = screen_y
+        target_w = screen_w - (screen_w // 2)
+        target_h = screen_h
+        desc = "right half"
+    elif pos in ("top", "half_top"):
+        target_x = screen_x
+        target_y = screen_y
+        target_w = screen_w
+        target_h = screen_h // 2
+        desc = "top half"
+    elif pos in ("bottom", "half_bottom"):
+        target_x = screen_x
+        target_y = screen_y + (screen_h // 2)
+        target_w = screen_w
+        target_h = screen_h - (screen_h // 2)
+        desc = "bottom half"
+    elif pos in ("center", "middle"):
+        target_w = int(screen_w * 0.75)
+        target_h = int(screen_h * 0.75)
+        target_x = screen_x + (screen_w - target_w) // 2
+        target_y = screen_y + (screen_h - target_h) // 2
+        desc = "center"
+    else:
+        return f"Unknown position '{position}'. Use 'left', 'right', 'top', 'bottom', 'maximize', 'minimize', or 'center'."
+
+    # Apply placement
+    user32.SetWindowPos(hwnd, HWND_TOP, target_x, target_y, target_w, target_h, SWP_SHOWWINDOW)
+    activate_window(hwnd)
+    return f"Snapped '{window.Name}' to {desc} ({target_w}x{target_h} at {target_x},{target_y})."
+

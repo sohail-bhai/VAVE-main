@@ -141,6 +141,8 @@ AVAILABLE_FUNCTIONS = {
     "send_telegram_update": system_tasks.send_telegram_update,
     "send_telegram_screenshot": lambda **kwargs: __import__('assistant.telegram_sync', fromlist=['']).send_telegram_screenshot(**kwargs),
     "write_to_screen_line": system_tasks.write_to_screen_line,
+    "media_control": system_tasks.media_control,
+    "snap_window": system_tasks.snap_window,
 
     # Driving a real browser, the way a person uses the web.
     "browse": browser.browse,
@@ -391,6 +393,8 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(screen|read screen|see screen|analyze screen|what is on my screen|describe screen|look at screen)\b"), ("analyze_screen", "read_screen", "take_screenshot")),
     (re.compile(r"\b(screenshot.*telegram|telegram.*screenshot|screenshot to phone|send me a screenshot)\b"), ("send_telegram_screenshot", "take_screenshot")),
     (re.compile(r"\b(telegram|message)\b"), ("send_telegram_update",)),
+    (re.compile(r"\b(pause|resume|next track|skip song|previous track|play song|media)\b"), ("media_control",)),
+    (re.compile(r"\b(snap|snap window|maximize|minimize|center window|split screen)\b"), ("snap_window", "list_windows")),
 )
 
 # When nothing in the request points anywhere, these are what a person most
@@ -414,6 +418,7 @@ DESKTOP_ONLY_TOOLS = frozenset({
     "open_app", "close_app", "focus_window", "list_windows", "close_window",
     "get_clickable_elements", "click_element", "click_at", "double_click_at", "right_click_at",
     "move_mouse", "drag_and_drop", "find_and_click_text", "press_hotkey",
+    "media_control", "snap_window",
 })
 
 # Tools that work in web browser.
@@ -424,9 +429,9 @@ BROWSER_ONLY_TOOLS = frozenset({
     "browser_switch_tab", "browser_wait_for_login", "remember_about_site",
 })
 
-# A tight ceiling on tools per call (12 tools max) to keep local LLM prompt
+# A tight ceiling on tools per call (16 tools max) to keep local LLM prompt
 # prefill under 2.5s and prevent small-model tool hallucination.
-MAX_TOOLS_PER_CALL = 12
+MAX_TOOLS_PER_CALL = 16
 
 
 def _trigger_regex(trigger):
@@ -654,18 +659,19 @@ def select_tools(instruction, tools=None):
         is_web = True
         is_desktop = False
 
-    desktop_core = ("open_app", "focus_window", "type_text", "press_key", "wait", "click_element", "get_clickable_elements", "list_windows", "close_app")
+    desktop_core = ("open_app", "focus_window", "type_text", "press_key", "wait", "click_element", "click_at", "get_clickable_elements", "list_windows", "close_app", "close_window")
     web_core = ("browser_elements", "browser_click", "browser_type", "browser_press", "browser_wait_for", "browser_wait_for_login", "browser_read", "wait")
+    required_atomic = ("press_key", "type_text", "click_at", "get_clickable_elements", "focus_window", "list_windows", "close_window")
 
     # Filter wanted tools by domain BEFORE offering to avoid crowding out slots
     if is_desktop and not is_web:
-        wanted = [name for name in wanted if name not in BROWSER_ONLY_TOOLS]
-        wanted = list(dict.fromkeys(list(desktop_core) + wanted))
+        clean_wanted = [name for name in wanted if name not in BROWSER_ONLY_TOOLS]
+        wanted = list(dict.fromkeys(list(required_atomic) + clean_wanted + list(desktop_core)))
     elif is_web and not is_desktop:
-        wanted = [name for name in wanted if name not in DESKTOP_ONLY_TOOLS]
-        wanted = list(dict.fromkeys(list(web_core) + wanted))
+        clean_wanted = [name for name in wanted if name not in DESKTOP_ONLY_TOOLS]
+        wanted = list(dict.fromkeys(clean_wanted + list(web_core)))
     else:
-        wanted = list(dict.fromkeys(list(CORE_TOOL_NAMES) + wanted))
+        wanted = list(dict.fromkeys(list(required_atomic) + wanted + list(CORE_TOOL_NAMES)))
 
     chosen, seen = [], set()
 
@@ -1555,7 +1561,47 @@ LLM_TOOLS = WEB_TOOLS + [
     {"type": "function", "function": {"name": "restart_laptop", "description": "Restarts the computer.", "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "read_notes", "description": "Reads all saved notes.", "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "clear_notes", "description": "Clears all saved notes.", "parameters": {"type": "object", "properties": {}}}},
-    {"type": "function", "function": {"name": "add_note", "description": "Saves a new note.", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The note text"}}, "required": ["text"]}}}
+    {"type": "function", "function": {"name": "add_note", "description": "Saves a new note.", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The note text"}}, "required": ["text"]}}},
+    {
+        "type": "function",
+        "function": {
+            "name": "media_control",
+            "description": "Controls global media playback in the background (play/pause, next track, previous track, stop, mute). Works with Spotify, Netflix, YouTube, and desktop players without needing window focus.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["play_pause", "play", "pause", "next", "previous", "stop", "mute"],
+                        "description": "The media playback action to perform."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "snap_window",
+            "description": "Snaps or repositions an application window to an organized desktop layout (left half, right half, top half, bottom half, maximize, minimize, center).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app_name": {
+                        "type": "string",
+                        "description": "Application name or window title to snap (or 'current' for focused window)."
+                    },
+                    "position": {
+                        "type": "string",
+                        "enum": ["left", "right", "top", "bottom", "maximize", "minimize", "restore", "center"],
+                        "description": "Target screen position or state."
+                    }
+                },
+                "required": ["app_name", "position"]
+            }
+        }
+    }
 ]
 
 # Short-term Memory (Conversation History)
@@ -1849,13 +1895,13 @@ def _is_installed(name):
 # to make, prose to write. Mechanical desktop actions (typing, clicking, volume,
 # launching apps) stay on 3B for sub-3s response speed.
 _ESCALATION_HINTS = (
-    "think deeply", "in detail", "smart mode", "deep research",
-    "research", "compare", "summarise", "summarize", "summary",
-    "explain in detail", "explain why", "analyse", "analyze",
-    "review code", "code review", "debug", "refactor", "solve",
-    "algorithm", "architect", "write essay", "write report",
-    "write article", "draft email", "write code", "write script",
-    "write python", "how should", "figure out why", "recommend best",
+    "research", "compare", "summarise", "summarize", "summary", "explain",
+    "analyse", "analyze", "review", "plan", "draft", "write", "rewrite",
+    "essay", "report", "article", "email", "reply", "presentation", "slides",
+    "spreadsheet", "code", "debug", "refactor", "fix the", "why does",
+    "why is", "how should", "figure out", "work out", "decide", "recommend",
+    "suggest", "translate", "rename", "organize", "organise", "convert",
+    "and then", "after that", "step by step",
 )
 
 
@@ -2719,6 +2765,7 @@ SENSITIVE_TOOLS = [
     "web_api_call", "write_clipboard", "remember_fact", "ingest_document",
     "start_overwatch", "stop_overwatch", "open_app", "close_app",
     "set_volume", "mute_volume", "schedule_meeting", "add_note",
+    "send_telegram_screenshot", "media_control",
 ]
 
 for t in DESTRUCTIVE_TOOLS:
@@ -2730,7 +2777,7 @@ for t in SENSITIVE_TOOLS:
 # the assistant unusable. These are the only tools that stay safe.
 SAFE_TOOLS = [
     "tell_time", "tell_date", "tell_battery", "read_notes", "list_windows",
-    "focus_window", "get_clickable_elements", "read_screen", "analyze_screen",
+    "focus_window", "snap_window", "get_clickable_elements", "read_screen", "analyze_screen",
     "list_directory", "list_shared_files", "find_shared_file",
     "shared_folders", "read_clipboard", "wait", "browser_read",
     "browser_elements", "browser_screenshot", "browser_tabs",
