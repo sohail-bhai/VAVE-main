@@ -35,6 +35,15 @@ def read_google_drive_file(file_id: str) -> str:
 def upload_google_drive_file(name: str, content: str) -> str:
     return str(workspace.upload_drive_file(name, content))
 
+def sync_google_drive(full_reindex: bool = False) -> str:
+    return str(workspace.sync_drive_index(full_reindex=bool(full_reindex)))
+
+def semantic_search_google_drive(query: str, limit: int = 5) -> str:
+    return str(workspace.semantic_search_drive(query=query, limit=int(limit)))
+
+def export_to_google_drive(name: str, content: str, mime_type: str = "text/plain") -> str:
+    return str(workspace.export_to_drive(name=name, content=content, mime_type=mime_type))
+
 def summarize_gmail_inbox(limit: int = 5) -> str:
     return workspace.summarize_emails(limit=int(limit))
 
@@ -69,6 +78,9 @@ AVAILABLE_FUNCTIONS = {
     "search_google_drive": search_google_drive,
     "read_google_drive_file": read_google_drive_file,
     "upload_google_drive_file": upload_google_drive_file,
+    "sync_google_drive": sync_google_drive,
+    "semantic_search_google_drive": semantic_search_google_drive,
+    "export_to_google_drive": export_to_google_drive,
     "summarize_gmail_inbox": summarize_gmail_inbox,
     "draft_gmail_message": draft_gmail_message,
     "create_google_calendar_event": create_google_calendar_event,
@@ -735,6 +747,50 @@ LLM_TOOLS = WEB_TOOLS + [
                 "properties": {
                     "name": {"type": "string", "description": "The filename including extension (e.g. 'Project_Notes.txt')."},
                     "content": {"type": "string", "description": "The text content of the file."}
+                },
+                "required": ["name", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sync_google_drive",
+            "description": "Synchronizes Google Drive files with local semantic vector memory and purges deleted documents.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "full_reindex": {"type": "boolean", "description": "If true, forces re-chunking and re-indexing of all Drive files."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "semantic_search_google_drive",
+            "description": "Performs deep semantic vector similarity search across indexed Google Drive document contents.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The natural language query or concept to search for."},
+                    "limit": {"type": "integer", "description": "Maximum number of semantic excerpts to return (default 5)."}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_to_google_drive",
+            "description": "Uploads a document or note to Google Drive and indexes it immediately into vector memory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The destination filename on Google Drive."},
+                    "content": {"type": "string", "description": "The document contents to write."},
+                    "mime_type": {"type": "string", "description": "MIME type (default 'text/plain')."}
                 },
                 "required": ["name", "content"]
             }
@@ -2794,7 +2850,7 @@ SENSITIVE_TOOLS = [
     "update_setting", "take_screenshot", "read_file", "send_email",
     "git_auto_commit_and_push", "spawn_parallel_agents",
     "run_actor_critic_research", "send_telegram_update",
-    "upload_google_drive_file", "draft_gmail_message",
+    "upload_google_drive_file", "export_to_google_drive", "draft_gmail_message",
     "create_google_calendar_event", "create_google_doc",
     "create_google_slides", "enable_voice_input", "enable_speech_output",
     # Pointing and clicking: a click can submit a form, buy something or
@@ -2833,6 +2889,7 @@ SAFE_TOOLS = [
     "browser_wait_for", "browser_switch_tab", "browser_wait_for_login",
     "search_web", "web_api_get", "get_weather", "get_schedule",
     "read_unread_emails", "summarize_gmail_inbox", "search_google_drive",
+    "sync_google_drive", "semantic_search_google_drive",
     "read_google_drive_file", "ask_document", "propose_new_feature",
     "scrape_project_ideas", "deep_test_project", "provide_morning_briefing",
     "gitlab_list_issues", "gitlab_read_issue", "gitlab_find_file",

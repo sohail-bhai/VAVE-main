@@ -212,6 +212,20 @@ MIGRATIONS = [
     ("0014_secret_scopes", [
         ("secrets", "allowed_capabilities", "ALTER TABLE secrets ADD COLUMN allowed_capabilities TEXT DEFAULT ''"),
     ]),
+    ("0015_drive_sync_state", """
+        CREATE TABLE IF NOT EXISTS drive_sync_state (
+            file_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            modified_time TEXT NOT NULL,
+            last_indexed_at REAL NOT NULL,
+            chunk_count INTEGER DEFAULT 0,
+            etag TEXT DEFAULT '',
+            web_view_link TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_drive_sync_indexed ON drive_sync_state (last_indexed_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_drive_sync_name ON drive_sync_state (name);
+    """),
 ]
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "control.db"
@@ -548,6 +562,41 @@ class ControlStore:
         self._write("UPDATE notifications SET read = 1 WHERE id = ?", (notification_id,))
         row = self._row("SELECT * FROM notifications WHERE id = ?", (notification_id,))
         return dict(row) if row is not None else None
+
+    # -- drive sync state ---------------------------------------------------
+
+    def save_drive_sync_file(self, file_id, name, mime_type, modified_time, last_indexed_at,
+                             chunk_count=0, etag="", web_view_link=""):
+        self._write(
+            "INSERT INTO drive_sync_state (file_id, name, mime_type, modified_time, "
+            "last_indexed_at, chunk_count, etag, web_view_link) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(file_id) DO UPDATE SET name=excluded.name, "
+            "mime_type=excluded.mime_type, modified_time=excluded.modified_time, "
+            "last_indexed_at=excluded.last_indexed_at, chunk_count=excluded.chunk_count, "
+            "etag=excluded.etag, web_view_link=excluded.web_view_link",
+            (file_id, name, mime_type, modified_time, float(last_indexed_at),
+             int(chunk_count), str(etag or ""), str(web_view_link or "")),
+        )
+        return self.get_drive_sync_file(file_id)
+
+    def get_drive_sync_file(self, file_id):
+        row = self._row("SELECT * FROM drive_sync_state WHERE file_id = ?", (file_id,))
+        return dict(row) if row is not None else None
+
+    def list_drive_sync_files(self):
+        return [dict(r) for r in self._rows("SELECT * FROM drive_sync_state ORDER BY name ASC")]
+
+    def delete_drive_sync_file(self, file_id):
+        existing = self.get_drive_sync_file(file_id)
+        if existing:
+            self._write("DELETE FROM drive_sync_state WHERE file_id = ?", (file_id,))
+        return existing
+
+    def get_drive_sync_summary(self):
+        row = self._row("SELECT COUNT(*) as total_files, COALESCE(SUM(chunk_count), 0) as total_chunks, "
+                        "COALESCE(MAX(last_indexed_at), 0.0) as last_sync_at FROM drive_sync_state")
+        return dict(row) if row is not None else {"total_files": 0, "total_chunks": 0, "last_sync_at": 0.0}
 
     # -- policy rules -------------------------------------------------------
 

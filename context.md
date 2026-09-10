@@ -110,15 +110,29 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
   - Secret resolution restricted to matching capability patterns (e.g. `google.*`, `telegram.*`).
   - Safety guard interception for unauthorized secret resolution during tool execution.
 
+### Phase 5: Google Workspace Cloud Sync (Complete)
+- [x] **Bi-Directional Drive Semantic Indexer**:
+  - Incremental sync engine (`assistant/workspace/drive_indexer.py`) chunking Drive documents into ChromaDB vector collection `google_drive_index`.
+  - SQLite table `drive_sync_state` (migration `0015_drive_sync_state`) tracking file metadata, last indexed timestamps, and chunk counts.
+  - Multi-format document parser supporting Google Docs (`text/plain`), Sheets (`text/csv`), Slides (`text/plain`), and binary fallback.
+  - Semantic vector search (`semantic_search_drive`) and instant export-and-index (`export_to_drive`).
+- [x] **Verified Gmail Drafting & Sending**:
+  - Recipient email syntax validation enforcing strict RFC address formatting.
+  - Verified drafting (`draft_gmail_message`) returning confirmation payload without sending.
+  - Zero-trust approval gate for sending with capability-scoped credential protection (`google.gmail.*`).
+- [x] **Brain & API Gateway Integration**:
+  - Tools wired to `ai_brain.py` (`sync_google_drive`, `semantic_search_google_drive`, `export_to_google_drive`, `draft_gmail_message`) with sensitivity classification.
+  - REST API endpoints: `POST /api/google/drive/sync`, `GET /api/google/drive/semantic-search`, `POST /api/google/drive/export`, `POST /api/google/gmail/draft`, `POST /api/google/gmail/send`.
+
 ---
 
 ## 4. Current Operational Stage
 
-> **CURRENT STATUS: STAGE 4.5+ (Hardened Control Plane Production Foundation) COMPLETED**
+> **CURRENT STATUS: STAGE 5 (Google Workspace Cloud Sync & Verified Comms) COMPLETED**
 
 - **Verification Status**:
   - **11/11 Smoke Tests Passing** (`python main.py --smoke-test`).
-  - **35/35 Test Suites Green** (300+ unit tests across API, Control Plane, Secrets, Notifier, Executor, Guard, and Routing).
+  - **All Test Suites Green** (including `test_drive_indexer.py`, `test_gmail_verified.py`, `test_google_api.py`, `test_api.py`, `test_secrets.py`, `test_store_migrations.py`).
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
 - **Security Posture**:
   - Zero hardcoded secrets; credentials encrypted with AES-GCM and scoped by capability.
@@ -129,11 +143,7 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
 
 ## 5. Next Steps & Future Roadmap
 
-1. **Phase 5: Google Workspace Cloud Sync**:
-   - Bi-directional Google Drive semantic indexer.
-   - Gmail draft composition and verified sending through scoped credentials.
-   - Google Calendar sync and on-demand daily briefings.
-2. **Mobile Client Integration**:
+1. **Mobile Client Integration**:
    - Pair standalone mobile app (Flutter/React Native) via `/api/pair` and test WebSocket/SSE push notifications.
-3. **Smart Home Expansion**:
+2. **Smart Home Expansion**:
    - Webhook bridge for IoT appliances and ambient control.

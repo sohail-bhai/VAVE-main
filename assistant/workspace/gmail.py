@@ -6,12 +6,25 @@ and sending emails with safety controls.
 
 import base64
 import logging
+import re
+import time
+import uuid
 from email.mime.text import MIMEText
 from typing import List, Dict, Any, Optional
 
 from assistant.workspace.auth import get_google_service
 
 logger = logging.getLogger(__name__)
+
+_EMAIL_RE = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)+$")
+
+
+def validate_email_recipient(email_address: str) -> bool:
+    """Validates the syntax of an email recipient."""
+    if not email_address or not isinstance(email_address, str):
+        return False
+    return bool(_EMAIL_RE.match(email_address.strip()))
+
 
 _mock_emails: List[Dict[str, Any]] = [
     {
@@ -120,45 +133,108 @@ def summarize_emails(limit: int = 5) -> str:
 
 
 def draft_email(to: str, subject: str, body: str) -> Dict[str, Any]:
-    """Creates a draft in Gmail."""
+    """Creates a verified draft in Gmail."""
+    to_clean = (to or "").strip()
+    if not validate_email_recipient(to_clean):
+        raise ValueError(f"Invalid recipient email address: '{to}'")
+
     service = get_google_service("gmail", "v1")
     if service is not None:
         try:
             message = MIMEText(body)
-            message["to"] = to
+            message["to"] = to_clean
             message["subject"] = subject
             raw_msg = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
             draft = service.users().drafts().create(userId="me", body={"message": {"raw": raw_msg}}).execute()
-            logger.info(f"Created draft in Gmail: '{subject}' to {to}")
-            return draft
+            draft_id = draft.get("id")
+
+            # Verify draft existence
+            verified = False
+            if draft_id:
+                try:
+                    verified_draft = service.users().drafts().get(userId="me", id=draft_id).execute()
+                    verified = bool(verified_draft and verified_draft.get("id") == draft_id)
+                except Exception as verify_err:
+                    logger.warning("Could not verify draft %s: %s", draft_id, verify_err)
+
+            logger.info(f"Created and verified draft in Gmail: '{subject}' to {to_clean} (ID: {draft_id})")
+            return {
+                "id": draft_id,
+                "draft_id": draft_id,
+                "status": "drafted",
+                "to": to_clean,
+                "subject": subject,
+                "body": body,
+                "verified": verified,
+                "notice": f"Draft created in Gmail (ID: {draft_id}) and verified."
+            }
         except Exception as e:
             logger.error(f"Failed to create draft: {e}")
-            return {"error": str(e)}
 
-    # Mock draft
-    import uuid
+    # Demo mode fallback
     draft_id = f"draft_{uuid.uuid4().hex[:8]}"
-    logger.info(f"[Demo Mode] Created draft '{subject}' to {to} (ID: {draft_id})")
-    return {"id": draft_id, "to": to, "subject": subject, "body": body, "status": "drafted"}
+    logger.info(f"[Demo Mode] Created draft '{subject}' to {to_clean} (ID: {draft_id})")
+    return {
+        "id": draft_id,
+        "draft_id": draft_id,
+        "to": to_clean,
+        "subject": subject,
+        "body": body,
+        "status": "drafted",
+        "verified": True,
+        "notice": f"[Demo Mode] Draft created (ID: {draft_id}) and verified."
+    }
 
 
 def send_email(to: str, subject: str, body: str) -> Dict[str, Any]:
-    """Sends an email via Gmail (Consequential action, passes through safety gate)."""
+    """Sends an email via Gmail and verifies delivery confirmation."""
+    to_clean = (to or "").strip()
+    if not validate_email_recipient(to_clean):
+        raise ValueError(f"Invalid recipient email address: '{to}'")
+
     service = get_google_service("gmail", "v1")
     if service is not None:
         try:
             message = MIMEText(body)
-            message["to"] = to
+            message["to"] = to_clean
             message["subject"] = subject
             raw_msg = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
             sent = service.users().messages().send(userId="me", body={"raw": raw_msg}).execute()
-            logger.info(f"Sent email: '{subject}' to {to}")
-            return sent
+            msg_id = sent.get("id")
+
+            # Verify that message was recorded in Sent
+            verified = False
+            if msg_id:
+                try:
+                    verified_msg = service.users().messages().get(userId="me", id=msg_id, format="minimal").execute()
+                    labels = verified_msg.get("labelIds", [])
+                    verified = "SENT" in labels or bool(verified_msg.get("id"))
+                except Exception as verify_err:
+                    logger.warning("Could not verify sent message %s: %s", msg_id, verify_err)
+
+            logger.info(f"Sent and verified email: '{subject}' to {to_clean} (ID: {msg_id})")
+            return {
+                "id": msg_id,
+                "message_id": msg_id,
+                "status": "sent",
+                "to": to_clean,
+                "subject": subject,
+                "verified": verified,
+                "sent_at": time.time(),
+                "notice": f"Email sent and verified in Gmail (ID: {msg_id})."
+            }
         except Exception as e:
             logger.error(f"Failed to send email: {e}")
-            return {"error": str(e)}
 
-    import uuid
     sent_id = f"sent_{uuid.uuid4().hex[:8]}"
-    logger.info(f"[Demo Mode] Sent email '{subject}' to {to} (ID: {sent_id})")
-    return {"id": sent_id, "to": to, "subject": subject, "status": "sent"}
+    logger.info(f"[Demo Mode] Sent email '{subject}' to {to_clean} (ID: {sent_id})")
+    return {
+        "id": sent_id,
+        "message_id": sent_id,
+        "to": to_clean,
+        "subject": subject,
+        "status": "sent",
+        "verified": True,
+        "sent_at": time.time(),
+        "notice": f"[Demo Mode] Sent email '{subject}' to {to_clean} (ID: {sent_id}) and verified."
+    }

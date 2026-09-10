@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Callable
 
 from assistant.workspace import auth
 from assistant.workspace.drive import search_drive, read_drive_file, upload_drive_file, list_drive_files
+from assistant.workspace.drive_indexer import indexer
 from assistant.workspace.gmail import search_emails, read_email, summarize_emails, draft_email, send_email
 from assistant.workspace.calendar import get_upcoming_events, format_upcoming_events_summary, create_calendar_event, detect_scheduling_conflicts
 from assistant.workspace.docs_sheets import create_google_doc, append_to_google_doc, read_google_sheet, append_to_google_sheet
@@ -36,6 +37,9 @@ class WorkspaceGateway:
             "google.drive.read": read_drive_file,
             "google.drive.write": upload_drive_file,
             "google.drive.list": list_drive_files,
+            "google.drive.sync": indexer.sync_drive_index,
+            "google.drive.semantic_search": indexer.semantic_search,
+            "google.drive.export": indexer.export_to_drive,
             "google.gmail.search": search_emails,
             "google.gmail.read": read_email,
             "google.gmail.summary": summarize_emails,

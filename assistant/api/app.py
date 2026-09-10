@@ -747,10 +747,13 @@ def create_app(control=None, executor=None, security=None, notifier=None):
     @app.post("/api/google/gmail/draft", status_code=201, tags=["google"])
     def google_draft_email(body: DraftEmailRequest):
         """A draft changes nothing until someone sends it, so it needs no approval."""
-        result = _google().execute_capability(
-            "google.gmail.draft", to=body.to, subject=body.subject, body=body.body)
-        plane.record(f"Drafted an email to {body.to}.")
-        return {"live": _google_live(), "draft": result}
+        try:
+            result = _google().execute_capability(
+                "google.gmail.draft", to=body.to, subject=body.subject, body=body.body)
+            plane.record(f"Drafted an email to {body.to}.")
+            return {"live": _google_live(), "draft": result}
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err))
 
     @app.post("/api/google/gmail/send", tags=["google"])
     def google_send_email(body: SendEmailRequest, request: Request):
@@ -768,9 +771,12 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                 "detail": "Approve this on your phone or the desktop app, then "
                           "send it again."})
 
-        result = _google().execute_capability("google.gmail.send", **arguments)
-        plane.record(f"Sent an email to {body.to}.", result="sent")
-        return {"live": _google_live(), "status": "sent", "message": result}
+        try:
+            result = _google().execute_capability("google.gmail.send", **arguments)
+            plane.record(f"Sent an email to {body.to}.", result="sent")
+            return {"live": _google_live(), "status": "sent", "message": result}
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err))
 
     @app.post("/api/google/calendar/events", tags=["google"])
     def google_create_event(body: CalendarEventRequest, request: Request):
@@ -832,6 +838,40 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         result = _google().execute_capability("google.drive.write", **arguments)
         plane.record(f"Uploaded \"{body.name}\" to your Google Drive.")
         return {"live": _google_live(), "file": result}
+
+    @app.post("/api/google/drive/sync", tags=["google"])
+    def google_drive_sync(full_reindex: bool = False, limit: int = 50):
+        """Synchronizes Google Drive documents with local semantic vector memory."""
+        res = _google().execute_capability(
+            "google.drive.sync", full_reindex=full_reindex, limit=limit)
+        plane.record("Synchronized Google Drive files into semantic index.")
+        return {"live": _google_live(), "sync": res}
+
+    @app.get("/api/google/drive/semantic-search", tags=["google"])
+    def google_drive_semantic_search(query: str, limit: int = 5, mime_type: str = None):
+        """Natural language semantic search across indexed Google Drive files."""
+        results = _google().execute_capability(
+            "google.drive.semantic_search", query=query, limit=limit, mime_type=mime_type)
+        return {"live": _google_live(), "query": query, "items": results}
+
+    @app.post("/api/google/drive/export", status_code=201, tags=["google"])
+    def google_drive_export(body: DriveUploadRequest, request: Request):
+        """Uploads a file to Google Drive and immediately indexes it in vector memory."""
+        arguments = {"name": body.name, "content": body.content, "mime_type": body.mime_type}
+        approval = _held_for_approval(
+            "google.drive.write", "Export to Google Drive",
+            f"Export and index \"{body.name}\" to Google Drive?",
+            "The file will be uploaded to Drive and indexed into local vector memory.",
+            arguments, request)
+        if approval is not None:
+            return JSONResponse(status_code=202, content={
+                "status": "waiting_approval",
+                "approval": approval.to_dict(),
+                "detail": "Approve this, then export it again."})
+
+        res = _google().execute_capability("google.drive.export", **arguments)
+        plane.record(f"Exported and indexed \"{body.name}\" to Google Drive.")
+        return {"live": _google_live(), "export": res}
 
     # -- secrets -----------------------------------------------------------
     # Values go in and are never handed back. Agents receive secret://name and

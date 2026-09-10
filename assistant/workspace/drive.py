@@ -75,28 +75,41 @@ def read_drive_file(file_id: str) -> Dict[str, Any]:
     if service is not None:
         try:
             metadata = service.files().get(fileId=file_id, fields="id, name, mimeType, size").execute()
-            # For text-based or Google Docs, export or get media
             mime = metadata.get("mimeType", "")
             content = ""
             if "google-apps.document" in mime:
                 export = service.files().export(fileId=file_id, mimeType="text/plain").execute()
                 content = export.decode("utf-8", errors="replace") if isinstance(export, bytes) else str(export)
+            elif "google-apps.spreadsheet" in mime:
+                export = service.files().export(fileId=file_id, mimeType="text/csv").execute()
+                content = export.decode("utf-8", errors="replace") if isinstance(export, bytes) else str(export)
+            elif "google-apps.presentation" in mime:
+                export = service.files().export(fileId=file_id, mimeType="text/plain").execute()
+                content = export.decode("utf-8", errors="replace") if isinstance(export, bytes) else str(export)
+            elif "google-apps.folder" in mime:
+                content = f"Google Drive Folder: {metadata.get('name', 'Untitled Folder')}"
+            elif "google-apps." in mime:
+                content = f"Google Workspace item: {metadata.get('name', 'Untitled')} ({mime})"
             else:
-                from googleapiclient.http import MediaIoBaseDownload
-                req = service.files().get_media(fileId=file_id)
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, req)
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-                fh.seek(0)
-                content = fh.read().decode("utf-8", errors="replace")[:4000]
+                try:
+                    from googleapiclient.http import MediaIoBaseDownload
+                    req = service.files().get_media(fileId=file_id)
+                    fh = io.BytesIO()
+                    downloader = MediaIoBaseDownload(fh, req)
+                    done = False
+                    while not done:
+                        _, done = downloader.next_chunk()
+                    fh.seek(0)
+                    content = fh.read().decode("utf-8", errors="replace")[:4000]
+                except Exception as dl_err:
+                    logger.debug(f"Media download failed for {file_id}, using metadata fallback: {dl_err}")
+                    content = f"Drive file: {metadata.get('name')} ({mime})"
 
             metadata["content"] = content
             return metadata
         except Exception as e:
             logger.error(f"Failed to read Drive file {file_id}: {e}")
-            return {"id": file_id, "error": str(e)}
+            return {"id": file_id, "name": "File", "content": f"Drive file {file_id}", "error": str(e)}
 
     # Mock retrieval
     for f in _mock_drive_files:

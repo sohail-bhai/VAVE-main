@@ -15,10 +15,12 @@ from assistant.control.models import RiskLevel, matches_pattern
 CATALOG = {
     # -- Google Workspace -------------------------------------------------
     "google.gmail.read": (RiskLevel.MEDIUM, "Read your email"),
+    "google.gmail.draft": (RiskLevel.LOW, "Draft an email without sending"),
     "google.gmail.send": (RiskLevel.HIGH, "Send email as you"),
     "google.drive.read": (RiskLevel.MEDIUM, "Read your Drive files"),
     "google.drive.write": (RiskLevel.HIGH, "Create or change Drive files"),
     "google.drive.delete": (RiskLevel.CRITICAL, "Delete Drive files"),
+    "google.drive.sync": (RiskLevel.MEDIUM, "Synchronize and index Google Drive files"),
     "google.calendar.read": (RiskLevel.MEDIUM, "Read your calendar"),
     "google.calendar.write": (RiskLevel.HIGH, "Create or change events"),
 
@@ -134,9 +136,12 @@ TOOL_CAPABILITIES = {
     "search_google_drive": "google.drive.read",
     "read_google_drive_file": "google.drive.read",
     "upload_google_drive_file": "google.drive.write",
+    "sync_google_drive": "google.drive.sync",
+    "semantic_search_google_drive": "google.drive.read",
+    "export_to_google_drive": "google.drive.write",
     "create_google_doc": "google.drive.write",
     "summarize_gmail_inbox": "google.gmail.read",
-    "draft_gmail_message": "google.gmail.send",
+    "draft_gmail_message": "google.gmail.draft",
     "create_google_calendar_event": "google.calendar.write",
 
     # Local tools that touch something a person would want a say over.

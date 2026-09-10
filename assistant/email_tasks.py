@@ -17,7 +17,7 @@ def read_unread_emails(limit=5):
             from assistant.control.secrets import SecretStore, load_key
             store = ControlStore()
             secrets = SecretStore(store, key=load_key())
-            app_password = secrets.resolve(app_password)
+            app_password = secrets.resolve(app_password, capability="email.imap")
         except Exception as e:
             return f"Could not resolve secret for email password: {e}"
 
@@ -67,13 +67,43 @@ def read_unread_emails(limit=5):
 import smtplib
 from email.message import EmailMessage
 
+def draft_email(to_address, subject, body):
+    """Drafts an email via Google Workspace Gmail."""
+    try:
+        from assistant.workspace.gmail import draft_email as ws_draft_email
+        res = ws_draft_email(to_address, subject, body)
+        if res.get("verified"):
+            return f"Draft successfully created and verified: '{subject}' to {to_address}"
+        return f"Draft created: {res.get('notice', '')}"
+    except Exception as e:
+        return f"Error drafting email: {e}"
+
+
 def send_email(to_address, subject, body):
-    """Connects to Gmail via SMTP and sends an email."""
+    """Sends an email via Google Workspace Gmail API or SMTP fallback."""
+    # Check if Google Workspace is connected
+    try:
+        from assistant.workspace.auth import is_workspace_live
+        if is_workspace_live():
+            from assistant.workspace.gmail import send_email as ws_send_email
+            res = ws_send_email(to_address, subject, body)
+            if res.get("verified"):
+                return f"Successfully sent and verified email to {to_address} (ID: {res.get('id')})"
+            return f"Sent email to {to_address}"
+    except Exception as ws_err:
+        logger.debug("Workspace send skipped, falling back to SMTP: %s", ws_err)
+
     email_address = get_setting("email_address")
     app_password = get_setting("email_app_password")
 
     if not email_address or not app_password:
-        return "Email credentials not configured in config.json."
+        # If no SMTP credentials, attempt workspace send (which handles demo mode)
+        try:
+            from assistant.workspace.gmail import send_email as ws_send_email
+            res = ws_send_email(to_address, subject, body)
+            return f"Email sent to {to_address}: {res.get('notice', '')}"
+        except Exception as e:
+            return f"Error: Email credentials not configured and workspace unavailable: {e}"
 
     if app_password.startswith("secret://"):
         try:
@@ -81,7 +111,7 @@ def send_email(to_address, subject, body):
             from assistant.control.secrets import SecretStore, load_key
             store = ControlStore()
             secrets = SecretStore(store, key=load_key())
-            app_password = secrets.resolve(app_password)
+            app_password = secrets.resolve(app_password, capability="email.smtp")
         except Exception as e:
             return f"Could not resolve secret for email password: {e}"
 
@@ -95,7 +125,7 @@ def send_email(to_address, subject, body):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(email_address, app_password)
             server.send_message(msg)
-            
+
         return f"Successfully sent email to {to_address}"
     except Exception as e:
         return f"Error sending email: {e}"

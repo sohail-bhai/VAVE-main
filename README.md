@@ -139,6 +139,11 @@ A completely redesigned, true dark-mode CustomTkinter interface inspired by prem
 - **Dual Stream Transports**: Full two-way WebSocket channels (`/ws/activity`, `/ws/events`, `/ws/notifications`) alongside lightweight HTTP Server-Sent Events (`GET /api/events/stream`).
 - **Persistent SQLite Notifications**: Alerts survive restarts and track read/unread states via `GET /api/notifications` and `POST /api/notifications/{id}/read`.
 
+### 9. 📁 Bi-Directional Drive Semantic Indexer & Verified Gmail
+- **ChromaDB Drive Indexer**: Incremental document ingestion with overlapping chunking and semantic vector search (`sync_google_drive`, `semantic_search_google_drive`).
+- **Multi-Format Parsing**: Automatic export handling for Docs (`text/plain`), Sheets (`text/csv`), Slides (`text/plain`), and binary fallback.
+- **Direct Workspace Export**: Instant local-to-Drive export and vector indexing (`export_to_google_drive`).
+- **Verified Communication Guard**: RFC email syntax validation, safe drafting (`draft_gmail_message`), zero-trust send approvals, and capability-scoped credential protection (`google.gmail.*`).
 
 ---
 
@@ -364,9 +369,14 @@ python main.py --text "what time is it" --no-speech
   - Persistent SQLite notifications (`GET /api/notifications`, `POST /api/notifications/{id}/read`).
   - Agent busy lifecycle tracking (`idle` -> `working` with `current_task_id` -> `idle`).
   - Capability-scoped secrets (AES-GCM credentials gated by matching capability patterns).
-- [ ] **Phase 5: Google Workspace Cloud Sync & Mobile Client**:
-  - Full bi-directional Google Drive semantic indexer and Gmail action drafting.
-  - Standalone mobile client pairing and remote execution.
+- [x] **Phase 5: Google Workspace Cloud Sync**:
+  - Bi-directional Google Drive semantic indexer with ChromaDB vector search and instant export (`sync_google_drive`, `semantic_search_google_drive`, `export_to_google_drive`).
+  - Multi-format document parser (Google Docs, Sheets, Slides, plain text).
+  - Verified Gmail drafting and sending with recipient syntax validation, zero-trust approval gate, and capability-scoped credential protection (`google.gmail.*`).
+  - REST endpoints: `POST /api/google/drive/sync`, `GET /api/google/drive/semantic-search`, `POST /api/google/drive/export`, `POST /api/google/gmail/draft`, `POST /api/google/gmail/send`.
+- [ ] **Phase 6: Mobile Client Integration & Remote Execution**:
+  - Standalone mobile client pairing (`/api/pair`) and remote goal execution.
+  - WebSocket / SSE push notifications to mobile.
 
 ---
 
