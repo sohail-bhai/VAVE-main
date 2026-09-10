@@ -1,34 +1,139 @@
-# Project Context & Future Plans
+# VAVE Project Context & System Architecture
 
-## Vision
-The ultimate goal of this project is to build a self-learning AI agent assistant named VAVE. 
+## 1. Vision & Overview
+**VAVE** has evolved from a local desktop voice assistant (V1.2) into a **Production-Grade Personal AI Control Plane**. 
 
-Key characteristics of the final assistant:
-- **Local Control:** Capable of interacting with the laptop locally (opening/closing apps, clicking, typing, etc.).
-- **Local Thinking:** The "brain" of the AI will be built locally without relying on external cloud APIs (like Claude or OpenAI) for the core thinking and decision-making processes. It is intended to be a self-learning AI agent.
-- **Current State:** Version 1.2 provides the foundation (desktop dashboard, voice recognition, basic system commands, configuration, and simple rule-based routing).
+The user states high-level goals in natural language (via voice, desktop GUI, Telegram, or remote mobile/web clients), and VAVE coordinates AI helpers, devices, local tools, files, and web services behind a strict, zero-trust safety boundary.
 
-## Gap Analysis: Current System vs. True VAVE
-- **Understanding:** We currently use rigid `if/else` substring matching. A true VAVE uses Natural Language Processing (NLP) to understand complex, multi-turn intents.
-- **Action Space:** We currently run hardcoded OS scripts. A true VAVE can interact with any software by "seeing" the screen and using the mouse/keyboard programmatically.
-- **Memory & Learning:** We currently have no memory between sessions. A true VAVE learns from mistakes and remembers user preferences permanently.
-- **Privacy & Connectivity:** We currently rely on Google Speech Recognition (requires internet). A true VAVE processes voice, text, and thoughts entirely locally.
+---
 
-## Future Plan
-The detailed roadmap to bridge these gaps is located in `plan.md`. It is divided into:
-1. **Phase 1:** Local AI Brain & Natural Language Understanding (Major)
-2. **Phase 2:** Autonomous UI Control & Screen Awareness (Major)
-3. **Phase 3:** Long-Term Memory & Self-Learning (Major)
-4. **Phase 4:** Quality of Life & Sensory Upgrades (Minor)
+## 2. Core Architecture Stack
 
-*Whenever a step is completed, `plan.md` will be updated with strikethroughs, and this `context.md` will be updated to reflect the new state of the system.*
+```
+                          ┌────────────────────────┐
+                          │   Human Intent Channels │
+                          │  Voice • GUI • Telegram │
+                          │  Remote Mobile / Web    │
+                          └───────────┬────────────┘
+                                      │
+                                      ▼
+                          ┌────────────────────────┐
+                          │     FastAPI + WS/SSE   │
+                          │   Device Auth & Pairing│
+                          │   Token Expiry/Rotation│
+                          └───────────┬────────────┘
+                                      │
+                                      ▼
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │                      CONTROL PLANE SERVICE LAYER                       │
+ │  • ControlPlane & TaskExecutor     • PolicyEngine (Allow/Ask/Deny)    │
+ │  • Task Decomposition (Planner)    • Scoped SecretStore (AES-GCM)     │
+ │  • Persistent SQLite Store         • Persistent SQLite Notifier       │
+ └───────┬────────────────────────────────┬────────────────────────┬──────┘
+         │                                │                        │
+         ▼                                ▼                        ▼
+┌──────────────────┐            ┌──────────────────┐    ┌──────────────────┐
+│   SAFETY LAYER   │            │   LOCAL AI BRAIN │    │  EXECUTION MESH  │
+│ • Unified Stop   │            │ • Ollama qwen2.5 │    │ • Browser (Play- │
+│ • Guard Hard-Deny│            │ • Agent Loop     │    │   wright)        │
+│ • Audit Redactor │            │ • 57 Tools       │    │ • Dev Tools / OS │
+│ • Overwatch COM  │            │ • ChromaDB RAG   │    │ • Google/GitLab  │
+└──────────────────┘            └──────────────────┘    └──────────────────┘
+```
 
-## Current Progress
-- **Phase 1, Step 1 (Completed):** Successfully integrated `ollama` as the local LLM engine in `ai_brain.py`. VAVE can now think locally without internet access for basic conversational requests.
-- **Phase 1, Step 2 (Completed):** Refactored `commands.py` so any unrecognized voice command automatically falls back to the local LLM instead of failing.
-- **Phase 1, Step 3 (Completed):** Upgraded `ai_brain.py` to use the `/api/chat` endpoint and implemented **Tool Calling**. The LLM can now autonomously decide to run python functions (e.g. `open_app`, `set_volume`, `search_google`) instead of just chatting.
-- **Phase 1, Step 4 (Completed):** Added short-term conversation memory. VAVE now remembers the last 10 interactions in a session, allowing for follow-up questions and contextual awareness.
-- **Phase 2, Step 1 & 2 (Completed):** Created `vision.py` using `pytesseract` to find exact pixel coordinates of text on the screen. Added PyAutoGUI tools (`type_text`, `press_key`, `find_and_click_text`) to `ai_brain.py` so the LLM can see and interact with the UI autonomously.
-- **Phase 2, Step 3 (Completed):** Upgraded `ai_brain.py` with an **Agent Loop**. VAVE can now perform multi-step actions (e.g., calling a tool, checking the result, and deciding what to do next up to 5 times) before talking back to the user.
-- **Phase 3, Step 1 & 2 (Completed):** Added `assistant/memory.py` leveraging a local `data/memory.json` store. Gave VAVE a `remember_fact` tool and injected the contents of `memory.json` into its System Prompt on startup for permanent long-term context.
-- **Phase 3, Step 3 & 4 (Completed):** The memory context injection inherently resolves Step 3 and 4. The LLM can retrieve facts seamlessly, achieving the primary goal of self-learning and permanent state tracking without complex vector databases.
+### Key Subsystems:
+- **Assistant Control Core (`assistant/control/`)**:
+  - `service.py`: Central coordination logic for tasks, helpers, routines, devices, and plans.
+  - `store.py`: SQLite-backed state store (`control.db`) managing migrations 0001 through 0014.
+  - `executor.py`: `TaskExecutor` coordinating step execution through `ai_brain.run_task_step()`, tracking step timeouts, cancellations, and agent busy states.
+  - `secrets.py`: AES-GCM encrypted credential vault resolving `secret://<name>` only inside the control plane with capability scoping.
+  - `notifier.py`: Persistent event and notification dispatcher storing alerts in SQLite.
+- **Local AI Brain (`assistant/ai_brain.py`)**:
+  - Ollama-backed multi-step agent loop (`_agent_loop`) supporting tool calling across ~57 registered tools with automatic capability-scoped secret resolution.
+- **Safety & Zero-Trust (`assistant/guard.py`, `assistant/confirm.py`, `assistant/audit.py`, `assistant/safety_stop.py`, `assistant/overwatch/`)**:
+  - Unified Emergency Stop (`hard_stop()`), hard-deny rules protecting system integrity, append-only redacted audit logs, and rate-limited desktop screen monitoring.
+- **Client Interfaces**:
+  - `gui/`: CustomTkinter dark-mode dashboard with Live System Log, Dynamic Chat, Approval Modals, and Devices Token Manager.
+  - `assistant/api/`: REST, WebSocket (`/ws/activity`, `/ws/events`, `/ws/notifications`), and Server-Sent Events (`/api/events/stream`) boundary.
+
+---
+
+## 3. Evolutionary Stages & Completed Milestones
+
+### Phase 1–3: Desktop Foundations & Local Agent Loop (Complete)
+- [x] Local LLM integration (`ollama`) with tool-calling schema.
+- [x] Multi-step agent loop with screen awareness (`vision.py`, OCR, UIAutomation).
+- [x] Persistent ChromaDB vector memory (`memory.py`).
+- [x] Wake word (`pvporcupine`) and audio interrupt (`Ctrl+Shift+Space`).
+
+### Phase 4: Control Plane & Multi-Device Fabric (Complete)
+- [x] SQLite-backed control store with versioned migrations.
+- [x] Agent helper mesh (Native, HTTP, and MCP adapters) with health monitoring.
+- [x] Zero-trust capability catalog with risk tiers (`safe`, `sensitive`, `destructive`).
+- [x] Device pairing workflow with SHA-256 token hashing and scoped file shares.
+
+### Stage 4.1: Safety Hardening (Waves 0–4 Complete)
+- [x] **Wave 0 (Test Isolation)**: Eliminated SQLite connection leaks and global cache contamination across unit test suites.
+- [x] **Wave 1 (CRITICAL Safety Gaps)**:
+  - Unified Emergency Stop (`hard_stop()`) wired to GUI "Stop Everything", `Ctrl+Alt+Shift+K`, Telegram `/kill`, and `/api/emergency-stop`.
+  - Guard Hard-Deny layer unconditionally blocking edits to `assistant/*`, `gui/*`, `config.json`, `logs/*`, `data/secret.key`, and destructive terminal commands (`rm -rf`, `del /f`, `format`).
+  - Overwatch auto-click safety gating through the Guard kill-switch.
+- [x] **Wave 2 (HIGH Safety + Honesty)**:
+  - Routine origin leak wrapped in `try ... finally` context cleanup.
+  - Honest state verification in `open_app` and `click_element` (confirming real window activation before reporting success).
+  - Dropped raw `"write "` typing prefix to prevent hijacking LLM queries.
+- [x] **Wave 3 (Auditing & Telegram Handshake)**:
+  - Subprocess cleanup in dev test loops; recursive secret redaction in audit logs.
+  - Telegram 6-digit one-time pairing handshake (`/pair <code>`).
+  - Multi-monitor window snapping and pending confirmation reconciliation.
+- [x] **Wave 4 (Performance & Polish)**:
+  - Bounded UIAutomation tree walk at 800 nodes; turn-aware conversation history trimming.
+  - Secondary drive path detection for Tesseract OCR.
+
+### Stage 4.5: Post-Hardening Production Features (Waves 5–9 Complete)
+- [x] **Wave 5 (Token Expiry & Startup Auto-Resume)**:
+  - Device token 30-day TTL and rotation endpoint (`POST /api/auth/rotate`).
+  - Server lifespan task auto-resumption (`runner.resume_interrupted()`).
+  - GUI interactive approval card integration with safe cancellation on close.
+- [x] **Wave 6 (Structured Routing, Devices GUI, & SSE)**:
+  - Anchored regex command router replacing loose substring matches.
+  - Devices page token management UI with live expiration status and `[Rotate]` action.
+  - Server-Sent Events stream (`GET /api/events/stream`) with Bearer token authentication.
+- [x] **Wave 7 (Persistent Notifications)**:
+  - SQLite table `notifications` (migration `0013_persistent_notifications`).
+  - Persistent read/unread tracking via `GET /api/notifications` and `POST /api/notifications/{id}/read`.
+- [x] **Wave 8 (Agent Busy State Lifecycle)**:
+  - Helper status transitions: `idle` -> `working` with `current_task_id` during execution.
+  - Guaranteed `finally` cleanup to `idle` on complete, fail, or cancel.
+- [x] **Wave 9 (Capability-Scoped Secrets)**:
+  - Migration `0014_secret_scopes` adding `allowed_capabilities`.
+  - Secret resolution restricted to matching capability patterns (e.g. `google.*`, `telegram.*`).
+  - Safety guard interception for unauthorized secret resolution during tool execution.
+
+---
+
+## 4. Current Operational Stage
+
+> **CURRENT STATUS: STAGE 4.5+ (Hardened Control Plane Production Foundation) COMPLETED**
+
+- **Verification Status**:
+  - **11/11 Smoke Tests Passing** (`python main.py --smoke-test`).
+  - **35/35 Test Suites Green** (300+ unit tests across API, Control Plane, Secrets, Notifier, Executor, Guard, and Routing).
+  - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
+- **Security Posture**:
+  - Zero hardcoded secrets; credentials encrypted with AES-GCM and scoped by capability.
+  - Unified emergency stop active across all interfaces.
+  - Hard-deny enforcement protects codebase and operating system.
+
+---
+
+## 5. Next Steps & Future Roadmap
+
+1. **Phase 5: Google Workspace Cloud Sync**:
+   - Bi-directional Google Drive semantic indexer.
+   - Gmail draft composition and verified sending through scoped credentials.
+   - Google Calendar sync and on-demand daily briefings.
+2. **Mobile Client Integration**:
+   - Pair standalone mobile app (Flutter/React Native) via `/api/pair` and test WebSocket/SSE push notifications.
+3. **Smart Home Expansion**:
+   - Webhook bridge for IoT appliances and ambient control.

@@ -123,11 +123,22 @@ Say goodbye to cryptic terminal outputs and dangerous hallucinated hidden reason
   [12:34:10] [WARN]   VAVE needs your approval: Ready to commit 14 modified files.
   ```
 
-### 5. 🎨 Minimalist Control Dashboard
+### 6. 🎨 Minimalist Control Dashboard
 A completely redesigned, true dark-mode CustomTkinter interface inspired by premium tools like ChatGPT and Linear.
 - **Dynamic Conversational UI**: Starts as an ultra-minimal void. Upon interaction, morphs into an auto-scrolling chat window with clean right/left aligned message bubbles.
 - **Native In-App Overlays**: Popups like Notifications, Command Palettes, and Approval Modals render natively as floating frames inside the app, avoiding cluttered OS windows.
 - **Live System Log Dual-View**: Your natural conversation stays centered in the chat view, while VAVE's internal background thoughts and actions stream independently into the right-hand System Log.
+- **Devices Management**: Inspect paired device health, view token expiry status, and rotate credentials on the fly.
+
+### 7. 🔐 Capability-Scoped Secrets & Token Lifecycle
+- **Zero Raw Secrets in Tools**: Credentials never leak into prompt history or tool arguments; references like `secret://<name>` resolve dynamically within the control plane.
+- **Capability Scoping**: Restricts credential resolution to matching tool capabilities (e.g. `google.*` or `telegram.*`). Unauthorized secret usage is caught and denied by the safety guard.
+- **Device Token Expiry & Rotation**: 30-day token TTLs with dedicated rotation endpoint (`POST /api/auth/rotate`) and automatic revocation.
+
+### 8. 📡 Real-Time Streaming & Persistent Alerts
+- **Dual Stream Transports**: Full two-way WebSocket channels (`/ws/activity`, `/ws/events`, `/ws/notifications`) alongside lightweight HTTP Server-Sent Events (`GET /api/events/stream`).
+- **Persistent SQLite Notifications**: Alerts survive restarts and track read/unread states via `GET /api/notifications` and `POST /api/notifications/{id}/read`.
+
 
 ---
 
@@ -338,7 +349,24 @@ python main.py --text "what time is it" --no-speech
 - [x] **Phase 2: Autonomous Overwatch** — COM-initialized background UIAutomation scanner with rule matching and rate limiting.
 - [x] **Phase 3: Control Dashboard** — Ultra-minimalist ChatGPT-style dark mode UI, native in-app overlays, Live System Log, and dynamic confirmation cards.
 - [x] **Phase 4: Helper Network Fabric** — Agent registry with health and a kill switch, plus native and HTTP adapters that MCP, LangGraph and containerised agents plug into.
-- [ ] **Phase 5: Google Workspace Cloud Sync** — Full bi-directional Drive semantic indexer and Gmail action drafting.
+- [x] **Stage 4.1: Zero-Trust Safety Hardening (Waves 0–4)**:
+  - Unified Emergency Stop (`hard_stop()`) wired across GUI, hotkey (`Ctrl+Alt+Shift+K`), Telegram (`/kill`), and API (`/api/emergency-stop`).
+  - Guard hard-deny policy protecting core system paths (`assistant/*`, `gui/*`, `config.json`, `data/secret.key`) and blocking destructive shell wipe commands (`rm -rf`, `del /f`, `format`).
+  - Overwatch auto-click safety gating through Guard kill switch.
+  - Honest desktop automation verification (`open_app`, `click_element`).
+  - Audit log secret redaction & Telegram 6-digit one-time pairing handshake.
+  - Multi-monitor window snapping, bounded UIA node traversal (800 nodes), and turn-aware conversation history trimming.
+- [x] **Stage 4.5: Production Platform Foundations (Waves 5–9)**:
+  - Device token 30-day TTL & rotation endpoint (`POST /api/auth/rotate`) + GUI management.
+  - Startup task auto-resumption (`lifespan`).
+  - Structured regex command router bypassing accidental substring matches.
+  - Server-Sent Events stream (`GET /api/events/stream`).
+  - Persistent SQLite notifications (`GET /api/notifications`, `POST /api/notifications/{id}/read`).
+  - Agent busy lifecycle tracking (`idle` -> `working` with `current_task_id` -> `idle`).
+  - Capability-scoped secrets (AES-GCM credentials gated by matching capability patterns).
+- [ ] **Phase 5: Google Workspace Cloud Sync & Mobile Client**:
+  - Full bi-directional Google Drive semantic indexer and Gmail action drafting.
+  - Standalone mobile client pairing and remote execution.
 
 ---
 
