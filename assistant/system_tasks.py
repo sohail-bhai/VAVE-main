@@ -315,6 +315,7 @@ def open_app(app_name):
                 os.system(cmd)
 
                 # Wait for the launched window to be ready and activated
+                verified_win = None
                 for _ in range(25):  # up to 2.5 seconds total, exits immediately when ready
                     time.sleep(0.1)
                     try:
@@ -322,10 +323,14 @@ def open_app(app_name):
                         if new_win and getattr(new_win, "NativeWindowHandle", None):
                             activate_window(new_win.NativeWindowHandle)
                             time.sleep(0.15)
+                            verified_win = new_win
                             break
                     except Exception:
                         pass
-                return f"Successfully opened {display_name} (window active and focused)."
+                if verified_win:
+                    win_name = getattr(verified_win, "Name", display_name) or display_name
+                    return f"Successfully opened {display_name} (Verified active window: '{win_name}')."
+                return f"Action sent for {display_name}; effect unconfirmed."
 
         elif system == "darwin":
             mac_apps = {
@@ -378,8 +383,9 @@ def open_app(app_name):
                         break
                 except Exception:
                     pass
-            status = f" (Verified active window: '{active_title}')" if active_title else " (window active)"
-            return f"Successfully opened installed app '{found_name}'{status}."
+            if active_title:
+                return f"Successfully opened installed app '{found_name}' (Verified active window: '{active_title}')."
+            return f"Action sent for '{found_name}'; effect unconfirmed."
 
         # Tier 3: Fallback to opening in browser
         websites = get_setting("websites", {})
@@ -1471,7 +1477,11 @@ def click_element(name, window_title=None):
         alt_lowered = alt_words.get(lowered)
 
         exact, starts, contains = [], [], []
+        walk_count = 0
         for control, _depth in auto.WalkControl(window, maxDepth=10):
+            walk_count += 1
+            if walk_count > 800:
+                break
             if control.ControlType not in _clickable_control_types(auto):
                 continue
             label = control.Name
@@ -1568,9 +1578,19 @@ def click_element(name, window_title=None):
             if new_fg and orig_fg and getattr(new_fg, "NativeWindowHandle", None) != getattr(orig_fg, "NativeWindowHandle", None):
                 verification = f" (Verified: Active window switched to '{new_fg.Name}')"
             else:
-                verification = " (Verified: Click delivered)"
+                state_changed = False
+                try:
+                    if target.BoundingRectangle.width() <= 0 or target.IsOffscreen:
+                        state_changed = True
+                except Exception:
+                    state_changed = True
+
+                if state_changed:
+                    verification = " (Verified: Element state changed)"
+                else:
+                    verification = " (Action sent; effect unconfirmed)"
         except Exception:
-            verification = " (Verified: Click delivered)"
+            verification = " (Action sent; effect unconfirmed)"
 
         invoke_detail = " via InvokePattern" if invoked else f" at ({x}, {y})"
         target_name = target.Name or wanted
@@ -1966,19 +1986,41 @@ def snap_window(app_name, position="left"):
         activate_window(hwnd)
         return f"Restored '{window.Name}' to normal size."
 
-    # Query work area (excluding taskbar)
-    SPI_GETWORKAREA = 0x0030
-    rect = wintypes.RECT()
-    if not user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
-        rect.left = 0
-        rect.top = 0
-        rect.right = user32.GetSystemMetrics(0)  # SM_CXSCREEN
-        rect.bottom = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+    # Query work area for the monitor where the window currently resides
+    screen_x, screen_y, screen_w, screen_h = 0, 0, 0, 0
+    try:
+        class _MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+        mi = _MONITORINFO()
+        mi.cbSize = ctypes.sizeof(_MONITORINFO)
+        MONITOR_DEFAULTTONEAREST = 2
+        hmon = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+        if hmon and user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            screen_x = mi.rcWork.left
+            screen_y = mi.rcWork.top
+            screen_w = mi.rcWork.right - mi.rcWork.left
+            screen_h = mi.rcWork.bottom - mi.rcWork.top
+    except Exception:
+        pass
 
-    screen_x = rect.left
-    screen_y = rect.top
-    screen_w = rect.right - rect.left
-    screen_h = rect.bottom - rect.top
+    if screen_w <= 0 or screen_h <= 0:
+        # Fallback to primary work area
+        SPI_GETWORKAREA = 0x0030
+        rect = wintypes.RECT()
+        if not user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+            rect.left = 0
+            rect.top = 0
+            rect.right = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+            rect.bottom = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+        screen_x = rect.left
+        screen_y = rect.top
+        screen_w = rect.right - rect.left
+        screen_h = rect.bottom - rect.top
 
     # Ensure window is restored before moving (maximized windows cannot be repositioned with SetWindowPos)
     user32.ShowWindow(hwnd, SW_RESTORE)

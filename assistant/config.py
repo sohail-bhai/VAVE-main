@@ -117,6 +117,56 @@ DEFAULT_CONFIG = {
             "maximize netflix",
             "set volume to 60"
         ]
+    },
+    "safety": {
+        "voice": {
+            "mode": "allow",
+            "allow_safe": True,
+            "allow_sensitive": True,
+            "allow_destructive": False,
+            "confirm_sensitive": False,
+            "confirm_destructive": True
+        },
+        "telegram": {
+            "mode": "allow",
+            "allow_safe": True,
+            "allow_sensitive": False,
+            "allow_destructive": False,
+            "confirm_sensitive": True,
+            "confirm_destructive": True
+        },
+        "routine": {
+            "mode": "allow",
+            "allow_safe": True,
+            "allow_sensitive": True,
+            "allow_destructive": True,
+            "confirm_sensitive": False,
+            "confirm_destructive": False
+        }
+    },
+    "overwatch": {
+        "max_z_order": 3,
+        "scan_interval": 1.0,
+        "rules": [
+            {
+                "target_text": "submit",
+                "auto_click": False,
+                "require_focus": False,
+                "pattern": "exact"
+            },
+            {
+                "target_text": "proceed",
+                "auto_click": False,
+                "require_focus": False,
+                "pattern": "exact"
+            },
+            {
+                "target_text": "yes",
+                "auto_click": False,
+                "require_focus": False,
+                "pattern": "exact"
+            }
+        ]
     }
 }
 

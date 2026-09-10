@@ -928,6 +928,22 @@ def create_app(control=None, executor=None, security=None, notifier=None):
             raise HTTPException(status_code=404,
                                 detail="No such approval, or it was already decided.")
         return approval.to_dict()
+ 
+    # -- confirmations -----------------------------------------------------
+
+    @app.get("/api/confirmations", tags=["confirmations"])
+    def list_confirmations():
+        from assistant import confirm
+        return {"pending_ids": confirm.list_pending()}
+
+    @app.post("/api/confirmations/{req_id}", tags=["confirmations"])
+    def resolve_confirmation(req_id: str, request: ResolveApprovalRequest):
+        from assistant import confirm
+        success = confirm.resolve(req_id, request.approved)
+        if not success:
+            raise HTTPException(status_code=404,
+                                detail="No such confirmation request, or it was already decided.")
+        return {"req_id": req_id, "approved": request.approved, "resolved": True}
 
     # -- permissions -------------------------------------------------------
 
@@ -978,10 +994,14 @@ def create_app(control=None, executor=None, security=None, notifier=None):
 
     @app.post("/api/emergency-stop", tags=["security"])
     def emergency_stop():
+        from assistant.safety_stop import hard_stop
+        hard_stop(source="api")
         return plane.emergency_stop()
 
     @app.post("/api/resume", tags=["security"])
     def resume():
+        from assistant.safety_stop import reset_hard_stop
+        reset_hard_stop()
         return plane.resume()
 
     # -- live activity stream ----------------------------------------------

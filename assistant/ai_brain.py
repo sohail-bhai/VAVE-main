@@ -2220,11 +2220,12 @@ def _extract_tool_calls_from_text(text):
     return calls
 
 
-def _prune_conversation_context(messages):
+def _prune_conversation_context(messages, max_history=18):
     """Keep prompt lean and avoid Ollama VRAM/CUDA overload by pruning obsolete tool outputs.
 
     Keeps the latest turn's tool outputs in full. Summarizes earlier element lists,
     screen OCR dumps, and large outputs so context stays compact.
+    Caps total turns while preserving system prompt, initial user request, and valid tool pairs.
     """
     if len(messages) <= 3:
         return [dict(m) for m in messages]
@@ -2253,6 +2254,24 @@ def _prune_conversation_context(messages):
             elif len(content) > 300:
                 m_copy["content"] = content[:250] + "... [earlier output truncated]"
         pruned.append(m_copy)
+
+    # Turn-aware trimming if history exceeds max_history
+    if len(pruned) > max_history:
+        head = []
+        start_idx = 0
+        if pruned and pruned[0].get("role") == "system":
+            head.append(pruned[0])
+            start_idx = 1
+        if len(pruned) > start_idx and pruned[start_idx].get("role") == "user":
+            head.append(pruned[start_idx])
+            start_idx += 1
+
+        tail_slice = pruned[-(max_history - len(head)):]
+        # Ensure tail does not start with an orphan 'tool' message (must pair with preceding assistant tool_calls)
+        while tail_slice and tail_slice[0].get("role") == "tool":
+            tail_slice = tail_slice[1:]
+
+        pruned = head + tail_slice
 
     return pruned
 

@@ -87,6 +87,13 @@ def handle_settings_command(command):
         speak(f"My name is {get_setting('assistant_name', 'Vave')}.")
         return True
 
+    if "pair telegram" in command or "connect telegram" in command or "telegram pairing code" in command or "telegram pair code" in command:
+        from assistant.telegram_sync import get_active_telegram_pairing_code
+        code = get_active_telegram_pairing_code()
+        spaced = " ".join(code)
+        speak(f"Your Telegram pairing code is {spaced}. In Telegram, send slash pair {code}.")
+        return True
+
     return False
 
 def handle_model_switch_command(command):
@@ -307,11 +314,14 @@ def check_routines(command):
         r_name = routine_name.lower().strip()
         if clean == r_name or clean in (f"run {r_name}", f"start {r_name}", f"activate {r_name}", f"routine {r_name}", f"run routine {r_name}"):
             speak(f"Running routine: {routine_name.title()}")
-            for cmd in commands_list:
-                call_context.set_origin("routine")
-                if not execute_command(cmd, auto_confirm=True):
-                    return False
-            return True
+            token = call_context.set_origin("routine")
+            try:
+                for cmd in commands_list:
+                    if not execute_command(cmd, auto_confirm=True):
+                        return False
+                return True
+            finally:
+                call_context.reset_origin(token)
             
     return False
 
@@ -544,7 +554,7 @@ def handle_atomic_gui_command(command: str) -> bool:
         speak(result)
         return True
 
-    if clean_lower.startswith("type ") or clean_lower.startswith("write "):
+    if clean_lower.startswith("type "):
         first_space = clean.find(" ")
         text_to_type = _literal_to_type(clean[first_space + 1:].strip())
         if text_to_type:

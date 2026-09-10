@@ -24,6 +24,24 @@ _telegram_active = False
 _command_queue: "queue.Queue" = queue.Queue()
 _worker_thread = None
 
+_telegram_pairing_code = None
+_telegram_pairing_expiry = 0
+
+def issue_telegram_pairing_code() -> str:
+    """Issue a 6-digit one-time pairing code valid for 10 minutes."""
+    global _telegram_pairing_code, _telegram_pairing_expiry
+    import random, time
+    _telegram_pairing_code = f"{random.randint(100000, 999999)}"
+    _telegram_pairing_expiry = time.time() + 600
+    return _telegram_pairing_code
+
+def get_active_telegram_pairing_code() -> str:
+    """Return active pairing code or generate a fresh one if expired/unset."""
+    import time
+    if _telegram_pairing_code and time.time() < _telegram_pairing_expiry:
+        return _telegram_pairing_code
+    return issue_telegram_pairing_code()
+
 # --- Cross-process singleton lock ---
 # Prevents MKL/numpy-spawned child processes from starting a second Telegram
 # poller and causing a 409 Conflict.
@@ -331,12 +349,24 @@ def _telegram_worker():
                         sender_chat_id = str(message.get("chat", {}).get("id", ""))
 
                         # Security Check: Only allow commands from authorized chat ID
-                        if not chat_id and sender_chat_id:
-                            logger.info(f"[VAVE] Saving new Telegram Chat ID: {sender_chat_id}")
-                            update_setting("telegram_chat_id", sender_chat_id)
-                            chat_id = sender_chat_id
-                            send_telegram_message(token, chat_id, "VAVE Remote Link Established. I am ready for commands.")
-                            continue
+                        if not chat_id:
+                            clean_t = str(text or "").strip()
+                            if clean_t.lower().startswith("/pair ") or clean_t.lower().startswith("pair "):
+                                code_entered = clean_t.split(" ", 1)[1].strip()
+                                import time
+                                if _telegram_pairing_code and time.time() < _telegram_pairing_expiry and code_entered == _telegram_pairing_code:
+                                    logger.info(f"[VAVE] Telegram successfully paired with Chat ID: {sender_chat_id}")
+                                    update_setting("telegram_chat_id", sender_chat_id)
+                                    chat_id = sender_chat_id
+                                    _telegram_pairing_code = None
+                                    send_telegram_message(token, chat_id, "✅ VAVE Remote Link Established. Paired successfully!")
+                                    continue
+                                else:
+                                    send_telegram_message(token, sender_chat_id, "❌ Invalid or expired pairing code. Ask your desktop assistant for a new code by saying 'pair telegram'.")
+                                    continue
+                            else:
+                                send_telegram_message(token, sender_chat_id, "🔒 This VAVE assistant is unpaired. To link your phone, say 'pair telegram' on your desktop and reply with: /pair <6-digit-code>")
+                                continue
 
                         if sender_chat_id != chat_id:
                             if text or voice:
@@ -414,9 +444,9 @@ def _telegram_worker():
                                     send_telegram_message(token, chat_id, f"Confirmation received ({parts[1]}).")
                                 continue
                             if text_lower == "/kill":
-                                from assistant import guard
-                                guard.set_kill_switch(True)
-                                send_telegram_message(token, chat_id, "Kill switch activated.")
+                                from assistant.safety_stop import hard_stop
+                                hard_stop(source="telegram")
+                                send_telegram_message(token, chat_id, "🚨 Kill switch activated. All tasks halted and overwatch stopped.")
                                 continue
                                 
                             speak(f"Incoming remote command: {text_clean}")

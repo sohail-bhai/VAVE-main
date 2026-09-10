@@ -63,8 +63,22 @@ class ControlPlane:
         self._lock = threading.RLock()
         self._subscribers = []
         self._stopped = False
-
         self.local_device = self._register_local_device()
+
+    def close(self):
+        """Release underlying store and resources."""
+        with self._lock:
+            if hasattr(self, "store") and self.store:
+                try:
+                    self.store.close()
+                except Exception:
+                    pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     # -- subscriptions ------------------------------------------------------
 

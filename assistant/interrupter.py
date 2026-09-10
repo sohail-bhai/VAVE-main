@@ -13,9 +13,9 @@ def setup_interrupter():
             keyboard.add_hotkey('ctrl+shift+space', interrupt_speech)
             
             def trigger_kill_switch():
-                from assistant import guard
-                guard.set_kill_switch(True)
-                logger.info("[VAVE] KILL SWITCH ACTIVATED VIA HOTKEY")
+                from assistant.safety_stop import hard_stop
+                hard_stop(source="hotkey")
+                logger.info("[VAVE] HARD STOP & KILL SWITCH ACTIVATED VIA HOTKEY")
                 
             keyboard.add_hotkey('ctrl+alt+shift+k', trigger_kill_switch)
             

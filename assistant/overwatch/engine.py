@@ -93,18 +93,28 @@ class OverwatchEngine:
             logger.warning("Overwatch rate limit exceeded. Ignoring match.")
             return
             
-        try:
-            ctrl = element["control"]
+        from assistant import guard
+        if guard.is_killed():
+            logger.warning(f"Overwatch auto-click blocked: kill switch active.")
+            return
+
+        ctrl = element["control"]
+
+        def _do_click():
             if rule.require_focus:
                 ctrl.SetFocus()
-                
             ctrl.Click(waitTime=0.1)
+
+        try:
+            guard.call(_do_click, _tool_name="overwatch_auto_click", name=element["name"])
             self._recent_clicks[rid] = time.time()
             logger.info(f"Overwatch auto-clicked: {element['name']}")
             
             if self._bus:
                 self._bus.emit(events.EVENT_OVERWATCH_ACTION, f"Auto-clicked: {element['name']}")
                 
+        except guard.ToolDenied as e:
+            logger.warning(f"Overwatch auto-click denied by guard: {e}")
         except Exception as e:
             logger.error(f"Failed to click element {element['name']}: {e}")
 

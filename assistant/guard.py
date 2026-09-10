@@ -1,3 +1,5 @@
+import os
+import re
 import logging
 from typing import Callable, Any
 from functools import wraps
@@ -23,6 +25,9 @@ def configure(event_bus: events.EventBus) -> None:
 def set_kill_switch(active: bool) -> None:
     global _kill_switch
     _kill_switch = active
+
+def is_killed() -> bool:
+    return _kill_switch
 
 _REGISTRY = {
     "safe": set(),
@@ -97,11 +102,50 @@ def register_name(tier: str, tool_name: str) -> None:
     if tier in _REGISTRY:
         _REGISTRY[tier].add(tool_name)
 
+_DESTRUCTIVE_COMMAND_REGEX = re.compile(
+    r"(?:\b(?:rm\s+-[a-zA-Z]*[rfRF][a-zA-Z]*|del\s+/[fFqQsS]+|rmdir\s+/[sS]|diskpart|mkfs)\b|\bformat\s+[a-zA-Z]:)",
+    re.IGNORECASE
+)
+
+def _is_hard_denied(tool_name: str, args: dict) -> tuple:
+    """Hard invariants that unconditionally reject actions regardless of origin policy."""
+    args = args or {}
+
+    # 1. Invariant: Settings for safety and overwatch cannot be modified programmatically
+    if tool_name == "update_setting":
+        key = str(args.get("key", "") or args.get("setting", "")).strip().lower()
+        if key.startswith("safety") or key.startswith("overwatch"):
+            return True, f"Modifying safety/overwatch setting '{key}' is hard-denied."
+
+    # 2. Invariant: Self-writes and deletions to codebase, configs, logs, and secrets
+    file_mutation_tools = (
+        "write_file", "append_file", "delete_file", "create_file",
+        "scaffold_code", "edit_file", "replace_file_content"
+    )
+    if tool_name in file_mutation_tools or any(k in args for k in ("path", "filename", "filepath", "target_file")):
+        for k in ("path", "filename", "filepath", "target_file", "file"):
+            raw_val = args.get(k)
+            if not raw_val or not isinstance(raw_val, str):
+                continue
+            norm = os.path.normpath(raw_val).replace("\\", "/").lower()
+            parts = [p for p in norm.split("/") if p and p != "."]
+            # Protect assistant/*, gui/*, logs/*, config.json, and data/secret.key
+            if any(p in ("assistant", "gui", "logs") for p in parts) or norm.endswith("config.json") or norm.endswith("secret.key"):
+                return True, f"Mutation of protected system file '{raw_val}' is hard-denied."
+
+    # 3. Invariant: Destructive disk/partition wipe commands
+    if tool_name in ("run_terminal_command", "run_shell", "execute_command"):
+        cmd_str = str(args.get("command", "") or args.get("cmd", "") or "")
+        if _DESTRUCTIVE_COMMAND_REGEX.search(cmd_str):
+            return True, f"Destructive command pattern detected in '{cmd_str}'."
+
+    return False, ""
+
 def _evaluate_policy(tool_name: str, args: dict, origin: str) -> bool:
     if _kill_switch:
         logger.warning(f"Kill switch active. Denying {tool_name}.")
         return False
-        
+
     policy = config.get_setting("safety", {})
     origin_policy = policy.get(origin, {})
     
@@ -122,10 +166,24 @@ def _evaluate_policy(tool_name: str, args: dict, origin: str) -> bool:
     if call_context.is_tainted() and (tier == "destructive"
                                       or tool_name in REACHES_OUTWARD):
         source = call_context.taint_source() or "a web page or the screen"
-        return confirm.ask(
+        asked = confirm.ask(
             f"{tool_name} was chosen after reading {source}, which VAVE does "
             f"not control. Arguments: {audit.redact(args)}. Run it?",
             origin)
+        if not asked:
+            return False
+        # Even if confirmed, hard-deny still blocks protected mutations
+        hard_denied, reason = _is_hard_denied(tool_name, args)
+        if hard_denied:
+            logger.warning(f"Hard-deny triggered for {tool_name} despite confirmation: {reason}")
+            return False
+        return True
+
+    # Hard-deny invariants beat all allow_* and confirm_* rules
+    hard_denied, reason = _is_hard_denied(tool_name, args)
+    if hard_denied:
+        logger.warning(f"Hard-deny triggered for {tool_name}: {reason}")
+        return False
 
         
     if origin_policy.get(f"allow_{tier}", False):

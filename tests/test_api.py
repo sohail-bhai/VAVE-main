@@ -20,6 +20,8 @@ from assistant.control.store import ControlStore
 
 class ApiTestCase(unittest.TestCase):
     def setUp(self):
+        from assistant.safety_stop import reset_hard_stop
+        reset_hard_stop()
         self.tempdir = tempfile.mkdtemp(prefix="vave-api-test-")
         self.store = ControlStore(Path(self.tempdir) / "control.db")
         self.plane = ControlPlane(store=self.store)
@@ -39,6 +41,10 @@ class ApiTestCase(unittest.TestCase):
         return f"Handled: {instruction}"
 
     def tearDown(self):
+        from assistant.safety_stop import reset_hard_stop
+        reset_hard_stop()
+        if hasattr(self, "plane") and self.plane:
+            self.plane.close()
         self.store.close()
         shutil.rmtree(self.tempdir, ignore_errors=True)
 

@@ -59,15 +59,30 @@ def append(record: dict) -> str:
             
     return audit_id
 
-_redact_pattern = re.compile(r'(?i)pass|password|app_password|token|secret|api_key|credential')
+_redact_key_pattern = re.compile(r'(?i)(?:pass|password|app_password|token|secret|api_key|apikey|credential|auth|bearer|private_key)')
+_redact_value_pattern = re.compile(r'(?i)(?:bearer\s+[a-zA-Z0-9_\-\.]{8,}|secret://[^\s\'"]+|sk-[a-zA-Z0-9_\-]{16,}|ghp_[a-zA-Z0-9]{16,}|glpat-[a-zA-Z0-9_\-]{16,})')
+
+def _redact_value(val):
+    if isinstance(val, dict):
+        return {k: ("***" if _redact_key_pattern.search(str(k)) else _redact_value(v)) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [_redact_value(item) for item in val]
+    elif isinstance(val, str):
+        return _redact_value_pattern.sub("***", val)
+    return val
 
 def redact(args: dict, max_len: int = 200) -> str:
+    if not isinstance(args, dict):
+        val = _redact_value(args)
+        s = str(val)
+        return (s[:max_len] + "...") if len(s) > max_len else s
+
     redacted = {}
     for k, v in args.items():
-        if _redact_pattern.search(k):
+        if _redact_key_pattern.search(str(k)):
             redacted[k] = "***"
         else:
-            redacted[k] = v
+            redacted[k] = _redact_value(v)
             
     s = str(redacted)
     if len(s) > max_len:

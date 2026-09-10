@@ -38,6 +38,10 @@ class GoogleApiTestCase(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
+    def tearDown(self):
+        if hasattr(self, "plane") and self.plane:
+            self.plane.close()
+
     def approve_everything(self):
         for approval in self.plane.list_approvals(pending_only=True):
             self.plane.resolve_approval(approval.id, True)

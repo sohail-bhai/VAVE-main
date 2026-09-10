@@ -272,7 +272,12 @@ class SettingsPage(ctk.CTkScrollableFrame):
 
         def _do_stop():
             modal.destroy()
-            store.add_system_log("EMERGENCY STOP: All tasks paused and access revoked.", "completed")
+            try:
+                from assistant.safety_stop import hard_stop
+                hard_stop(source="gui")
+            except Exception as e:
+                store.add_system_log(f"Emergency stop error: {e}", "error")
+            store.add_system_log("EMERGENCY STOP: All tasks paused, overwatch halted, kill switch active.", "completed")
 
         ctk.CTkButton(
             btn_row,

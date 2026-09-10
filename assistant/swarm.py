@@ -2,10 +2,36 @@ import logging
 logger = logging.getLogger(__name__)
 
 import json
+import re
 import threading
 from assistant.config import get_setting
 from assistant import guard
 from assistant import call_context
+
+def _parse_swarm_args(raw_args):
+    if isinstance(raw_args, dict):
+        return raw_args
+    if not raw_args:
+        return {}
+    if isinstance(raw_args, str):
+        cleaned = raw_args.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+        try:
+            val = json.loads(cleaned)
+            if isinstance(val, dict):
+                return val
+        except Exception:
+            pass
+        try:
+            import ast
+            val = ast.literal_eval(cleaned)
+            if isinstance(val, dict):
+                return val
+        except Exception:
+            pass
+    return {}
 
 def run_sub_agent(role_prompt, task, max_steps=15):
     from assistant.ai_brain import query_local_llm_chat, AVAILABLE_FUNCTIONS
@@ -20,9 +46,7 @@ def run_sub_agent(role_prompt, task, max_steps=15):
         if "tool_calls" in response and response["tool_calls"]:
             for tool in response["tool_calls"]:
                 func_name = tool["function"]["name"]
-                args_dict = {}
-                try: args_dict = json.loads(tool["function"]["arguments"])
-                except: pass
+                args_dict = _parse_swarm_args(tool.get("function", {}).get("arguments", {}))
                 if func_name in AVAILABLE_FUNCTIONS:
                     func_to_call = AVAILABLE_FUNCTIONS[func_name]
                     logger.info(f"[Sub-Agent Executing] {func_name}({args_dict})")
@@ -47,8 +71,24 @@ def run_sub_agent(role_prompt, task, max_steps=15):
 def spawn_parallel_agents(task_list):
     import ast
     if isinstance(task_list, str):
-        try: task_list = ast.literal_eval(task_list)
-        except: return "Error: task_list must be a valid list of dictionaries."
+        cleaned = task_list.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+        parsed = None
+        try:
+            parsed = json.loads(cleaned)
+        except Exception:
+            try:
+                parsed = ast.literal_eval(cleaned)
+            except Exception:
+                pass
+        if isinstance(parsed, list):
+            task_list = parsed
+        else:
+            return "Error: task_list must be a valid list of dictionaries."
+    if not isinstance(task_list, list):
+        return "Error: task_list must be a valid list of dictionaries."
     logger.info(f"[Swarm] Spawning {len(task_list)} parallel agents...")
     results = {}
     def worker(index, role, task):

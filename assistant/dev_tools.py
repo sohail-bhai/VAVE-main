@@ -145,56 +145,69 @@ def deep_test_project(start_command="npm run dev", url="http://localhost:3000"):
     # 1. Hot swap model
     original_model = get_setting("llm_model", "qwen2.5:3b")
     update_setting("llm_model", "qwen3.5:9b")
+    process = None
     
-    speak(f"Starting server with command: {start_command}")
-    
-    # 2. Boot server
-    process = subprocess.Popen(start_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    
-    time.sleep(8) # Wait for boot
-    
-    # 3. Open Chrome
-    speak("Opening browser to inspect the UI.")
-    webbrowser.open(url)
-    time.sleep(5)
-    
-    # 4. Vision Audit
-    speak("Analyzing screen for visual bugs.")
-    vision_prompt = "You are a strict UI/UX QA Tester. Look at this screen and identify any visual bugs, overflowing text, broken CSS, or visible error messages. List them clearly."
-    vision_report = analyze_screen(vision_prompt)
-    
-    # 5. Read terminal logs
-    speak("Checking terminal logs for crashes.")
-    logs = ""
-    
-    import psutil
     try:
-        # Gracefully kill all children of the process so we don't orphan Node
-        parent = psutil.Process(process.pid)
-        for child in parent.children(recursive=True):
-            child.terminate()
-        parent.terminate()
-    except Exception:
-        pass
+        speak(f"Starting server with command: {start_command}")
         
-    try:
-        logs, _ = process.communicate(timeout=3)
-    except:
-        logs = "Could not fetch logs."
+        # 2. Boot server
+        process = subprocess.Popen(start_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         
-    speak("Compiling deep test report.")
-    
-    # 6. Synthesize Report
-    prompt = f"You are an autonomous QA agent. Synthesize this test data into a 'Deep Test Report'.\\n\\nVisual Audit:\\n{vision_report}\\n\\nTerminal Logs:\\n{logs[-2000:]}"
-    
-    response = query_local_llm_chat([{"role": "user", "content": prompt}], model="qwen3.5:9b")
-    final_report = response.get("content", "") if isinstance(response, dict) else str(response)
-    
-    with open("deep_test_report.md", "w", encoding="utf-8") as f:
-        f.write(final_report if final_report else "Report generation failed.")
+        time.sleep(8) # Wait for boot
         
-    # 7. Downgrade model
-    update_setting("llm_model", original_model)
-    speak("Deep test complete. Model reverted. Report saved to deep test report dot m d.")
-    
-    return "Deep Test completed successfully. Please read deep_test_report.md for details."
+        # 3. Open Chrome
+        speak("Opening browser to inspect the UI.")
+        webbrowser.open(url)
+        time.sleep(5)
+        
+        # 4. Vision Audit
+        speak("Analyzing screen for visual bugs.")
+        vision_prompt = "You are a strict UI/UX QA Tester. Look at this screen and identify any visual bugs, overflowing text, broken CSS, or visible error messages. List them clearly."
+        vision_report = analyze_screen(vision_prompt)
+        
+        # 5. Read terminal logs
+        speak("Checking terminal logs for crashes.")
+        logs = ""
+        
+        import psutil
+        try:
+            # Gracefully kill all children of the process so we don't orphan Node
+            parent = psutil.Process(process.pid)
+            for child in parent.children(recursive=True):
+                child.terminate()
+            parent.terminate()
+        except Exception:
+            pass
+            
+        try:
+            logs, _ = process.communicate(timeout=3)
+        except Exception:
+            logs = "Could not fetch logs."
+            
+        speak("Compiling deep test report.")
+        
+        # 6. Synthesize Report
+        prompt = f"You are an autonomous QA agent. Synthesize this test data into a 'Deep Test Report'.\\n\\nVisual Audit:\\n{vision_report}\\n\\nTerminal Logs:\\n{logs[-2000:]}"
+        
+        response = query_local_llm_chat([{"role": "user", "content": prompt}], model="qwen3.5:9b")
+        final_report = response.get("content", "") if isinstance(response, dict) else str(response)
+        
+        with open("deep_test_report.md", "w", encoding="utf-8") as f:
+            f.write(final_report if final_report else "Report generation failed.")
+            
+        speak("Deep test complete. Model reverted. Report saved to deep test report dot m d.")
+        return "Deep Test completed successfully. Please read deep_test_report.md for details."
+    finally:
+        if process and process.poll() is None:
+            try:
+                import psutil
+                parent = psutil.Process(process.pid)
+                for child in parent.children(recursive=True):
+                    child.terminate()
+                parent.terminate()
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+        update_setting("llm_model", original_model)

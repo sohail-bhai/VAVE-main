@@ -7,8 +7,18 @@ import pyautogui
 import os
 
 def _find_tesseract():
-    """Detects tesseract binary in common Windows locations or system PATH."""
+    """Detects tesseract binary via config, common drive locations (E:, D:, C:), or system PATH."""
+    try:
+        from assistant.config import get_setting
+        config_path = get_setting("tesseract_path", "") or get_setting("tesseract_cmd", "")
+        if config_path and os.path.isfile(config_path):
+            return config_path
+    except Exception:
+        pass
+
     candidate_paths = [
+        r'E:\programs\Tesseract-OCR\tesseract.exe',
+        r'E:\Tesseract-OCR\tesseract.exe',
         r'D:\Tesseract-OCR\tesseract.exe',
         r'C:\Program Files\Tesseract-OCR\tesseract.exe',
         r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',

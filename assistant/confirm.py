@@ -108,6 +108,10 @@ class ConfirmationBroker:
             except queue.Full:
                 pass
         return False
+
+    def list_pending(self) -> list:
+        with self._lock:
+            return list(self._pending.keys())
         
 _broker = ConfirmationBroker()
 
@@ -119,3 +123,6 @@ def ask(message: str, origin: str) -> bool:
 
 def resolve(req_id: str, approved: bool) -> bool:
     return _broker.resolve(req_id, approved)
+
+def list_pending() -> list:
+    return _broker.list_pending()

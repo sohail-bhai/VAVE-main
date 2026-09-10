@@ -214,7 +214,18 @@ class ControlStore:
 
     def close(self):
         with self._lock:
-            self._connection.close()
+            if self._connection:
+                try:
+                    self._connection.close()
+                except Exception:
+                    pass
+                self._connection = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     # -- migrations ---------------------------------------------------------
 

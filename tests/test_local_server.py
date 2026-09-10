@@ -33,6 +33,8 @@ class LocalServerTests(unittest.TestCase):
 
     def tearDown(self):
         self.server.stop()
+        from assistant.control.service import reset_control_plane
+        reset_control_plane()
 
     def test_it_listens_and_says_where(self):
         self.assertTrue(self.server.running)

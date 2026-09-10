@@ -110,19 +110,19 @@
         "rules": [
             {
                 "target_text": "submit",
-                "auto_click": true,
+                "auto_click": false,
                 "require_focus": false,
                 "pattern": "exact"
             },
             {
                 "target_text": "proceed",
-                "auto_click": true,
+                "auto_click": false,
                 "require_focus": false,
                 "pattern": "exact"
             },
             {
                 "target_text": "yes",
-                "auto_click": true,
+                "auto_click": false,
                 "require_focus": false,
                 "pattern": "exact"
             }
