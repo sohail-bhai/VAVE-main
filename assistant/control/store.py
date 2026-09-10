@@ -189,6 +189,9 @@ MIGRATIONS = [
             updated_at REAL NOT NULL
         );
     """),
+    ("0012_device_token_expiry", [
+        ("devices", "token_expires_at", "ALTER TABLE devices ADD COLUMN token_expires_at REAL DEFAULT 0.0"),
+    ]),
 ]
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "control.db"
@@ -291,14 +294,16 @@ class ControlStore:
     def save_device(self, device):
         self._write(
             "INSERT INTO devices (id, name, kind, platform, status, last_seen, "
-            "token_hash, paired_at, capabilities) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "token_hash, paired_at, capabilities, token_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind, "
             "platform=excluded.platform, status=excluded.status, "
             "last_seen=excluded.last_seen, token_hash=excluded.token_hash, "
-            "paired_at=excluded.paired_at, capabilities=excluded.capabilities",
+            "paired_at=excluded.paired_at, capabilities=excluded.capabilities, "
+            "token_expires_at=excluded.token_expires_at",
             (device.id, device.name, device.kind, device.platform,
              device.status.value, device.last_seen, device.token_hash,
-             device.paired_at, dumps(device.capabilities)),
+             device.paired_at, dumps(device.capabilities),
+             getattr(device, "token_expires_at", 0.0)),
         )
         return device
 
@@ -573,7 +578,8 @@ def _to_device(row):
                   platform=row["platform"] or "",
                   status=DeviceStatus(row["status"]), last_seen=row["last_seen"],
                   token_hash=(row["token_hash"] or "") if "token_hash" in keys else "",
-                  paired_at=(row["paired_at"] or 0.0) if "paired_at" in keys else 0.0)
+                  paired_at=(row["paired_at"] or 0.0) if "paired_at" in keys else 0.0,
+                  token_expires_at=(row["token_expires_at"] or 0.0) if "token_expires_at" in keys else 0.0)
 
 
 def _to_helper(row):

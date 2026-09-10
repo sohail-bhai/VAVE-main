@@ -62,6 +62,86 @@ class TestVaveGUI(unittest.TestCase):
         # Clean up window
         app.destroy()
 
+    def test_approval_resolution_and_events(self):
+        import threading
+        from assistant import confirm
+        from assistant import events
+
+        bus = events.EventBus()
+        confirm.configure(bus)
+
+        resolved_values = []
+        def _ask():
+            res = confirm.ask("Delete database file?", origin="gui")
+            resolved_values.append(res)
+
+        t = threading.Thread(target=_ask)
+        t.start()
+
+        # Check bus received EVENT_CONFIRM_REQUEST
+        evt = bus.get_nowait()
+        self.assertIsNotNone(evt)
+        self.assertEqual(events.EVENT_CONFIRM_REQUEST, evt.event_type)
+        req_id = evt.payload["req_id"]
+        self.assertEqual("Delete database file?", evt.message)
+
+        # Resolve via confirm.resolve
+        confirm.resolve(req_id, True)
+        t.join(timeout=2)
+        self.assertEqual([True], resolved_values)
+
+    def test_approval_modal_buttons(self):
+        import threading
+        from assistant import confirm
+        from assistant import events
+        from gui.widgets.approval_modal import ApprovalModal
+
+        app = VaveDashboardApp()
+        try:
+            bus = events.EventBus()
+            confirm.configure(bus)
+
+            # Test Approve
+            resolved = []
+            def _ask_true():
+                resolved.append(confirm.ask("Approve task step?", origin="gui"))
+
+            t1 = threading.Thread(target=_ask_true)
+            t1.start()
+            evt = bus.get_nowait()
+            req_id = evt.payload["req_id"]
+
+            modal = ApprovalModal(app, {
+                "title": "Action Approval",
+                "description": "Approve task step?",
+                "req_id": req_id
+            })
+            modal._approve()
+            t1.join(timeout=2)
+            self.assertEqual([True], resolved)
+
+            # Test Reject
+            rejected = []
+            def _ask_false():
+                rejected.append(confirm.ask("Run dangerous script?", origin="gui"))
+
+            t2 = threading.Thread(target=_ask_false)
+            t2.start()
+            evt2 = bus.get_nowait()
+            req_id2 = evt2.payload["req_id"]
+
+            modal2 = ApprovalModal(app, {
+                "title": "Action Approval",
+                "description": "Run dangerous script?",
+                "req_id": req_id2
+            })
+            modal2._reject()
+            t2.join(timeout=2)
+            self.assertEqual([False], rejected)
+
+        finally:
+            app.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -121,7 +121,7 @@ class ApiSecurity:
             if expires_at <= current:
                 del self._codes[code]
 
-    def pair(self, code, name, kind="phone", platform=""):
+    def pair(self, code, name, kind="phone", platform="", ttl_seconds=None):
         """Trade a valid code for a device and its token.
 
         The token is returned exactly once. Only its hash is kept.
@@ -132,12 +132,43 @@ class ApiSecurity:
                 raise PairingError("That pairing code is wrong or has expired.")
             del self._codes[code]
 
+        if ttl_seconds is None:
+            ttl_seconds = get_setting("device_token_ttl_seconds", 30 * 86400)
+        token_expires_at = (now() + ttl_seconds) if (ttl_seconds and ttl_seconds > 0) else 0.0
+
         token = secrets.token_urlsafe(32)
         device = Device(name=name or "Paired device", kind=kind, platform=platform,
                         status=DeviceStatus.ONLINE, token_hash=hash_token(token),
-                        paired_at=now())
+                        paired_at=now(), token_expires_at=token_expires_at)
         self.store.save_device(device)
         return device, token
+
+    def rotate(self, token, ttl_seconds=None):
+        """Rotate the token for an active (non-expired) device.
+
+        Returns (device, new_token).
+        """
+        if not token:
+            raise PermissionError("Token is required for rotation.")
+        device = self.device_for_token(token)
+        if device is None:
+            raise PermissionError("Cannot rotate: invalid token.")
+        if device.is_expired:
+            device.status = DeviceStatus.OFFLINE
+            self.store.save_device(device)
+            raise PermissionError("Cannot rotate: token has expired. Re-pairing required.")
+
+        if ttl_seconds is None:
+            ttl_seconds = get_setting("device_token_ttl_seconds", 30 * 86400)
+        new_expires_at = (now() + ttl_seconds) if (ttl_seconds and ttl_seconds > 0) else 0.0
+
+        new_token = secrets.token_urlsafe(32)
+        device.token_hash = hash_token(new_token)
+        device.token_expires_at = new_expires_at
+        device.status = DeviceStatus.ONLINE
+        device.last_seen = now()
+        self.store.save_device(device)
+        return device, new_token
 
     def unpair(self, device_id):
         """Revoke one device's token without disturbing the others."""
@@ -146,6 +177,7 @@ class ApiSecurity:
             return None
         device.token_hash = ""
         device.paired_at = 0.0
+        device.token_expires_at = 0.0
         device.status = DeviceStatus.OFFLINE
         self.store.save_device(device)
         return device
@@ -166,6 +198,10 @@ class ApiSecurity:
         """
         device = self.device_for_token(token)
         if device is not None:
+            if device.is_expired:
+                device.status = DeviceStatus.OFFLINE
+                self.store.save_device(device)
+                raise PermissionError("Device token has expired. Re-pairing or rotation required.")
             device.status = DeviceStatus.ONLINE
             device.last_seen = now()
             self.store.save_device(device)

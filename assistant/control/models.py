@@ -132,6 +132,7 @@ class Device:
     last_seen: float = field(default_factory=now)
     token_hash: str = ""            # sha256 of the device's API token
     paired_at: float = 0.0
+    token_expires_at: float = 0.0   # unix epoch timestamp when token expires (0.0 = never)
     capabilities: list = field(default_factory=list)   # what this machine can do
 
     def can(self, capability):
@@ -145,6 +146,10 @@ class Device:
     @property
     def is_paired(self):
         return bool(self.token_hash)
+
+    @property
+    def is_expired(self):
+        return bool(self.token_expires_at and now() > self.token_expires_at)
 
     def to_dict(self):
         data = _serialise(self)

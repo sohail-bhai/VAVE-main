@@ -20,15 +20,19 @@ class ApprovalModal(ctk.CTkToplevel):
         self.configure(fg_color=theme.CARD_BG)
         self.transient(parent)
         self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._reject)
 
         # Center on parent
-        parent_x = parent.winfo_rootx()
-        parent_y = parent.winfo_rooty()
-        parent_w = parent.winfo_width()
-        parent_h = parent.winfo_height()
-        x = parent_x + (parent_w // 2) - 220
-        y = parent_y + (parent_h // 2) - 150
-        self.geometry(f"+{max(10, x)}+{max(10, y)}")
+        try:
+            parent_x = parent.winfo_rootx()
+            parent_y = parent.winfo_rooty()
+            parent_w = parent.winfo_width()
+            parent_h = parent.winfo_height()
+            x = parent_x + (parent_w // 2) - 220
+            y = parent_y + (parent_h // 2) - 150
+            self.geometry(f"+{max(10, x)}+{max(10, y)}")
+        except Exception:
+            pass
 
         container = ctk.CTkFrame(self, fg_color=theme.CARD_BG, corner_radius=theme.RADIUS)
         container.pack(fill="both", expand=True, padx=20, pady=20)
@@ -105,8 +109,34 @@ class ApprovalModal(ctk.CTkToplevel):
 
     def _approve(self):
         self.destroy()
+        req_id = self.approval_data.get("req_id")
+        if req_id:
+            try:
+                from assistant import confirm
+                confirm.resolve(req_id, True)
+            except Exception:
+                pass
+        on_resolve = self.approval_data.get("on_resolve")
+        if callable(on_resolve):
+            try:
+                on_resolve(True)
+            except Exception:
+                pass
         store.resolve_approval(True)
 
     def _reject(self):
         self.destroy()
+        req_id = self.approval_data.get("req_id")
+        if req_id:
+            try:
+                from assistant import confirm
+                confirm.resolve(req_id, False)
+            except Exception:
+                pass
+        on_resolve = self.approval_data.get("on_resolve")
+        if callable(on_resolve):
+            try:
+                on_resolve(False)
+            except Exception:
+                pass
         store.resolve_approval(False)

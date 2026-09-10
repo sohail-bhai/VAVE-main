@@ -14,6 +14,7 @@ import customtkinter as ctk
 from assistant.controller import AssistantController
 from assistant.events import (
     EVENT_ASSISTANT_RESPONSE,
+    EVENT_CONFIRM_REQUEST,
     EVENT_ERROR,
     EVENT_RECOGNIZED_TEXT,
     EVENT_STATE_CHANGED,
@@ -343,6 +344,18 @@ class VaveDashboardApp(ctk.CTk):
                 elif evt.event_type == EVENT_ERROR:
                     err = evt.payload.get("error", "An unexpected error occurred.")
                     store.add_system_log(f"Notice: {err}", "waiting")
+
+                elif evt.event_type == EVENT_CONFIRM_REQUEST:
+                    msg = evt.message or evt.payload.get("message", "")
+                    req_id = evt.payload.get("req_id", "")
+                    origin = evt.payload.get("origin", "system")
+                    store.add_system_log(f"Approval required [{origin}]: {msg}", "waiting")
+                    ApprovalModal(self, {
+                        "title": f"Action Approval ({origin})",
+                        "description": msg,
+                        "req_id": req_id,
+                        "origin": origin,
+                    })
 
         except Exception as e:
             logger.debug(f"Event polling note: {e}")

@@ -17,6 +17,7 @@ device token; see `assistant/api/auth.py`.
 
 import argparse
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import threading
 from pathlib import Path
@@ -223,10 +224,32 @@ def create_app(control=None, executor=None, security=None, notifier=None):
     tests, and any embedding app, can inject their own instead of driving the
     shared ones.
     """
+    plane = control or get_control_plane()
+    runner = executor or get_executor(plane=plane)
+    guard = security if security is not None else ApiSecurity(plane.store)
+    alerts = notifier if notifier is not None else Notifier(
+        plane, channels=[TelegramChannel()]
+        if get_setting("notify_telegram", False) else [])
+
+    @asynccontextmanager
+    async def lifespan(app_instance: FastAPI):
+        if get_setting("auto_resume_tasks", True):
+            def _auto_resume():
+                try:
+                    resumed = runner.resume_interrupted()
+                    if resumed:
+                        logger.info(f"[API] Automatically resumed {len(resumed)} interrupted task(s).")
+                except Exception as error:
+                    logger.debug(f"[API] Task auto-resume skipped: {error}")
+
+            threading.Thread(target=_auto_resume, daemon=True, name="api-task-auto-resume").start()
+        yield
+
     app = FastAPI(
         title="VAVE Control Plane",
         version=API_VERSION,
         description="Goals, helpers, devices, permissions and activity.",
+        lifespan=lifespan,
     )
 
     # The desktop and mobile clients are separate origins.
@@ -238,12 +261,6 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         allow_headers=["*"],
     )
 
-    plane = control or get_control_plane()
-    runner = executor or get_executor(plane=plane)
-    guard = security if security is not None else ApiSecurity(plane.store)
-    alerts = notifier if notifier is not None else Notifier(
-        plane, channels=[TelegramChannel()]
-        if get_setting("notify_telegram", False) else [])
     app.state.control = plane
     app.state.executor = runner
     app.state.security = guard
@@ -336,7 +353,27 @@ def create_app(control=None, executor=None, security=None, notifier=None):
 
         plane.record(f"Paired a new device: {device.name}.")
         return {"device": device.to_dict(), "token": token,
+                "expires_at": device.token_expires_at,
                 "note": "Store this token now. It is not shown again."}
+
+    @app.post("/api/auth/rotate", tags=["security"])
+    def rotate_token(request: Request):
+        """Rotate the token for an active device before it expires."""
+        token = bearer_token(request.headers.get("authorization", ""))
+        if not token:
+            raise HTTPException(status_code=401, detail="Bearer token required for rotation.")
+        try:
+            device, new_token = guard.rotate(token)
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error))
+
+        plane.record(f"Rotated token for device: {device.name}.")
+        return {
+            "device": device.to_dict(),
+            "token": new_token,
+            "expires_at": device.token_expires_at,
+            "note": "Store this new token now. The old token is invalidated."
+        }
 
     @app.delete("/api/devices/{device_id}/token", tags=["security"])
     def unpair_device(device_id: str):

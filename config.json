@@ -21,9 +21,11 @@
     "api_require_auth": true,
     "api_trust_localhost": true,
     "api_rate_limit_per_minute": 120,
+    "device_token_ttl_seconds": 2592000,
     "notify_telegram": false,
     "agent_max_steps": 15,
     "browser_headless": false,
+    "auto_resume_tasks": true,
     "file_shares": [
         "~/Documents",
         "~/Pictures",

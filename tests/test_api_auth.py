@@ -7,6 +7,7 @@ use.
 
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from fastapi.testclient import TestClient
 from assistant.api import create_app
 from assistant.api.auth import ApiSecurity, PairingError, TokenBucket, hash_token
 from assistant.control.executor import TaskExecutor
+from assistant.control.models import DeviceStatus, TaskStatus, now
 from assistant.control.service import ControlPlane
 from assistant.control.store import ControlStore
 
@@ -219,6 +221,112 @@ class ErrorShapeTests(SecurityTestCase):
         body = response.json()["error"]
         self.assertEqual("invalid_request", body["kind"])
         self.assertEqual(["goal"], [item["field"] for item in body["fields"]])
+
+
+class TokenExpiryAndRotationTests(SecurityTestCase):
+    def test_pair_includes_token_expires_at(self):
+        security = ApiSecurity(self.store, require_auth=True)
+        code = security.issue_pairing_code()["code"]
+        device, token = security.pair(code, "Phone", ttl_seconds=3600)
+
+        self.assertGreater(device.token_expires_at, now())
+        stored = self.store.get_device(device.id)
+        self.assertEqual(device.token_expires_at, stored.token_expires_at)
+
+    def test_expired_token_is_rejected_on_authenticate(self):
+        security = ApiSecurity(self.store, require_auth=True)
+        code = security.issue_pairing_code()["code"]
+        device, token = security.pair(code, "Phone", ttl_seconds=10)
+
+        device.token_expires_at = now() - 10.0
+        self.store.save_device(device)
+
+        with self.assertRaises(PermissionError):
+            security.authenticate(token, "testclient")
+
+        refreshed = self.store.get_device(device.id)
+        self.assertEqual(DeviceStatus.OFFLINE, refreshed.status)
+
+    def test_expired_token_returns_401_on_api(self):
+        client = self.client(trusted_hosts=("127.0.0.1",))
+        code = self.security.issue_pairing_code()["code"]
+        device, token = self.security.pair(code, "Phone", ttl_seconds=10)
+
+        device.token_expires_at = now() - 10.0
+        self.store.save_device(device)
+
+        resp = client.get("/api/status", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(401, resp.status_code)
+
+    def test_rotate_token_succeeds_and_updates_hash_and_expiry(self):
+        security = ApiSecurity(self.store, require_auth=True)
+        code = security.issue_pairing_code()["code"]
+        device, old_token = security.pair(code, "Phone", ttl_seconds=1000)
+
+        updated_device, new_token = security.rotate(old_token, ttl_seconds=5000)
+        self.assertNotEqual(old_token, new_token)
+        self.assertEqual(hash_token(new_token), updated_device.token_hash)
+        self.assertGreater(updated_device.token_expires_at, now() + 4000)
+
+        # New token works
+        authenticated = security.authenticate(new_token, "testclient")
+        self.assertEqual(updated_device.id, authenticated.id)
+
+        # Old token fails
+        with self.assertRaises(PermissionError):
+            security.authenticate(old_token, "testclient")
+
+    def test_cannot_rotate_expired_token(self):
+        security = ApiSecurity(self.store, require_auth=True)
+        code = security.issue_pairing_code()["code"]
+        device, token = security.pair(code, "Phone", ttl_seconds=10)
+
+        device.token_expires_at = now() - 10.0
+        self.store.save_device(device)
+
+        with self.assertRaises(PermissionError):
+            security.rotate(token)
+
+    def test_api_rotate_endpoint(self):
+        client = self.client(trusted_hosts=("127.0.0.1",))
+        code = self.security.issue_pairing_code()["code"]
+        device, token = self.security.pair(code, "Phone", ttl_seconds=3600)
+
+        resp = client.post("/api/auth/rotate", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(200, resp.status_code)
+        data = resp.json()
+        new_token = data["token"]
+        self.assertNotEqual(token, new_token)
+        self.assertGreater(data["expires_at"], now())
+
+        # Calling status with new token works
+        status_resp = client.get("/api/status", headers={"Authorization": f"Bearer {new_token}"})
+        self.assertEqual(200, status_resp.status_code)
+
+    def test_api_rotate_requires_bearer_token(self):
+        client = self.client(trusted_hosts=("127.0.0.1",))
+        resp = client.post("/api/auth/rotate")
+        self.assertEqual(401, resp.status_code)
+
+
+class StartupAutoResumeTests(SecurityTestCase):
+    def test_api_startup_resumes_interrupted_tasks(self):
+        resumed_calls = []
+
+        class StubExecutor:
+            def resume_interrupted(self):
+                resumed_calls.append("called")
+                return []
+
+        security = ApiSecurity(self.store, require_auth=False)
+        app = create_app(control=self.plane, executor=StubExecutor(),
+                         security=security)
+
+        with TestClient(app):
+            # Wait briefly for background thread in lifespan
+            time.sleep(0.05)
+
+        self.assertIn("called", resumed_calls)
 
 
 if __name__ == "__main__":

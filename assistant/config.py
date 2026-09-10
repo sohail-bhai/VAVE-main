@@ -49,6 +49,7 @@ DEFAULT_CONFIG = {
     "api_require_auth": True,
     "api_trust_localhost": True,
     "api_rate_limit_per_minute": 120,
+    "device_token_ttl_seconds": 2592000,
     # Send approvals, failures and security events to Telegram as well as the
     # phone's own connection.
     "notify_telegram": False,
