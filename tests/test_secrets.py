@@ -233,7 +233,7 @@ class ConfigImportTests(SecretTestCase):
 
         self.assertEqual(["telegram_bot_token", "email_app_password"], moved)
         self.assertEqual("secret://telegram_bot_token", config["telegram_bot_token"])
-        self.assertEqual("12345:abcdef", self.secrets.reveal("telegram_bot_token"))
+        self.assertEqual("12345:abcdef", self.secrets.reveal("telegram_bot_token", capability="telegram.send"))
 
     def test_an_empty_setting_is_left_alone(self):
         config = {"telegram_bot_token": "", "email_app_password": ""}
@@ -253,7 +253,30 @@ class ConfigImportTests(SecretTestCase):
         moved = self.secrets.import_from_config(config_get=get, config_set=put)
 
         self.assertEqual([], moved)
-        self.assertEqual("12345:abcdef", self.secrets.reveal("telegram_bot_token"))
+        self.assertEqual("12345:abcdef", self.secrets.reveal("telegram_bot_token", capability="telegram.send"))
+
+
+class ScopedSecretTests(SecretTestCase):
+    def test_scoped_secret_resolves_for_matching_capability(self):
+        self.secrets.put("db_password", "pass123", allowed_capabilities="database.*,sql.*")
+        self.assertEqual("pass123", self.secrets.reveal("db_password", capability="database.query"))
+        resolved = self.secrets.resolve("connect secret://db_password", capability="sql.execute")
+        self.assertEqual("connect pass123", resolved)
+
+    def test_scoped_secret_refused_for_unmatching_capability(self):
+        self.secrets.put("db_password", "pass123", allowed_capabilities="database.*,sql.*")
+        with self.assertRaises(PermissionError):
+            self.secrets.reveal("db_password", capability="shell.run")
+        with self.assertRaises(PermissionError):
+            self.secrets.resolve("secret://db_password", capability="browser.navigate")
+        with self.assertRaises(PermissionError):
+            self.secrets.resolve("secret://db_password", capability="")
+
+    def test_unscoped_secret_resolves_for_any_capability(self):
+        self.secrets.put("public_note", "hello", allowed_capabilities="")
+        self.assertEqual("hello", self.secrets.reveal("public_note", capability="shell.run"))
+        self.assertEqual("hello", self.secrets.reveal("public_note"))
+        self.assertEqual("hello", self.secrets.resolve("secret://public_note"))
 
 
 if __name__ == "__main__":

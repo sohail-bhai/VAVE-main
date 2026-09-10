@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from assistant.control.executor import TaskExecutor
-from assistant.control.models import StepStatus, TaskStatus
+from assistant.control.models import HelperStatus, StepStatus, TaskStatus
 from assistant.control.service import ControlPlane
 from assistant.control.store import ControlStore
 
@@ -97,6 +97,24 @@ class StepExecutionTests(ExecutorTestCase):
         checkpoint = self.plane.get_task(task.id).checkpoint
         self.assertEqual([0, 1], checkpoint["completed"])
         self.assertEqual(2, len(checkpoint["outcomes"]))
+
+    def test_agent_is_marked_working_during_execution_and_idle_after(self):
+        helper = self.plane.register_helper("Researcher", ["research"])
+        task = self.plane.create_task("Investigate", steps=["Search papers"], capability="research")
+
+        observed_statuses = []
+
+        def runner(instruction, context):
+            current = self.plane.get_helper(helper.id)
+            observed_statuses.append((current.status, current.current_task_id))
+            return "Found paper."
+
+        self.executor(runner).run(task.id)
+
+        self.assertEqual([(HelperStatus.WORKING, task.id)], observed_statuses)
+        after = self.plane.get_helper(helper.id)
+        self.assertEqual(HelperStatus.IDLE, after.status)
+        self.assertEqual("", after.current_task_id)
 
     def test_already_finished_steps_are_not_repeated(self):
         task = self.plane.create_task("Two parts",

@@ -37,9 +37,10 @@ HISTORY = 50
 class Notification:
     """One thing worth telling a person, ready for any channel."""
 
-    def __init__(self, event, urgency):
+    def __init__(self, event, urgency, read=False):
         self.event = event
         self.urgency = urgency
+        self.read = bool(read)
 
     @property
     def needs_answer(self):
@@ -57,6 +58,7 @@ class Notification:
             "risk": self.event.risk,
             "approval_id": self.event.approval_id,
             "needs_answer": self.needs_answer,
+            "read": self.read,
             "timestamp": self.event.timestamp,
         }
 
@@ -121,9 +123,26 @@ class Notifier:
             if channel in self.channels:
                 self.channels.remove(channel)
 
-    def recent(self, limit=20):
+    def recent(self, limit=20, unread_only=False):
+        if hasattr(self.plane, "store") and self.plane.store:
+            try:
+                return self.plane.store.list_notifications(limit=limit, unread_only=unread_only)
+            except Exception as e:
+                logger.debug("Failed reading notifications from store: %s", e)
         with self._lock:
-            return [item.to_dict() for item in self._history[-limit:]][::-1]
+            items = [item.to_dict() for item in self._history]
+            if unread_only:
+                items = [item for item in items if not item.get("read")]
+            return items[-limit:][::-1]
+
+    def mark_read(self, notification_id):
+        with self._lock:
+            for item in self._history:
+                if getattr(item.event, "id", None) == notification_id:
+                    item.read = True
+        if hasattr(self.plane, "store") and self.plane.store:
+            return self.plane.store.mark_notification_read(notification_id)
+        return None
 
     def _on_event(self, event):
         urgency = self.rules.get(event.type)
@@ -131,6 +150,12 @@ class Notifier:
             return          # on the timeline, not worth a buzz
 
         notification = Notification(event, urgency)
+        if hasattr(self.plane, "store") and self.plane.store:
+            try:
+                self.plane.store.save_notification(notification.to_dict())
+            except Exception as e:
+                logger.debug("Failed saving notification to store: %s", e)
+
         with self._lock:
             self._history.append(notification)
             self._history = self._history[-self._history_limit:]

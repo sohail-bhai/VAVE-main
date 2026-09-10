@@ -170,6 +170,7 @@ class SecretRequest(BaseModel):
     value: str = Field(..., min_length=1,
                        description="The credential. It is never returned again.")
     description: str = Field("", description="What this is for.")
+    allowed_capabilities: str = Field("", description="Allowed capability patterns (e.g. 'google.*,email.*').")
 
 
 class DraftEmailRequest(BaseModel):
@@ -846,7 +847,8 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         """Store or replace a credential. Use secret://<name> to refer to it."""
         try:
             return plane.secrets.put(name, request.value,
-                                     description=request.description)
+                                     description=request.description,
+                                     allowed_capabilities=request.allowed_capabilities)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error))
 
@@ -1024,9 +1026,17 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         return sorted(event.value for event in EventType)
 
     @app.get("/api/notifications", tags=["activity"])
-    def list_notifications(limit: int = 20):
+    def list_notifications(limit: int = 20, unread_only: bool = False):
         """What VAVE would have sent to your phone, newest first."""
-        return alerts.recent(limit=limit)
+        return alerts.recent(limit=limit, unread_only=unread_only)
+
+    @app.post("/api/notifications/{notification_id}/read", tags=["activity"])
+    def mark_notification_read(notification_id: str):
+        """Mark a notification as read."""
+        result = alerts.mark_read(notification_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="No such notification.")
+        return result
 
     # -- emergency stop ----------------------------------------------------
 

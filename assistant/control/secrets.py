@@ -20,7 +20,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from assistant.control.models import now
+from assistant.control.models import matches_pattern, now
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +33,10 @@ DEFAULT_KEY_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "sec
 # Environment wins, so a deployment can hand the key in without a file.
 KEY_ENVIRONMENT_VARIABLE = "VAVE_SECRET_KEY"
 
-# Credentials that currently sit in config.json, and the names they take here.
+# Credentials that currently sit in config.json, and the names & scopes they take here.
 CONFIG_SECRETS = {
-    "telegram_bot_token": "telegram_bot_token",
-    "email_app_password": "email_app_password",
+    "telegram_bot_token": ("telegram_bot_token", "system.notify,telegram.*"),
+    "email_app_password": ("email_app_password", "google.gmail.*,email.*"),
 }
 
 
@@ -90,7 +90,7 @@ class SecretStore:
 
     # -- keeping ------------------------------------------------------------
 
-    def put(self, name, value, description=""):
+    def put(self, name, value, description="", allowed_capabilities=""):
         """Store or replace a secret. The value never comes back out of here."""
         if not name:
             raise ValueError("A secret needs a name.")
@@ -99,7 +99,9 @@ class SecretStore:
             self.store.save_secret(
                 name=name,
                 ciphertext=self._fernet.encrypt(str(value).encode("utf-8")).decode(),
-                description=description, updated_at=now())
+                description=description,
+                allowed_capabilities=allowed_capabilities or "",
+                updated_at=now())
         return self.describe(name)
 
     def delete(self, name):
@@ -117,20 +119,35 @@ class SecretStore:
         row = self.store.get_secret(name)
         if row is None:
             return None
-        return {"name": row["name"], "description": row["description"] or "",
-                "reference": f"secret://{row['name']}",
-                "created_at": row["created_at"], "updated_at": row["updated_at"]}
+        return {
+            "name": row["name"],
+            "description": row["description"] or "",
+            "reference": f"secret://{row['name']}",
+            "allowed_capabilities": row.get("allowed_capabilities", "") or "",
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
 
     def list(self):
         return [self.describe(name) for name in self.names()]
 
     # -- using --------------------------------------------------------------
 
-    def reveal(self, name):
+    def reveal(self, name, capability=""):
         """The real value. Only the control plane calls this, at the last moment."""
         row = self.store.get_secret(name)
         if row is None:
             raise SecretNotFound(f"There is no secret called '{name}'.")
+
+        allowed = row.get("allowed_capabilities", "") or ""
+        if allowed and capability != "*":
+            patterns = [p.strip() for p in allowed.split(",") if p.strip()]
+            if not any(matches_pattern(p, capability) for p in patterns):
+                raise PermissionError(
+                    f"Secret '{name}' requires capability matching [{allowed}], "
+                    f"but requested with capability '{capability}'."
+                )
+
         try:
             return self._fernet.decrypt(row["ciphertext"].encode()).decode("utf-8")
         except InvalidToken as error:
@@ -138,18 +155,18 @@ class SecretStore:
                 f"'{name}' cannot be read with this key. Was the key replaced?"
             ) from error
 
-    def resolve(self, value):
+    def resolve(self, value, capability=""):
         """Replace `secret://name` references anywhere in a value.
 
         Strings, lists and dicts are walked, so a whole set of tool arguments
         can be resolved in one call just before the tool runs.
         """
         if isinstance(value, str):
-            return REFERENCE.sub(lambda match: self.reveal(match.group(1)), value)
+            return REFERENCE.sub(lambda match: self.reveal(match.group(1), capability=capability), value)
         if isinstance(value, dict):
-            return {key: self.resolve(item) for key, item in value.items()}
+            return {key: self.resolve(item, capability=capability) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
-            return type(value)(self.resolve(item) for item in value)
+            return type(value)(self.resolve(item, capability=capability) for item in value)
         return value
 
     def references(self, value):
@@ -171,8 +188,8 @@ class SecretStore:
         result = str(text)
         for name in self.names():
             try:
-                value = self.reveal(name)
-            except SecretNotFound:
+                value = self.reveal(name, capability="*")
+            except (SecretNotFound, PermissionError):
                 continue
             if value and value in result:
                 result = result.replace(value, f"secret://{name}")
@@ -191,7 +208,7 @@ class SecretStore:
         if not isinstance(value, str) or "secret://" not in value:
             return value
         try:
-            return self.resolve(value)
+            return self.resolve(value, capability="*")
         except Exception as error:                       # missing key/secret/db
             logger.warning("Could not resolve secret reference: %s", error)
             return default
@@ -204,11 +221,16 @@ class SecretStore:
             config_set = config_set or update_setting
 
         moved = []
-        for setting, name in CONFIG_SECRETS.items():
+        for setting, spec in CONFIG_SECRETS.items():
+            if isinstance(spec, tuple):
+                name, allowed_caps = spec
+            else:
+                name, allowed_caps = spec, ""
             value = config_get(setting, "")
             if not value or str(value).startswith("secret://"):
                 continue
-            self.put(name, value, description=f"Moved out of config.json ({setting}).")
+            self.put(name, value, description=f"Moved out of config.json ({setting}).",
+                     allowed_capabilities=allowed_caps)
             config_set(setting, f"secret://{name}")
             moved.append(name)
         return moved

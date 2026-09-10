@@ -645,6 +645,19 @@ class EventStreamTests(ApiTestCase):
         self.assertTrue(body[0]["needs_answer"])
         self.assertEqual("action", body[0]["urgency"])
 
+    def test_marking_notification_read_over_api(self):
+        self.client.post("/api/capabilities/request",
+                         json={"capability": "google.gmail.send"})
+        body = self.client.get("/api/notifications").json()
+        notif_id = body[0]["id"]
+
+        response = self.client.post(f"/api/notifications/{notif_id}/read")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(1, response.json()["read"])
+
+        unreads = self.client.get("/api/notifications", params={"unread_only": True}).json()
+        self.assertEqual([], [n for n in unreads if n["id"] == notif_id])
+
 
 class SecretApiTests(ApiTestCase):
     def test_a_secret_can_be_stored_and_listed_without_its_value(self):

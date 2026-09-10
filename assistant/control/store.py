@@ -192,6 +192,26 @@ MIGRATIONS = [
     ("0012_device_token_expiry", [
         ("devices", "token_expires_at", "ALTER TABLE devices ADD COLUMN token_expires_at REAL DEFAULT 0.0"),
     ]),
+    ("0013_persistent_notifications", """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            urgency TEXT NOT NULL,
+            message TEXT NOT NULL,
+            task_id TEXT,
+            agent_id TEXT,
+            capability TEXT,
+            risk TEXT,
+            approval_id TEXT,
+            needs_answer INTEGER NOT NULL DEFAULT 0,
+            read INTEGER NOT NULL DEFAULT 0,
+            timestamp REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_notifications_time ON notifications (timestamp DESC);
+    """),
+    ("0014_secret_scopes", [
+        ("secrets", "allowed_capabilities", "ALTER TABLE secrets ADD COLUMN allowed_capabilities TEXT DEFAULT ''"),
+    ]),
 ]
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "control.db"
@@ -466,15 +486,22 @@ class ControlStore:
     # Only ciphertext is stored here. The key lives outside the database, in
     # assistant/control/secrets.py.
 
-    def save_secret(self, name, ciphertext, description="", updated_at=None):
+    def save_secret(self, name, ciphertext, description="", allowed_capabilities=None, updated_at=None):
         existing = self.get_secret(name)
         created_at = existing["created_at"] if existing else (updated_at or 0.0)
+        caps = (
+            allowed_capabilities
+            if allowed_capabilities is not None
+            else (existing.get("allowed_capabilities", "") if existing else "")
+        )
         self._write(
-            "INSERT INTO secrets (name, ciphertext, description, created_at, "
-            "updated_at) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO secrets (name, ciphertext, description, allowed_capabilities, created_at, "
+            "updated_at) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(name) DO UPDATE SET ciphertext=excluded.ciphertext, "
-            "description=excluded.description, updated_at=excluded.updated_at",
-            (name, ciphertext, description, created_at, updated_at or 0.0),
+            "description=excluded.description, "
+            "allowed_capabilities=excluded.allowed_capabilities, "
+            "updated_at=excluded.updated_at",
+            (name, ciphertext, description, caps, created_at, updated_at or 0.0),
         )
         return self.get_secret(name)
 
@@ -491,6 +518,36 @@ class ControlStore:
         if secret is not None:
             self._write("DELETE FROM secrets WHERE name = ?", (name,))
         return secret
+
+    # -- notifications ------------------------------------------------------
+
+    def save_notification(self, data):
+        self._write(
+            "INSERT INTO notifications (id, type, urgency, message, task_id, "
+            "agent_id, capability, risk, approval_id, needs_answer, read, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET read=excluded.read",
+            (data["id"], data["type"], data["urgency"], data["message"],
+             data.get("task_id", "") or "", data.get("agent_id", "") or "",
+             data.get("capability", "") or "", data.get("risk", "") or "",
+             data.get("approval_id", "") or "", 1 if data.get("needs_answer") else 0,
+             1 if data.get("read") else 0, data.get("timestamp", 0.0)),
+        )
+        return data
+
+    def list_notifications(self, limit=50, unread_only=False):
+        sql = "SELECT * FROM notifications"
+        params = []
+        if unread_only:
+            sql += " WHERE read = 0"
+        sql += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        return [dict(row) for row in self._rows(sql, tuple(params))]
+
+    def mark_notification_read(self, notification_id):
+        self._write("UPDATE notifications SET read = 1 WHERE id = ?", (notification_id,))
+        row = self._row("SELECT * FROM notifications WHERE id = ?", (notification_id,))
+        return dict(row) if row is not None else None
 
     # -- policy rules -------------------------------------------------------
 

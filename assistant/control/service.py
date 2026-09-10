@@ -213,6 +213,25 @@ class ControlPlane:
                     EventType.NOTE, metadata={"agent_id": helper.id})
         return helper
 
+    def set_helper_working(self, helper_id, task_id=""):
+        helper = self.store.get_helper(helper_id)
+        if helper is None:
+            return None
+        helper.status = HelperStatus.WORKING
+        helper.current_task_id = task_id
+        self.store.save_helper(helper)
+        return helper
+
+    def set_helper_idle(self, helper_id):
+        helper = self.store.get_helper(helper_id)
+        if helper is None:
+            return None
+        if helper.status == HelperStatus.WORKING:
+            helper.status = HelperStatus.IDLE
+            helper.current_task_id = ""
+            self.store.save_helper(helper)
+        return helper
+
     def sweep(self, at=None):
         """Mark agents and devices offline once they have gone quiet.
 
@@ -498,6 +517,8 @@ class ControlPlane:
         task.summary = summary
         self._set_task_status(task, TaskStatus.COMPLETED)
         self._release_task_permissions(task_id, "the task finished")
+        if task.helper_id:
+            self.set_helper_idle(task.helper_id)
         self.record(summary or "Done.", EventType.TASK_COMPLETED, task_id=task_id,
                     agent_id=task.helper_id, result="ok")
         return task
@@ -511,6 +532,8 @@ class ControlPlane:
         task.summary = reason
         self._set_task_status(task, TaskStatus.FAILED)
         self._release_task_permissions(task_id, "the task stopped")
+        if task.helper_id:
+            self.set_helper_idle(task.helper_id)
         self.record(reason or "Couldn't finish this step.",
                     EventType.TASK_FAILED, task_id=task_id,
                     agent_id=task.helper_id, result="failed")
@@ -523,6 +546,8 @@ class ControlPlane:
 
         self._set_task_status(task, TaskStatus.CANCELLED)
         self._release_task_permissions(task_id, "the task was stopped")
+        if task.helper_id:
+            self.set_helper_idle(task.helper_id)
         self.record(reason, EventType.TASK_CANCELLED, task_id=task_id,
                     agent_id=task.helper_id, result="cancelled")
         return task

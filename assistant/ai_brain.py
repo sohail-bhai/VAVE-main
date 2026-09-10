@@ -2437,7 +2437,15 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
 
                     try:
                         if resolve_secrets is not None:
-                            args_dict = resolve_secrets(args_dict)
+                            try:
+                                from assistant.control.capabilities import capability_for_tool
+                                tool_cap = capability_for_tool(func_name)
+                            except Exception:
+                                tool_cap = ""
+                            try:
+                                args_dict = resolve_secrets(args_dict, capability=tool_cap)
+                            except TypeError:
+                                args_dict = resolve_secrets(args_dict)
                         args_dict = guard.coerce_args(func_to_call, args_dict)
                         result = guard.call(func_to_call,
                                             _tool_name=func_name, **args_dict)
@@ -2494,7 +2502,7 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                             logger.info("[VAVE] browser_wait_for_login completed without sign-in; informing user.")
                             return "I opened the page, but signing in is required to continue. Please log in directly in the browser window, then ask me again."
 
-                    except guard.ToolDenied as e:
+                    except (guard.ToolDenied, PermissionError) as e:
                         logger.info(f"Tool {func_name} denied: {e}")
                         conversation.append({
                             "role": "tool",

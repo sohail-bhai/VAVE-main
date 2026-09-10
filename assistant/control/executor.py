@@ -253,51 +253,57 @@ class TaskExecutor:
         """
         agent = self._agent_for(task_id, step)
         self.plane.start_step(task_id, step.position)
+        if agent is not None:
+            self.plane.set_helper_working(agent.id, task_id)
         last_error = None
 
-        for attempt in range(1, self.max_attempts + 1):
-            started = time.monotonic()
-            self.plane.record_attempt(task_id, step.position)
+        try:
+            for attempt in range(1, self.max_attempts + 1):
+                started = time.monotonic()
+                self.plane.record_attempt(task_id, step.position)
 
-            try:
-                token.check()
-                result = StepResult.of(self._call_runner(
-                    step.label, self._context(outcomes), agent=agent,
-                    token=token, task_id=task_id))
-            except Cancelled as stopped:
-                self.plane.finish_step(task_id, step.position,
-                                       detail="Stopped part-way.", failed=True)
-                return False, stopped
-            except Exception as error:
-                logger.warning("Step %s of task %s failed on attempt %s: %s",
-                               step.position, task_id, attempt, error)
-                self._report_health(agent, started, ok=False)
-                last_error = error
-                if attempt < self.max_attempts and not token.cancelled:
-                    self.plane.record(
-                        f"That didn't work. Trying '{step.label}' again.",
-                        task_id=task_id)
-                    time.sleep(self.backoff * (2 ** (attempt - 1)))
-                    continue
-                break
+                try:
+                    token.check()
+                    result = StepResult.of(self._call_runner(
+                        step.label, self._context(outcomes), agent=agent,
+                        token=token, task_id=task_id))
+                except Cancelled as stopped:
+                    self.plane.finish_step(task_id, step.position,
+                                           detail="Stopped part-way.", failed=True)
+                    return False, stopped
+                except Exception as error:
+                    logger.warning("Step %s of task %s failed on attempt %s: %s",
+                                   step.position, task_id, attempt, error)
+                    self._report_health(agent, started, ok=False)
+                    last_error = error
+                    if attempt < self.max_attempts and not token.cancelled:
+                        self.plane.record(
+                            f"That didn't work. Trying '{step.label}' again.",
+                            task_id=task_id)
+                        time.sleep(self.backoff * (2 ** (attempt - 1)))
+                        continue
+                    break
 
-            if not result.ok:
-                # The agent answered, but said it could not do the work.
-                last_error = RuntimeError(result.error or "The agent could not do this.")
-                self._report_health(agent, started, ok=False)
-                if attempt < self.max_attempts and not token.cancelled:
-                    time.sleep(self.backoff * (2 ** (attempt - 1)))
-                    continue
-                break
+                if not result.ok:
+                    # The agent answered, but said it could not do the work.
+                    last_error = RuntimeError(result.error or "The agent could not do this.")
+                    self._report_health(agent, started, ok=False)
+                    if attempt < self.max_attempts and not token.cancelled:
+                        time.sleep(self.backoff * (2 ** (attempt - 1)))
+                        continue
+                    break
 
-            self._report_health(agent, started, ok=True)
-            self.plane.finish_step(task_id, step.position, detail=result.output,
-                                   artifacts=result.artifacts)
-            return True, result.output
+                self._report_health(agent, started, ok=True)
+                self.plane.finish_step(task_id, step.position, detail=result.output,
+                                       artifacts=result.artifacts)
+                return True, result.output
 
-        self.plane.finish_step(task_id, step.position,
-                               detail=f"Couldn't do this: {last_error}", failed=True)
-        return False, last_error
+            self.plane.finish_step(task_id, step.position,
+                                   detail=f"Couldn't do this: {last_error}", failed=True)
+            return False, last_error
+        finally:
+            if agent is not None:
+                self.plane.set_helper_idle(agent.id)
 
     def _agent_for(self, task_id, step):
         """The agent that should do this step: the step's own, or the task's."""
@@ -311,19 +317,25 @@ class TaskExecutor:
     def _run_single(self, task, token):
         """Work a task whose goal was never broken into steps."""
         agent = self.plane.get_helper(task.helper_id) if task.helper_id else None
+        if agent is not None:
+            self.plane.set_helper_working(agent.id, task.id)
         started = time.monotonic()
         try:
-            outcome = self._call_runner(task.goal, "", agent=agent, token=token,
-                                        task_id=task.id)
-        except Cancelled:
-            return self.plane.cancel_task(task.id, "Stopped part-way.")
-        except Exception as error:
-            logger.exception("Task %s failed", task.id)
-            self._report_health(agent, started, ok=False)
-            return self.plane.fail_task(task.id, str(error))
+            try:
+                outcome = self._call_runner(task.goal, "", agent=agent, token=token,
+                                            task_id=task.id)
+            except Cancelled:
+                return self.plane.cancel_task(task.id, "Stopped part-way.")
+            except Exception as error:
+                logger.exception("Task %s failed", task.id)
+                self._report_health(agent, started, ok=False)
+                return self.plane.fail_task(task.id, str(error))
 
-        self._report_health(agent, started, ok=True)
-        return self.plane.complete_task(task.id, outcome)
+            self._report_health(agent, started, ok=True)
+            return self.plane.complete_task(task.id, outcome)
+        finally:
+            if agent is not None:
+                self.plane.set_helper_idle(agent.id)
 
     # -- collaborators ------------------------------------------------------
 
