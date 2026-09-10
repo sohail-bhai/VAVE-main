@@ -21,6 +21,8 @@ CATALOG = {
     "google.drive.write": (RiskLevel.HIGH, "Create or change Drive files"),
     "google.drive.delete": (RiskLevel.CRITICAL, "Delete Drive files"),
     "google.drive.sync": (RiskLevel.MEDIUM, "Synchronize and index Google Drive files"),
+    "google.drive.semantic_search": (RiskLevel.MEDIUM, "Search Google Drive files semantically"),
+    "google.drive.export": (RiskLevel.HIGH, "Export and index files to Google Drive"),
     "google.calendar.read": (RiskLevel.MEDIUM, "Read your calendar"),
     "google.calendar.write": (RiskLevel.HIGH, "Create or change events"),
 

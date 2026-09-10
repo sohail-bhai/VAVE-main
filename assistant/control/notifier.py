@@ -124,16 +124,17 @@ class Notifier:
                 self.channels.remove(channel)
 
     def recent(self, limit=20, unread_only=False):
+        effective_limit = min(limit, self._history_limit) if self._history_limit else limit
         if hasattr(self.plane, "store") and self.plane.store:
             try:
-                return self.plane.store.list_notifications(limit=limit, unread_only=unread_only)
+                return self.plane.store.list_notifications(limit=effective_limit, unread_only=unread_only)
             except Exception as e:
                 logger.debug("Failed reading notifications from store: %s", e)
         with self._lock:
             items = [item.to_dict() for item in self._history]
             if unread_only:
                 items = [item for item in items if not item.get("read")]
-            return items[-limit:][::-1]
+            return items[-effective_limit:][::-1]
 
     def mark_read(self, notification_id):
         with self._lock:

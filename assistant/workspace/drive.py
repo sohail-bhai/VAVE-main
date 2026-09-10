@@ -13,7 +13,7 @@ from assistant.workspace.auth import get_google_service
 logger = logging.getLogger(__name__)
 
 # In-memory mock storage for demo mode
-_mock_drive_files: List[Dict[str, Any]] = [
+_INITIAL_MOCK_DRIVE_FILES: List[Dict[str, Any]] = [
     {
         "id": "mock_drive_001",
         "name": "Hackwave_Final_Presentation.pptx",
@@ -39,6 +39,14 @@ _mock_drive_files: List[Dict[str, Any]] = [
         "content": "Roadmap: Google Workspace Gateway, Autonomous Overwatch, and Phone Approval."
     }
 ]
+
+_mock_drive_files: List[Dict[str, Any]] = [dict(f) for f in _INITIAL_MOCK_DRIVE_FILES]
+
+
+def reset_mock_drive_files():
+    """Resets mock drive files to pristine state for test isolation."""
+    global _mock_drive_files
+    _mock_drive_files = [dict(f) for f in _INITIAL_MOCK_DRIVE_FILES]
 
 
 def search_drive(query: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -66,7 +74,7 @@ def search_drive(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         if q_lower in f["name"].lower() or q_lower in f.get("content", "").lower()
     ]
     logger.info(f"[Demo Mode] Drive search matched {len(matches)} files.")
-    return matches[:limit]
+    return [dict(f) for f in matches[:limit]]
 
 
 def read_drive_file(file_id: str) -> Dict[str, Any]:
@@ -114,7 +122,7 @@ def read_drive_file(file_id: str) -> Dict[str, Any]:
     # Mock retrieval
     for f in _mock_drive_files:
         if f["id"] == file_id:
-            return f
+            return dict(f)
     return {"id": file_id, "name": "Unknown File", "content": "File content simulated for demo."}
 
 
@@ -146,7 +154,7 @@ def upload_drive_file(name: str, content: str, mime_type: str = "text/plain") ->
     }
     _mock_drive_files.append(entry)
     logger.info(f"[Demo Mode] Created Drive file: {name} (ID: {new_id})")
-    return entry
+    return dict(entry)
 
 
 def list_drive_files(limit: int = 10) -> List[Dict[str, Any]]:
@@ -162,4 +170,4 @@ def list_drive_files(limit: int = 10) -> List[Dict[str, Any]]:
         except Exception as e:
             logger.error(f"Drive list error: {e}")
 
-    return _mock_drive_files[:limit]
+    return [dict(f) for f in _mock_drive_files[:limit]]

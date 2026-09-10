@@ -13,6 +13,7 @@ supporting:
 import logging
 import time
 import re
+import threading
 from typing import List, Dict, Any, Optional
 
 from assistant.workspace.drive import list_drive_files, read_drive_file, upload_drive_file, _mock_drive_files
@@ -25,6 +26,7 @@ COLLECTION_NAME = "google_drive_index"
 
 _drive_collection = None
 _indexer_initialized = False
+_drive_collection_lock = threading.Lock()
 
 
 def _get_drive_collection():
@@ -33,17 +35,20 @@ def _get_drive_collection():
     if _drive_collection is not None:
         return _drive_collection
 
-    try:
-        from assistant.memory import chroma_client, _memory_enabled
-        if _memory_enabled and chroma_client is not None:
-            _drive_collection = chroma_client.get_or_create_collection(
-                name=COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"}
-            )
-            _indexer_initialized = True
+    with _drive_collection_lock:
+        if _drive_collection is not None:
             return _drive_collection
-    except Exception as e:
-        logger.debug("ChromaDB not available for drive indexer: %s", e)
+        try:
+            from assistant.memory import chroma_client, _memory_enabled
+            if _memory_enabled and chroma_client is not None:
+                _drive_collection = chroma_client.get_or_create_collection(
+                    name=COLLECTION_NAME,
+                    metadata={"hnsw:space": "cosine"}
+                )
+                _indexer_initialized = True
+                return _drive_collection
+        except Exception as e:
+            logger.debug("ChromaDB not available for drive indexer: %s", e)
 
     return None
 
@@ -88,7 +93,17 @@ class DriveSemanticIndexer:
     """Orchestrates bi-directional synchronization and semantic querying for Google Drive."""
 
     def __init__(self, store: Optional[ControlStore] = None):
-        self.store = store or ControlStore()
+        self._store = store
+
+    @property
+    def store(self) -> ControlStore:
+        if self._store is None:
+            self._store = ControlStore()
+        return self._store
+
+    @store.setter
+    def store(self, value: Optional[ControlStore]):
+        self._store = value
 
     def sync_drive_index(self, full_reindex: bool = False, limit: int = 50) -> Dict[str, Any]:
         """Scans Google Drive, ingests updated files, and purges deleted files.
@@ -140,12 +155,18 @@ class DriveSemanticIndexer:
             # Remove old chunks for this file if updating
             if collection is not None and not is_new:
                 try:
-                    old_chunk_count = existing_record.get("chunk_count", 0)
-                    old_ids = [f"drive_{file_id}_chunk_{i}" for i in range(old_chunk_count)]
-                    if old_ids:
-                        collection.delete(ids=old_ids)
-                except Exception as e:
-                    logger.debug("Failed removing old chunks for %s: %s", file_id, e)
+                    collection.delete(where={"file_id": {"$eq": file_id}})
+                except Exception:
+                    try:
+                        old_chunk_count = existing_record.get("chunk_count", 0)
+                        old_ids = [f"drive_{file_id}_chunk_{i}" for i in range(old_chunk_count)]
+                        if old_ids:
+                            collection.delete(ids=old_ids)
+                    except Exception as e:
+                        logger.debug("Failed removing old chunks for %s: %s", file_id, e)
+
+            if not chunks:
+                logger.warning("No indexable text chunks extracted for Drive file %s (%s)", file_id, name)
 
             # Ingest new chunks into ChromaDB
             if collection is not None and chunks:
@@ -192,12 +213,15 @@ class DriveSemanticIndexer:
             if stale_file_id not in seen_file_ids:
                 if collection is not None:
                     try:
-                        old_count = stale_record.get("chunk_count", 0)
-                        old_ids = [f"drive_{stale_file_id}_chunk_{i}" for i in range(old_count)]
-                        if old_ids:
-                            collection.delete(ids=old_ids)
-                    except Exception as e:
-                        logger.debug("Failed deleting stale chunks for %s: %s", stale_file_id, e)
+                        collection.delete(where={"file_id": {"$eq": stale_file_id}})
+                    except Exception:
+                        try:
+                            old_count = stale_record.get("chunk_count", 0)
+                            old_ids = [f"drive_{stale_file_id}_chunk_{i}" for i in range(old_count)]
+                            if old_ids:
+                                collection.delete(ids=old_ids)
+                        except Exception as e:
+                            logger.debug("Failed deleting stale chunks for %s: %s", stale_file_id, e)
                 self.store.delete_drive_sync_file(stale_file_id)
                 deleted_count += 1
 
@@ -221,7 +245,7 @@ class DriveSemanticIndexer:
         collection = _get_drive_collection()
         if collection is not None and collection.count() > 0:
             try:
-                where_filter = {"mime_type": mime_type} if mime_type else None
+                where_filter = {"mime_type": {"$eq": mime_type}} if mime_type else None
                 results = collection.query(
                     query_texts=[query],
                     n_results=min(limit, collection.count()),

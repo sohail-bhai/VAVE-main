@@ -77,15 +77,21 @@ def search_emails(query: str = "is:unread", max_results: int = 5) -> List[Dict[s
             logger.error(f"Gmail search error: {e}")
 
     # Fallback to demo mock emails
-    q_lower = query.lower()
+    q_lower = query.lower().strip()
+    is_unread_query = ("unread" in q_lower)
     matches = []
     for m in _mock_emails:
-        if "unread" in q_lower and not m["unread"]:
+        if is_unread_query and not m.get("unread"):
             continue
-        if q_lower not in "is:unread" and q_lower not in m["subject"].lower() and q_lower not in m["sender"].lower() and q_lower not in m["body"].lower():
-            continue
+        if not is_unread_query:
+            if (
+                q_lower not in m["subject"].lower()
+                and q_lower not in m["sender"].lower()
+                and q_lower not in m.get("body", "").lower()
+            ):
+                continue
         matches.append(m)
-    return matches[:max_results] or _mock_emails[:max_results]
+    return [dict(m) for m in matches[:max_results]] or [dict(m) for m in _mock_emails[:max_results]]
 
 
 def read_email(message_id: str) -> Dict[str, Any]:
@@ -104,6 +110,11 @@ def read_email(message_id: str) -> Dict[str, Any]:
                 for part in parts:
                     if part.get("mimeType") == "text/plain" and "data" in part.get("body", {}):
                         body += base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
+                if not body:
+                    for part in parts:
+                        if part.get("mimeType") == "text/html" and "data" in part.get("body", {}):
+                            raw_html = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
+                            body += re.sub(r"<[^>]+>", " ", raw_html).strip()
             return {
                 "id": message_id,
                 "sender": headers.get("from", ""),
@@ -116,7 +127,7 @@ def read_email(message_id: str) -> Dict[str, Any]:
 
     for m in _mock_emails:
         if m["id"] == message_id:
-            return m
+            return dict(m)
     return {"id": message_id, "subject": "Email", "body": "Content simulated for demo."}
 
 
@@ -182,6 +193,7 @@ def draft_email(to: str, subject: str, body: str) -> Dict[str, Any]:
         "body": body,
         "status": "drafted",
         "verified": True,
+        "demo": True,
         "notice": f"[Demo Mode] Draft created (ID: {draft_id}) and verified."
     }
 
@@ -235,6 +247,7 @@ def send_email(to: str, subject: str, body: str) -> Dict[str, Any]:
         "subject": subject,
         "status": "sent",
         "verified": True,
+        "demo": True,
         "sent_at": time.time(),
         "notice": f"[Demo Mode] Sent email '{subject}' to {to_clean} (ID: {sent_id}) and verified."
     }

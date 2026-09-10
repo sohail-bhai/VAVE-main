@@ -45,7 +45,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_the_catalog_can_be_filtered_by_namespace(self):
         names = [entry["capability"] for entry in capabilities.catalog("google.gmail.*")]
-        self.assertEqual(["google.gmail.read", "google.gmail.send"], names)
+        self.assertEqual(["google.gmail.draft", "google.gmail.read", "google.gmail.send"], names)
 
     def test_vave_tools_map_onto_catalog_names(self):
         for tool, capability in capabilities.TOOL_CAPABILITIES.items():

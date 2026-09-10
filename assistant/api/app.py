@@ -840,8 +840,24 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         return {"live": _google_live(), "file": result}
 
     @app.post("/api/google/drive/sync", tags=["google"])
-    def google_drive_sync(full_reindex: bool = False, limit: int = 50):
+    def google_drive_sync(request: Request, full_reindex: bool = False, limit: int = 50):
         """Synchronizes Google Drive documents with local semantic vector memory."""
+        arguments = {"full_reindex": full_reindex, "limit": limit}
+        judgement = plane.policy.evaluate("google.drive.sync")
+        if judgement.needs_approval:
+            approval = _held_for_approval(
+                "google.drive.sync", "Sync Google Drive",
+                "Synchronize your Google Drive files into local semantic index?",
+                "Reads Drive documents and stores embeddings in local vector memory.",
+                arguments, request)
+            if approval is not None:
+                return JSONResponse(status_code=202, content={
+                    "status": "waiting_approval",
+                    "approval": approval.to_dict(),
+                    "detail": "Approve this, then trigger sync again."})
+        elif judgement.denied:
+            raise HTTPException(status_code=403, detail=judgement.reason)
+
         res = _google().execute_capability(
             "google.drive.sync", full_reindex=full_reindex, limit=limit)
         plane.record("Synchronized Google Drive files into semantic index.")
