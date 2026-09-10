@@ -567,5 +567,59 @@ class StoppedShortTests(unittest.TestCase):
                 self.assertFalse(self._short(request, "Here you go.", 0))
 
 
+class StructuredCommandRoutingTests(unittest.TestCase):
+    """Patterns must match intended system actions and reject casual mentions."""
+
+    def test_time_pattern_matches_exact_queries(self):
+        from assistant.commands import _TIME_PATTERN
+        for cmd in ("time", "what time is it", "tell me the time", "current time", "what's the time now"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(_TIME_PATTERN.match(cmd), f"Expected {cmd!r} to match time pattern")
+
+    def test_time_pattern_rejects_casual_mentions(self):
+        from assistant.commands import _TIME_PATTERN
+        for cmd in ("take your time", "explain the space-time continuum", "what time is it in Tokyo", "every time I run this"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(_TIME_PATTERN.match(cmd), f"Expected {cmd!r} NOT to match time pattern")
+
+    def test_date_pattern_matches_exact_queries(self):
+        from assistant.commands import _DATE_PATTERN
+        for cmd in ("date", "today's date", "what is today's date", "tell me the date", "current date"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(_DATE_PATTERN.match(cmd), f"Expected {cmd!r} to match date pattern")
+
+    def test_date_pattern_rejects_casual_mentions(self):
+        from assistant.commands import _DATE_PATTERN
+        for cmd in ("what date did World War 2 end", "I have a date tonight", "expiration date of milk"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(_DATE_PATTERN.match(cmd), f"Expected {cmd!r} NOT to match date pattern")
+
+    def test_battery_pattern_matches_exact_queries(self):
+        from assistant.commands import _BATTERY_PATTERN
+        for cmd in ("battery", "battery percentage", "battery status", "what is the battery", "how much battery is left"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(_BATTERY_PATTERN.match(cmd), f"Expected {cmd!r} to match battery pattern")
+
+    def test_battery_pattern_rejects_casual_mentions(self):
+        from assistant.commands import _BATTERY_PATTERN
+        for cmd in ("assault and battery laws", "a battery of tests was conducted"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(_BATTERY_PATTERN.match(cmd), f"Expected {cmd!r} NOT to match battery pattern")
+
+    def test_notes_patterns_match_and_reject_appropriately(self):
+        from assistant.commands import _ADD_NOTE_PATTERN, _READ_NOTES_PATTERN, _CLEAR_NOTES_PATTERN
+        self.assertIsNotNone(_ADD_NOTE_PATTERN.match("take note"))
+        self.assertIsNotNone(_ADD_NOTE_PATTERN.match("take a note"))
+        self.assertIsNotNone(_ADD_NOTE_PATTERN.match("add note"))
+        self.assertIsNone(_ADD_NOTE_PATTERN.match("take note of the key points in this research paper"))
+
+        self.assertIsNotNone(_READ_NOTES_PATTERN.match("read notes"))
+        self.assertIsNotNone(_READ_NOTES_PATTERN.match("read my notes"))
+        self.assertIsNone(_READ_NOTES_PATTERN.match("read notes from the meeting with Alice"))
+
+        self.assertIsNotNone(_CLEAR_NOTES_PATTERN.match("clear notes"))
+        self.assertIsNotNone(_CLEAR_NOTES_PATTERN.match("delete my notes"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -253,6 +253,18 @@ class ActivityApiTests(ApiTestCase):
         # The notifier's own subscription is permanent and stays put.
         self.assertEqual(before, len(self.plane._subscribers))
 
+    def test_sse_event_stream_connects_and_streams_events(self):
+        self.plane.record("First SSE Event")
+
+        with self.client.stream("GET", "/api/events/stream?limit=2") as response:
+            self.assertEqual(200, response.status_code)
+            self.assertTrue(response.headers["content-type"].startswith("text/event-stream"))
+            collected = [chunk for chunk in response.iter_lines() if chunk]
+
+            text = "\n".join(collected)
+            self.assertIn("event: connected", text)
+            self.assertIn("First SSE Event", text)
+
 
 class TaskExecutionTests(ApiTestCase):
     def test_running_a_task_works_its_steps(self):

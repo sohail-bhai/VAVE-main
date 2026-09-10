@@ -44,17 +44,34 @@ class DevicesPage(ctk.CTkScrollableFrame):
             anchor="w",
         ).pack(anchor="w", pady=(2, 0))
 
+        store.refresh_devices()
+        store.subscribe(self._on_store_event)
+
         self._build_phone_card()
 
         # Device Cards Grid (2 columns)
-        grid = ctk.CTkFrame(self, fg_color="transparent")
-        grid.pack(fill="x", padx=16, pady=(0, 20))
-        grid.grid_columnconfigure((0, 1), weight=1, uniform="dev")
+        self.grid_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.grid_frame.pack(fill="x", padx=16, pady=(0, 20))
+        self.grid_frame.grid_columnconfigure((0, 1), weight=1, uniform="dev")
 
+        self._render_grid()
+
+    def _on_store_event(self, event, data):
+        if event == "devices_updated":
+            self._render_grid()
+
+    def _render_grid(self):
+        for widget in self.grid_frame.winfo_children():
+            widget.destroy()
         for idx, dev in enumerate(store.devices):
             r = idx // 2
             c = idx % 2
-            self._create_device_card(grid, dev, r, c)
+            self._create_device_card(self.grid_frame, dev, r, c)
+
+    def _rotate_device_token(self, device_id: str):
+        token = store.rotate_device_token(device_id)
+        if token:
+            self._render_grid()
 
     # -- connecting a phone -------------------------------------------------
 
@@ -291,6 +308,59 @@ class DevicesPage(ctk.CTkScrollableFrame):
             command=lambda d=dev: store.open_drawer("device", d),
         )
         open_btn.pack(side="right")
+
+        # Token expiry & rotation row
+        token_expires_at = dev.get("token_expires_at", 0.0)
+        is_expired = dev.get("is_expired", False)
+        has_token = dev.get("token_hash", False) or (token_expires_at and token_expires_at > 0)
+
+        if has_token:
+            import time
+            now_ts = time.time()
+            exp_row = ctk.CTkFrame(inner, fg_color="transparent")
+            exp_row.pack(fill="x", pady=(10, 2))
+
+            if is_expired or (token_expires_at and now_ts > token_expires_at):
+                badge_text = "Token Expired"
+                badge_fg = theme.WARNING_LIGHT
+                badge_text_col = theme.WARNING
+            elif token_expires_at:
+                days_left = max(0, int((token_expires_at - now_ts) / 86400))
+                hours_left = max(0, int((token_expires_at - now_ts) / 3600))
+                badge_text = f"Token: {days_left}d left" if days_left > 1 else f"Token: {hours_left}h left"
+                badge_fg = theme.SURFACE_SUBTLE
+                badge_text_col = theme.TEXT_SECONDARY
+            else:
+                badge_text = "Token: Active"
+                badge_fg = theme.SURFACE_SUBTLE
+                badge_text_col = theme.TEXT_SECONDARY
+
+            ctk.CTkLabel(
+                exp_row,
+                text=badge_text,
+                font=theme.font(10, "bold"),
+                fg_color=badge_fg,
+                text_color=badge_text_col,
+                corner_radius=theme.RADIUS_SM,
+                padx=8,
+                pady=2,
+            ).pack(side="left")
+
+            dev_id = dev.get("id")
+            ctk.CTkButton(
+                exp_row,
+                text="Rotate",
+                font=theme.font(10, "bold"),
+                fg_color=theme.MAIN_BG,
+                hover_color=theme.CARD_BORDER,
+                text_color=theme.ACCENT,
+                border_width=1,
+                border_color=theme.CARD_BORDER,
+                corner_radius=theme.RADIUS_SM,
+                width=54,
+                height=22,
+                command=lambda did=dev_id: self._rotate_device_token(did),
+            ).pack(side="right")
 
         # Capabilities list
         ctk.CTkLabel(

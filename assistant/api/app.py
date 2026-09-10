@@ -18,9 +18,11 @@ device token; see `assistant/api/auth.py`.
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import logging
-import threading
 from pathlib import Path
+import threading
+import time
 
 from fastapi import (
     FastAPI,
@@ -33,7 +35,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from assistant.api.auth import (
@@ -274,15 +276,14 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         path = request.url.path
         client_host = request.client.host if request.client else ""
 
+        token = bearer_token(request.headers.get("authorization")) or request.query_params.get("token", "")
         if path in OPEN_PATHS or path.startswith("/docs") or path.startswith("/static"):
             # Open to everyone, but a token still names the caller: pairing a
             # second device from a phone depends on knowing who is asking.
-            device = guard.device_for_token(
-                bearer_token(request.headers.get("authorization")))
+            device = guard.device_for_token(token)
         else:
             try:
-                device = guard.authenticate(
-                    bearer_token(request.headers.get("authorization")), client_host)
+                device = guard.authenticate(token, client_host)
             except PermissionError as error:
                 return JSONResponse(status_code=401,
                                     content=error_body(401, str(error)))
@@ -1042,6 +1043,70 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         return plane.resume()
 
     # -- live activity stream ----------------------------------------------
+
+    @app.get("/api/events/stream", tags=["activity"])
+    async def sse_activity_stream(request: Request, token: str = "", limit: int = 0):
+        """Stream real-time control plane activity events using Server-Sent Events (SSE)."""
+        auth_token = token or bearer_token(request.headers.get("authorization", ""))
+        client_host = request.client.host if request.client else ""
+        try:
+            guard.authenticate(auth_token, client_host)
+        except PermissionError as error:
+            raise HTTPException(status_code=401, detail=str(error))
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+
+        def on_event(event):
+            loop.call_soon_threadsafe(_offer, event)
+
+        def _offer(event):
+            try:
+                queue.put_nowait(event.to_dict())
+            except asyncio.QueueFull:
+                pass
+
+        unsubscribe = plane.subscribe(on_event)
+
+        async def event_generator():
+            sent = 0
+            try:
+                yield f"event: connected\ndata: {json.dumps({'status': 'connected'})}\n\n"
+                sent += 1
+                if limit and sent >= limit:
+                    return
+
+                for item in reversed(plane.list_events(limit=5)):
+                    yield f"event: activity\ndata: {json.dumps(item.to_dict())}\n\n"
+                    sent += 1
+                    if limit and sent >= limit:
+                        return
+
+                while True:
+                    if limit and sent >= limit:
+                        break
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        data = await asyncio.wait_for(queue.get(), timeout=15.0)
+                        yield f"event: activity\ndata: {json.dumps(data)}\n\n"
+                        sent += 1
+                    except asyncio.TimeoutError:
+                        yield f"event: ping\ndata: {json.dumps({'time': time.time()})}\n\n"
+            except asyncio.CancelledError:
+                pass
+            finally:
+                unsubscribe()
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.websocket("/ws/events")
     async def event_stream(websocket: WebSocket, token: str = "", types: str = "",

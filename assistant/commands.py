@@ -759,6 +759,125 @@ _QUIT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# System query and action patterns. Structured with utterance boundaries so
+# casual mentions in natural language do not misfire local OS commands.
+_TIME_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:what(?:'s|\s+is)\s+(?:the\s+)?time(?:\s+now)?|"
+    r"tell\s+(?:me\s+)?(?:the\s+)?time|what\s+time\s+is\s+it|"
+    r"(?:get|check)\s+(?:the\s+)?time|current\s+time|time)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_DATE_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:today'?s?\s+)?date|"
+    r"tell\s+(?:me\s+)?(?:the\s+)?date|what\s+is\s+today'?s?\s+date|"
+    r"today'?s?\s+date|(?:get|check)\s+(?:the\s+)?date|current\s+date|date)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_BATTERY_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:what(?:'s|\s+is)\s+(?:the\s+)?battery(?:\s+percentage|\s+level|\s+status)?|"
+    r"tell\s+(?:me\s+)?(?:the\s+)?battery(?:\s+percentage|\s+level|\s+status)?|"
+    r"(?:get|check)\s+(?:the\s+)?battery(?:\s+percentage|\s+level|\s+status)?|"
+    r"how\s+much\s+battery(?:\s+is\s+left)?|battery(?:\s+percentage|\s+level|\s+status)?)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_SCREENSHOT_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:(?:take|capture)\s+(?:a\s+)?screen\s*shot|screen\s*shot)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_LOCK_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?lock\s+(?:the\s+)?(?:laptop|computer|pc|screen|workstation)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_SYSTEM_SHUTDOWN_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:shut\s*down|power\s*off)\s+(?:the\s+)?(?:laptop|computer|pc|system|machine|notebook)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_SYSTEM_RESTART_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:restart|reboot)\s+(?:the\s+)?(?:laptop|computer|pc|system|machine|notebook)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_ADD_NOTE_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:take\s+(?:a\s+)?note|take\s+note|write\s+(?:a\s+)?note|add\s+(?:a\s+)?note)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_READ_NOTES_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:read|show|list)\s+(?:all\s+)?(?:my\s+)?notes\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_CLEAR_NOTES_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:clear|delete|erase|remove)\s+(?:all\s+)?(?:my\s+)?notes\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_GIT_COMMIT_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:git\s+)?(?:commit\s+(?:my\s+)?(?:changes|code)|commit\s+and\s+push\s+(?:my\s+)?(?:changes|code)|push\s+(?:my\s+)?code)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_DEEP_TEST_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:deep\s+test(?:\s+the\s+project)?|run\s+deep\s+test|test\s+my\s+code)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_SCRAPE_IDEAS_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:scrape\s+for\s+ideas|project\s+ideas|find\s+templates)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_SCAFFOLD_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?scaffold\b",
+    re.IGNORECASE,
+)
+
+_CALENDAR_READ_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:what(?:'s|\s+is)\s+)?(?:my\s+schedule|read\s+my\s+calendar|upcoming\s+events)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_CALENDAR_SCHEDULE_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?schedule\s+(?:a\s+)?(?:meeting|event)\b",
+    re.IGNORECASE,
+)
+
+_EMAIL_SEND_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:send|write)\s+an?\s+email\b",
+    re.IGNORECASE,
+)
+
+_DEEP_RESEARCH_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:deep\s+research|research\s+this\s+deeply)\b",
+    re.IGNORECASE,
+)
+
+_SWARM_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:spawn\s+agents|delegate\s+to\s+swarm|start\s+swarm)\b",
+    re.IGNORECASE,
+)
+
+_DOC_INGEST_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:ingest\s+document|read\s+textbook|read\s+pdf)\b",
+    re.IGNORECASE,
+)
+
+_DOC_QUERY_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:ask\s+document|search\s+knowledge\s*base)\b",
+    re.IGNORECASE,
+)
+
+_BRIEFING_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:brief\s+me|morning\s+briefing|what\s+is\s+my\s+briefing)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
 
 def is_quit_command(command):
     """True only when the whole utterance asks VAVE itself to shut down."""
@@ -827,94 +946,87 @@ def execute_single_command(command, auto_confirm=False):
         return True
 
     # Developer Mode Commands
-    if "commit my changes" in command or "commit my code" in command or "push my code" in command:
-        push_code = "push" in command
+    if _GIT_COMMIT_PATTERN.match(command):
+        push_code = "push" in command.lower()
         git_auto_commit_and_push(push=push_code)
         return True
-    
-    if "deep test the project" in command or "run deep test" in command or "test my code" in command:
-        # Use default args or parse them if needed
+
+    if _DEEP_TEST_PATTERN.match(command):
         deep_test_project()
         return True
-        
-    if "scrape for ideas" in command or "project ideas" in command or "find templates" in command:
+
+    if _SCRAPE_IDEAS_PATTERN.match(command):
         scrape_project_ideas()
         return True
-        
-    if "scaffold" in command:
-        # Give it directly to the LLM Brain to trigger scaffold_code
+
+    if _SCAFFOLD_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
 
     # Calendar Commands
-    if "my schedule" in command or "read my calendar" in command or "upcoming events" in command:
+    if _CALENDAR_READ_PATTERN.match(command):
         from assistant.calendar_sync import get_upcoming_events
         response = get_upcoming_events()
         speak(response)
         return True
-        
-    if "schedule a meeting" in command or "schedule an event" in command:
+
+    if _CALENDAR_SCHEDULE_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
 
     # Email Commands
-    if "send an email" in command or "write an email" in command:
+    if _EMAIL_SEND_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
-        
-    
+
     # Swarm & Deep Research Commands
-    if "deep research" in command or "research this deeply" in command:
+    if _DEEP_RESEARCH_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
-        
-    if "spawn agents" in command or "delegate" in command or "swarm" in command:
+
+    if _SWARM_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
 
     # Document RAG Commands
-    if "ingest document" in command or "read textbook" in command or "read pdf" in command:
+    if _DOC_INGEST_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
-        
-    if "ask document" in command or "search knowledge base" in command:
+
+    if _DOC_QUERY_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
 
     # Briefing Command
-    if "brief me" in command or "morning briefing" in command or "what is my briefing" in command:
+    if _BRIEFING_PATTERN.match(command):
         from assistant.system_tasks import provide_morning_briefing
         provide_morning_briefing()
         return True
 
-    if re.search(r"\btime\b", command):
+    # System Queries & Fast Paths
+    if _TIME_PATTERN.match(command):
         tell_time()
-    elif re.search(r"\bdate\b", command):
+    elif _DATE_PATTERN.match(command):
         tell_date()
-    elif re.search(r"\bbattery\b", command):
+    elif _BATTERY_PATTERN.match(command):
         tell_battery()
-
-    elif "screenshot" in command or "screen shot" in command:
+    elif _SCREENSHOT_PATTERN.match(command):
         take_screenshot()
-    elif "lock laptop" in command or "lock computer" in command or "lock screen" in command:
+    elif _LOCK_PATTERN.match(command):
         lock_laptop()
-
-    elif "shutdown" in command or "shut down" in command:
+    elif _SYSTEM_SHUTDOWN_PATTERN.match(command):
         try: guard.call(shutdown_laptop)
         except guard.ToolDenied: pass
-
-    elif "restart" in command or "reboot" in command:
+    elif _SYSTEM_RESTART_PATTERN.match(command):
         try: guard.call(restart_laptop)
         except guard.ToolDenied: pass
-
-    elif "take a note" in command or "take note" in command or "write a note" in command or "add note" in command:
+    elif _ADD_NOTE_PATTERN.match(command):
         add_note()
-    elif "read notes" in command or "read my notes" in command:
+    elif _READ_NOTES_PATTERN.match(command):
         read_notes()
-    elif "clear notes" in command or "delete notes" in command:
+    elif _CLEAR_NOTES_PATTERN.match(command):
         try: guard.call(clear_notes)
         except guard.ToolDenied: pass
-
     else:
         # Route unrecognized commands to the local LLM brain
         ask_ai(command, auto_confirm=auto_confirm)

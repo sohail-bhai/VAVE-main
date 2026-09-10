@@ -5,11 +5,14 @@ Maintains data for pages, system log, drawer details, and the core demo flow.
 from __future__ import annotations
 
 import datetime
+import logging
 import threading
 import time
 from typing import Callable, Any, Dict, List, Optional
 
 from gui.redaction import redact
+
+logger = logging.getLogger(__name__)
 
 
 class AppStore:
@@ -403,6 +406,70 @@ class AppStore:
                 approval["on_reject"]()
                 
         self._notify("approval_resolved", approved)
+
+    def refresh_devices(self):
+        """Fetch live devices from the ControlStore if available."""
+        try:
+            from assistant.control.service import get_control_plane
+            plane = get_control_plane()
+            real_devices = plane.list_devices()
+            if real_devices:
+                live_list = []
+                for d in real_devices:
+                    icon = "phone" if "phone" in (d.kind or "").lower() else "monitor"
+                    live_list.append({
+                        "id": d.id,
+                        "name": d.name,
+                        "type": d.kind.title(),
+                        "status": d.status.value.title(),
+                        "icon": icon,
+                        "capabilities": d.capabilities or ["Access your files", "Run local tasks"],
+                        "token_expires_at": getattr(d, "token_expires_at", 0.0),
+                        "is_expired": getattr(d, "is_expired", False),
+                        "platform": d.platform,
+                        "token_hash": bool(d.token_hash),
+                    })
+                # Preserve default local computer entry if not returned
+                has_comp = any("comp" in str(x.get("id", "")) for x in live_list)
+                if not has_comp and self.devices:
+                    live_list.insert(0, self.devices[0])
+                self.devices = live_list
+                self._notify("devices_updated", self.devices)
+        except Exception as e:
+            logger.debug(f"Could not refresh devices from control plane: {e}")
+
+    def rotate_device_token(self, device_id: str) -> Optional[str]:
+        """Rotate token for a paired device directly from GUI."""
+        try:
+            import secrets
+            from assistant.api.auth import hash_token
+            from assistant.config import get_setting
+            from assistant.control.models import DeviceStatus, now
+            from assistant.control.service import get_control_plane
+
+            plane = get_control_plane()
+            dev = plane.store.get_device(device_id)
+            if not dev:
+                return None
+            if not dev.is_paired:
+                return None
+
+            ttl = get_setting("device_token_ttl_seconds", 30 * 86400)
+            new_expires_at = (now() + ttl) if (ttl and ttl > 0) else 0.0
+            new_token = secrets.token_urlsafe(32)
+            dev.token_hash = hash_token(new_token)
+            dev.token_expires_at = new_expires_at
+            dev.status = DeviceStatus.ONLINE
+            dev.last_seen = now()
+            plane.store.save_device(dev)
+
+            self.add_system_log(f"Rotated access token for device: {dev.name}", "completed")
+            self.refresh_devices()
+            return new_token
+        except Exception as e:
+            logger.warning(f"Failed to rotate device token: {e}")
+            self.add_system_log(f"Token rotation failed: {e}", "waiting")
+            return None
 
     def forget_memory(self, memory_id: str):
         self.memories = [m for m in self.memories if m["id"] != memory_id]

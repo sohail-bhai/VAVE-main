@@ -37,6 +37,10 @@ class TestVaveGUI(unittest.TestCase):
         store.close_drawer()
         self.assertIsNone(store.active_drawer)
 
+        # Test device refresh
+        store.refresh_devices()
+        self.assertGreaterEqual(len(store.devices), 1)
+
     def test_app_lifecycle_and_page_switching(self):
         # Instantiate full CustomTkinter dashboard
         app = VaveDashboardApp()
