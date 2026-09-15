@@ -23,6 +23,7 @@ import logging
 from pathlib import Path
 import threading
 import time
+from typing import Optional, List, Dict, Any
 
 from fastapi import (
     FastAPI,
@@ -364,8 +365,9 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         token = bearer_token(request.headers.get("authorization", ""))
         if not token:
             raise HTTPException(status_code=401, detail="Bearer token required for rotation.")
+        client_ip = request.client.host if request.client else ""
         try:
-            device, new_token = guard.rotate(token)
+            device, new_token = guard.rotate(token, reason="api_request", ip_address=client_ip)
         except PermissionError as error:
             raise HTTPException(status_code=403, detail=str(error))
 
@@ -376,6 +378,18 @@ def create_app(control=None, executor=None, security=None, notifier=None):
             "expires_at": device.token_expires_at,
             "note": "Store this new token now. The old token is invalidated."
         }
+
+    @app.get("/api/auth/audit/rotations", tags=["security"])
+    def list_rotation_audit(request: Request, device_id: Optional[str] = None, limit: int = 50):
+        """View token rotation audit history (requires paired device or local host)."""
+        token = bearer_token(request.headers.get("authorization", ""))
+        client_host = request.client.host if request.client else ""
+        device = guard.authenticate(token, client_host=client_host)
+        effective_device_id = device_id
+        if device and not guard.is_local(client_host):
+            effective_device_id = device.id
+        rotations = plane.store.list_token_rotations(device_id=effective_device_id, limit=limit)
+        return {"rotations": rotations, "count": len(rotations)}
 
     @app.delete("/api/devices/{device_id}/token", tags=["security"])
     def unpair_device(device_id: str):
@@ -1219,7 +1233,11 @@ def create_app(control=None, executor=None, security=None, notifier=None):
             for item in reversed(alerts.recent(limit=10)):
                 await websocket.send_json(item)
             while True:
-                await websocket.send_json(await queue.get())
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    await websocket.send_json(payload)
+                except asyncio.TimeoutError:
+                    await websocket.send_json({"type": "ping", "time": time.time()})
         except WebSocketDisconnect:
             pass
         except Exception:
@@ -1265,7 +1283,11 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                 await websocket.send_json(event.to_dict())
 
             while True:
-                await websocket.send_json(await queue.get())
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    await websocket.send_json(payload)
+                except asyncio.TimeoutError:
+                    await websocket.send_json({"type": "ping", "time": time.time()})
         except WebSocketDisconnect:
             pass
         except Exception:
@@ -1300,7 +1322,11 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         unsubscribe = plane.subscribe(on_event)
         try:
             while True:
-                await websocket.send_json(await queue.get())
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    await websocket.send_json(payload)
+                except asyncio.TimeoutError:
+                    await websocket.send_json({"type": "ping", "time": time.time()})
         except WebSocketDisconnect:
             pass
         except Exception:
@@ -1421,9 +1447,6 @@ def main(argv=None):
         return request_pairing_code(args.port)
 
     import uvicorn
-
-    from assistant import logging_setup
-    logging_setup.configure_logging()
 
     if args.host not in ("127.0.0.1", "localhost"):
         logger.warning(

@@ -8,6 +8,7 @@ parts. The store is the only place that knows about SQL, so swapping in
 PostgreSQL later means rewriting this module and nothing else.
 """
 
+import os
 import sqlite3
 import threading
 import time
@@ -226,16 +227,51 @@ MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS idx_drive_sync_indexed ON drive_sync_state (last_indexed_at DESC);
         CREATE INDEX IF NOT EXISTS idx_drive_sync_name ON drive_sync_state (name);
     """),
+    ("0016_rate_limits", """
+        CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+            key TEXT PRIMARY KEY,
+            tokens REAL NOT NULL,
+            last_updated REAL NOT NULL,
+            window_seconds REAL NOT NULL DEFAULT 60.0
+        );
+        CREATE INDEX IF NOT EXISTS idx_rate_limit_updated ON rate_limit_buckets (last_updated);
+    """),
+    ("0017_token_rotation_audit", """
+        CREATE TABLE IF NOT EXISTS token_rotations (
+            id TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL,
+            rotated_at REAL NOT NULL,
+            reason TEXT DEFAULT '',
+            ip_address TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_rotations_device ON token_rotations (device_id, rotated_at DESC);
+    """),
+    ("0018_command_shortcuts", """
+        CREATE TABLE IF NOT EXISTS command_usage (
+            command_pattern TEXT PRIMARY KEY,
+            call_count INTEGER NOT NULL DEFAULT 1,
+            last_used REAL NOT NULL,
+            category TEXT DEFAULT 'general'
+        );
+        CREATE INDEX IF NOT EXISTS idx_cmd_usage_count ON command_usage (call_count DESC);
+    """),
 ]
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "control.db"
+
+
+def get_default_db_path() -> Path:
+    override = os.environ.get("VAVE_DATA_DIR")
+    if override:
+        return Path(override) / "control.db"
+    return DEFAULT_DB_PATH
 
 
 class ControlStore:
     """Thread-safe SQLite storage for control-plane records."""
 
     def __init__(self, db_path=None):
-        self.db_path = Path(db_path or DEFAULT_DB_PATH)
+        self.db_path = Path(db_path or get_default_db_path())
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # check_same_thread=False because worker threads share this connection;
@@ -671,6 +707,80 @@ class ControlStore:
         sql += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
         return [_to_event(row) for row in self._rows(sql, tuple(params))]
+
+    def get_rate_limit(self, key: str):
+        """Retrieve rate limit bucket state for identity/key."""
+        row = self._row("SELECT key, tokens, last_updated, window_seconds FROM rate_limit_buckets WHERE key = ?", (key,))
+        return dict(row) if row else None
+
+    def update_rate_limit(self, key: str, tokens: float, last_updated: float, window_seconds: float = 60.0):
+        """Persist updated rate limit bucket tokens and timestamp."""
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT INTO rate_limit_buckets (key, tokens, last_updated, window_seconds)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    tokens = excluded.tokens,
+                    last_updated = excluded.last_updated,
+                    window_seconds = excluded.window_seconds
+                """,
+                (key, tokens, last_updated, window_seconds)
+            )
+            self._connection.commit()
+
+    def record_token_rotation(self, device_id: str, reason: str = "", ip_address: str = "") -> str:
+        """Record a token rotation event in the audit trail."""
+        import uuid
+        rot_id = f"rot_{uuid.uuid4().hex[:12]}"
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT INTO token_rotations (id, device_id, rotated_at, reason, ip_address)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (rot_id, device_id, time.time(), reason, ip_address)
+            )
+            self._connection.commit()
+        return rot_id
+
+    def list_token_rotations(self, device_id=None, limit: int = 50):
+        """List token rotation audit logs ordered by recent timestamp."""
+        if device_id:
+            rows = self._rows(
+                "SELECT id, device_id, rotated_at, reason, ip_address FROM token_rotations WHERE device_id = ? ORDER BY rotated_at DESC LIMIT ?",
+                (device_id, limit)
+            )
+        else:
+            rows = self._rows(
+                "SELECT id, device_id, rotated_at, reason, ip_address FROM token_rotations ORDER BY rotated_at DESC LIMIT ?",
+                (limit,)
+            )
+        return [dict(r) for r in rows]
+
+    def record_command_usage(self, command_pattern: str, category: str = "general") -> None:
+        """Record usage count and timestamp of recognized command patterns."""
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT INTO command_usage (command_pattern, call_count, last_used, category)
+                VALUES (?, 1, ?, ?)
+                ON CONFLICT(command_pattern) DO UPDATE SET
+                    call_count = call_count + 1,
+                    last_used = excluded.last_used,
+                    category = excluded.category
+                """,
+                (command_pattern, time.time(), category)
+            )
+            self._connection.commit()
+
+    def get_frequent_commands(self, limit: int = 10):
+        """Retrieve most frequent commands for personalization and fast shortcuts."""
+        rows = self._rows(
+            "SELECT command_pattern, call_count, last_used, category FROM command_usage ORDER BY call_count DESC LIMIT ?",
+            (limit,)
+        )
+        return [dict(r) for r in rows]
 
 
 # -- row -> dataclass -------------------------------------------------------

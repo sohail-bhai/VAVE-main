@@ -28,6 +28,17 @@ from assistant.notes import add_note, read_notes, clear_notes
 from assistant.ai_brain import ask_ai
 from assistant.dev_tools import git_auto_commit_and_push, deep_test_project, scrape_project_ideas, scaffold_code
 
+def _record_usage(pattern_name: str, category: str = "general"):
+    """Records recognized command patterns for usage frequency and personalization."""
+    try:
+        from assistant.control.service import get_control_plane
+        plane = get_control_plane()
+        if hasattr(plane, "store") and hasattr(plane.store, "record_command_usage"):
+            plane.store.record_command_usage(pattern_name, category)
+    except Exception:
+        pass
+
+
 def extract_number(command):
     match = re.search(r"\d+", command)
     if match:
@@ -1005,30 +1016,41 @@ def execute_single_command(command, auto_confirm=False):
 
     # System Queries & Fast Paths
     if _TIME_PATTERN.match(command):
+        _record_usage("time", category="system")
         tell_time()
     elif _DATE_PATTERN.match(command):
+        _record_usage("date", category="system")
         tell_date()
     elif _BATTERY_PATTERN.match(command):
+        _record_usage("battery", category="system")
         tell_battery()
     elif _SCREENSHOT_PATTERN.match(command):
+        _record_usage("screenshot", category="system")
         take_screenshot()
     elif _LOCK_PATTERN.match(command):
+        _record_usage("lock", category="system")
         lock_laptop()
     elif _SYSTEM_SHUTDOWN_PATTERN.match(command):
+        _record_usage("shutdown", category="system")
         try: guard.call(shutdown_laptop)
         except guard.ToolDenied: pass
     elif _SYSTEM_RESTART_PATTERN.match(command):
+        _record_usage("restart", category="system")
         try: guard.call(restart_laptop)
         except guard.ToolDenied: pass
     elif _ADD_NOTE_PATTERN.match(command):
+        _record_usage("add_note", category="notes")
         add_note()
     elif _READ_NOTES_PATTERN.match(command):
+        _record_usage("read_notes", category="notes")
         read_notes()
     elif _CLEAR_NOTES_PATTERN.match(command):
+        _record_usage("clear_notes", category="notes")
         try: guard.call(clear_notes)
         except guard.ToolDenied: pass
     else:
         # Route unrecognized commands to the local LLM brain
+        _record_usage("ask_ai_fallback", category="ai")
         ask_ai(command, auto_confirm=auto_confirm)
 
     return True

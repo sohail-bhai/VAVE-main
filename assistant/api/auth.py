@@ -50,27 +50,46 @@ def hash_token(token):
 
 
 class TokenBucket:
-    """Simple per-caller rate limit. Refills steadily, caps at the burst size."""
+    """Per-caller rate limit. Refills steadily, caps at burst size, backed by store when provided."""
 
-    def __init__(self, per_minute):
+    def __init__(self, per_minute, store=None):
         self.capacity = max(1, per_minute)
         self.rate = self.capacity / 60.0
+        self.store = store
         self._tokens = {}
         self._lock = threading.Lock()
 
     def take(self, identity):
         """Consume one request. Returns 0 when allowed, else seconds to wait."""
         with self._lock:
-            tokens, last = self._tokens.get(identity, (self.capacity, time.monotonic()))
-            current = time.monotonic()
-            tokens = min(self.capacity, tokens + (current - last) * self.rate)
+            current = time.time()
+            if self.store is not None and hasattr(self.store, "get_rate_limit"):
+                record = self.store.get_rate_limit(identity)
+                if record is not None:
+                    tokens = float(record["tokens"])
+                    last = float(record["last_updated"])
+                else:
+                    tokens = float(self.capacity)
+                    last = current
+                tokens = min(float(self.capacity), tokens + (current - last) * self.rate)
 
-            if tokens < 1:
-                self._tokens[identity] = (tokens, current)
-                return max(1, int((1 - tokens) / self.rate) + 1)
+                if tokens < 1.0:
+                    self.store.update_rate_limit(identity, tokens, current)
+                    return max(1, int((1.0 - tokens) / self.rate) + 1)
 
-            self._tokens[identity] = (tokens - 1, current)
-            return 0
+                tokens -= 1.0
+                self.store.update_rate_limit(identity, tokens, current)
+                return 0
+            else:
+                tokens, last = self._tokens.get(identity, (self.capacity, current))
+                tokens = min(self.capacity, tokens + (current - last) * self.rate)
+
+                if tokens < 1:
+                    self._tokens[identity] = (tokens, current)
+                    return max(1, int((1 - tokens) / self.rate) + 1)
+
+                self._tokens[identity] = (tokens - 1, current)
+                return 0
 
 
 class ApiSecurity:
@@ -91,7 +110,8 @@ class ApiSecurity:
         self.limiter = TokenBucket(
             rate_limit_per_minute
             if rate_limit_per_minute is not None
-            else get_setting("api_rate_limit_per_minute", DEFAULT_RATE_LIMIT))
+            else get_setting("api_rate_limit_per_minute", DEFAULT_RATE_LIMIT),
+            store=self.store)
 
         self._codes = {}
         self._lock = threading.Lock()
@@ -143,7 +163,7 @@ class ApiSecurity:
         self.store.save_device(device)
         return device, token
 
-    def rotate(self, token, ttl_seconds=None):
+    def rotate(self, token, ttl_seconds=None, reason="", ip_address=""):
         """Rotate the token for an active (non-expired) device.
 
         Returns (device, new_token).
@@ -168,6 +188,8 @@ class ApiSecurity:
         device.status = DeviceStatus.ONLINE
         device.last_seen = now()
         self.store.save_device(device)
+        if hasattr(self.store, "record_token_rotation"):
+            self.store.record_token_rotation(device.id, reason=reason, ip_address=ip_address)
         return device, new_token
 
     def unpair(self, device_id):
