@@ -10,15 +10,16 @@ execute a phase alone. Read sections 1-3 fully before touching code.
 
 - Baseline commit: `18e5a21` on branch `sohail`, remote `origin`
   (`https://github.com/sohail-bhai/VAVE-main.git`).
-- Stage 11 + plan Phases 0 and 1 are COMPLETE (see section 9).
-- Test count: **714**, all green in the dev venv AND in a clean-install venv.
+- Plan Phases 0-5 are COMPLETE (see section 9). Test count: **756**, all
+  green locally and on GitHub CI.
 - CI: `.github/workflows/ci.yml` (windows-latest, Python 3.13) runs compileall,
-  unittest, smoke test on every push. It was failing and is now expected green;
-  always check the run after pushing (section 3.6).
+  unittest, smoke test on every push. Always check the run after pushing
+  (section 3.6).
 - `context.md` holds the stage-by-stage history; `AGENTS.md` holds repo rules.
   This file holds the forward plan.
-- Phases remaining, in order: **2 (Mobile PWA) -> 3 (Reliability & Ops) ->
-  4 (Home Assistant) -> 5 (Packaging)**. Stretch items are unscheduled.
+- Phases remaining, in order: **6 (Daily Reliability) -> 7 (Service
+  Integrations) -> 8 (Control Plane Enhancements)**. Stretch items are
+  unscheduled.
 
 ## 2. Environment Facts (READ FIRST — these bite)
 
@@ -428,7 +429,388 @@ denied (mirror how existing capability tests do it).
 
 ---
 
-## 8. Stretch (unscheduled — do not start without asking)
+## 8. Phase 6 — Daily Reliability
+
+**Goal**: VAVE's most-used actions (open app, window management, command
+routing) stop failing silently and stop misrouting. This is the boring work
+that makes the assistant feel solid rather than demo-ware.
+
+### Read first
+- `assistant/system_tasks.py` — `open_app` (lines 243-443), `close_app`,
+  `activate_window`, `snap_window`, `close_window`, `focus_window`,
+  `list_windows`, `_find_window`. The 3-tier app launcher, the window
+  management functions, and how they verify (or don't).
+- `assistant/commands.py` — `execute_single_command` (the full router),
+  `_ATOMIC_INTENTS`, `_QUIT_PATTERN`, `_TIME_PATTERN`, `_LOCK_PATTERN`,
+  `_SYSTEM_SHUTDOWN_PATTERN`. How overlapping substrings can misroute.
+- `assistant/controller.py` — `process_command` and how it calls
+  `execute_command`. What happens on error.
+- `assistant/ai_brain.py` lines 79-198 — `AVAILABLE_FUNCTIONS` to see what
+  is already registered vs what the command layer can reach.
+- `tests/test_smoke.py` and `tests/test_system_tasks.py` — existing test
+  patterns for system actions.
+
+### Tasks
+
+#### 6.1 App launch: honest failure reporting
+`open_app` Tier 1 uses `os.system("start chrome")` which is fire-and-forget.
+The verification loop after it can find the window, but if `os.system` itself
+fails (app not installed, broken shortcut), the function returns
+"Action sent; effect unconfirmed" — a lie.
+
+- Replace `os.system(cmd)` in Tier 1 with `subprocess.Popen` + return code
+  check. `start` is a shell built-in, so use
+  `subprocess.run(["cmd", "/c", cmd], capture_output=True)` instead.
+- If the subprocess returns a non-zero exit code AND the verification loop
+  finds no window, return a clear failure: "Could not open {name}. The
+  command exited with code {rc}."
+- If the subprocess succeeds but no window appears (UWP apps, background
+  services), keep the current "effect unconfirmed" message — that is honest.
+- In `close_app`: the `proc.terminate()` call can raise `AccessDenied` for
+  admin-owned processes. Catch it and report "Cannot close {name}: access
+  denied (try running as administrator)" instead of silently continuing.
+- Tests: mock `subprocess.run` to return rc=1 for a missing app, assert
+  the failure message. Mock it returning rc=0 with no window found, assert
+  "effect unconfirmed". Mock rc=0 + window found, assert success.
+
+#### 6.2 Window management: expose `list_windows` to voice
+`list_windows` exists in `AVAILABLE_FUNCTIONS` but has no command-layer
+entry point. Users cannot discover what windows are open.
+
+- Add a `_LIST_WINDOWS_PATTERN` regex to `commands.py` matching
+  "list windows", "what windows are open", "show open windows",
+  "what apps are running".
+- Route it in `execute_single_command` (before the AI brain fallback) to
+  `system_tasks.list_windows()`. Speak the result.
+- Register the pattern in `_shortcut_trigger_reserved` so shortcuts cannot
+  shadow it.
+- Tests: mock `list_windows` to return a known string, assert the command
+  routes to it.
+
+#### 6.3 Command routing: prevent substring misfires
+The current router uses substring matching for some commands. Examples of
+known false positives:
+- "what time is it" matches `_TIME_PATTERN` correctly, but "shutdown time"
+  also contains "time" — currently safe because patterns are anchored, but
+  "time" as a bare word matches `_TIME_PATTERN` via the `time` alternative.
+- "open notes" matches `handle_app_command` (which routes to Tier 3 browser)
+  instead of `_ADD_NOTE_PATTERN` (which is checked later).
+- "volume" in a sentence like "what's the volume of that container" would
+  match `handle_volume_command`.
+
+Fixes:
+- Tighten `_TIME_PATTERN`: remove the bare `time` alternative. The user
+  never says just "time" — they say "what time is it" or "tell me the time".
+- Tighten `_LOCK_PATTERN`: remove bare `lock` — require the object
+  ("laptop", "computer", "pc", "screen").
+- Move `_ADD_NOTE_PATTERN` and `_READ_NOTES_PATTERN` checks BEFORE
+  `handle_app_command` in the router so "open notes" goes to the note
+  handler, not the browser.
+- Add a compound-command guard in `handle_app_command`: if the command
+  contains "note" or "notes", return False early.
+- Tests: write a test suite (`tests/test_command_routing.py`) that asserts
+  each pattern against known true-positives and known false-positives.
+  Include: "what time is it" -> time, "shutdown time" -> AI brain,
+  "open notes" -> add_note, "open chrome" -> open_app, "volume of water"
+  -> AI brain, "volume up" -> volume, "lock the laptop" -> lock,
+  "lock it" -> AI brain.
+
+#### 6.4 Error feedback: speak failures, not silence
+When `process_command` catches an exception, it speaks "Something went
+wrong" but does not include the command name. When `open_app` or
+`close_app` fail, the error is logged but not always spoken.
+
+- In `controller.py` `process_command`: include the command (truncated to
+  50 chars) in the error spoken to the user: "Something went wrong with
+  '{command snippet}'."
+- In `open_app`: the `except` block at line 440 should log the traceback
+  at DEBUG (not INFO) and speak the error reason, not just "Could not
+  open."
+- Tests: no new tests needed — this is a logging/speech change covered by
+  existing error-path tests.
+
+### Automated tests
+- `tests/test_command_routing.py` (new file): pattern-vs-utterance matrix.
+  Each test feeds a command string through `execute_single_command` (with
+  mocks for all side effects) and asserts which handler was called.
+- Extend `tests/test_system_tasks.py` for 6.1: mock `subprocess.run`
+  return codes in `open_app`.
+
+### Definition of done
+Suite green, CI green, no new warnings from compileall.
+
+### User manual test (Sohail)
+1. Say "open chrome" — should open or report failure honestly.
+2. Say "open notepad" — should open and focus.
+3. Say "list windows" — should enumerate open windows.
+4. Say "open notes" — should go to the note handler, not the browser.
+5. Say "lock the laptop" — should lock.
+6. Say "lock it" — should NOT lock (goes to AI brain).
+7. Say "what time is it" — should answer.
+8. Say "shutdown time" — should NOT answer with the time (goes to AI brain).
+
+---
+
+## 9. Phase 7 — Service Integrations
+
+**Goal**: Google Calendar, email, and Telegram — the three services you
+actually use daily — work end-to-end through VAVE without touching the GUI.
+
+### Read first
+- `assistant/calendar_sync.py` — `get_calendar_service` (OAuth flow),
+  `get_upcoming_events`, `schedule_event`. Uses `credentials.json` +
+  `token.json` at project root. The Google API client is already a
+  dependency.
+- `assistant/email_tasks.py` — `read_unread_emails` (IMAP), `send_email`
+  (SMTP + Workspace fallback), `draft_email` (Workspace). Credentials come
+  from `config.json` (`email_address`, `email_app_password`) or the secret
+  store.
+- `assistant/telegram_sync.py` — `start_telegram_sync`, `send_telegram_message`,
+  `get_active_telegram_pairing_code`. Already partially wired in the
+  controller.
+- `assistant/ai_brain.py` lines 79-198 — `AVAILABLE_FUNCTIONS` (calendar
+  and email tools are already registered: `get_schedule`, `schedule_meeting`,
+  `read_unread_emails`, `send_email`).
+- `assistant/commands.py` — `_CALENDAR_READ_PATTERN`, `_EMAIL_SEND_PATTERN`.
+  Calendar reads route to `get_upcoming_events`; email send routes to AI.
+- `assistant/control/capabilities.py` — `google.calendar.*`, `google.gmail.*`
+  are already in the catalog.
+
+### Tasks
+
+#### 7.1 Calendar: voice commands that work without the AI brain
+Currently "what's my schedule" matches `_CALENDAR_READ_PATTERN` and calls
+`get_upcoming_events()` directly — that works. But "schedule a meeting
+tomorrow at 3pm with Alex" goes to the AI brain, which has to parse the
+natural language, call `schedule_meeting`, and hope the ISO timestamp is
+right.
+
+- Add `_CALENDAR_TOMORROW_PATTERN` matching "schedule a meeting/call/event
+  tomorrow at <time>" — extract the time, build ISO format with tomorrow's
+  date, call `schedule_event` directly.
+- Add `_CALENDAR_CANCEL_PATTERN` matching "cancel my meeting/call/event
+  tomorrow" or "cancel the <name> meeting" — call a new
+  `cancel_event(summary=None, event_id=None)` function.
+- Implement `cancel_event` in `calendar_sync.py`: list events for today+
+  tomorrow, find by summary or ID, call `service.events().delete()`.
+  Return the cancelled event's summary for spoken confirmation.
+- Register `cancel_event` in `AVAILABLE_FUNCTIONS` and `TOOL_CAPABILITIES`
+  (`google.calendar.write`).
+- Tests: mock `get_calendar_service` to return a fake service, assert
+  `schedule_event` builds the right event body, assert `cancel_event`
+  calls delete with the right event ID.
+
+#### 7.2 Email: read and send without the AI brain
+"read my emails" already works via `read_unread_emails`. But "send an email
+to Alex saying ..." goes through the AI brain. Make common email actions
+fast-path:
+
+- Add `_EMAIL_READ_PATTERN` matching "read my emails", "check my inbox",
+  "any new emails" — route to `read_unread_emails()` directly (currently
+  falls through to AI).
+- Add `_EMAIL_REPLY_PATTERN` matching "reply to the last email saying <text>"
+  — extract the body, look up the last email's sender from the inbox, call
+  `send_email(to, subject, body)`.
+- Implement `get_last_email_sender()` in `email_tasks.py`: read the last
+  unread email's From header, return the address.
+- Register `get_last_email_sender` in `AVAILABLE_FUNCTIONS` (if needed for
+  the AI brain to use).
+- Tests: mock `imaplib` for `read_unread_emails`, assert the pattern routes
+  correctly. Mock the IMAP fetch for `get_last_email_sender`.
+
+#### 7.3 Telegram: verify the sync loop works end-to-end
+The Telegram bridge exists but may not be actively running. Verify and fix:
+
+- Check `telegram_sync.py` `start_telegram_sync`: does it start a polling
+  thread? Does it handle the bot token from config?
+- If the bot token is missing or invalid, `start_telegram_sync` should log
+  a clear warning at startup (not crash silently).
+- Add a voice command "send a telegram to myself saying <text>" that calls
+  `send_telegram_update` directly (currently this is in `AVAILABLE_FUNCTIONS`
+  but has no command-layer entry).
+- Add `_TELEGRAM_SEND_PATTERN` matching "send a telegram/message to myself
+  saying <text>" — route to `system_tasks.send_telegram_update(text)`.
+- Tests: mock `telegram_sync.send_telegram_message`, assert the pattern
+  routes and calls it with the right text.
+
+#### 7.4 Secret store: credentials via `secret://` instead of config.json
+Email credentials (`email_address`, `email_app_password`) are currently
+read from `config.json` in plaintext. The secret store already supports
+this but the code path is not used.
+
+- Add a helper `resolve_credential(key, capability)` in
+  `assistant/control/secrets.py` that checks `config.json` first, then
+  falls back to `secret://<key>` resolution.
+- Update `email_tasks.py` to use `resolve_credential` instead of raw
+  `get_setting` for `email_app_password`.
+- Update `calendar_sync.py` to store the OAuth token in the secret store
+  after first auth (optional — the current `token.json` approach works,
+  but storing in the secret store means the token survives repo copies).
+- Docs: add a short section to `docs/control-plane.md` showing how to
+  store email credentials: `plane.secrets.put("email_app_password", "...",
+  allowed_capabilities="google.gmail.*")`.
+- Tests: mock `SecretStore.put` and `SecretStore.resolve`, assert the
+  helper round-trips correctly.
+
+### Automated tests
+- `tests/test_calendar_integration.py` (new file): fake Google Calendar
+  service, test `get_upcoming_events`, `schedule_event`, `cancel_event`.
+- `tests/test_email_integration.py` (new file): mock IMAP/SMTP, test
+  `read_unread_emails`, `get_last_email_sender`, pattern routing.
+- `tests/test_telegram_integration.py` (new file): mock
+  `send_telegram_message`, test pattern routing.
+
+### Definition of done
+Suite green, CI green. Voice commands "what's my schedule", "read my emails",
+"send a telegram to myself saying hello" all work via fast-path routing.
+
+### User manual test (Sohail)
+1. Set up Google Calendar OAuth: place `credentials.json` in the project root,
+   say "what's my schedule" — should list upcoming events.
+2. Say "schedule a meeting tomorrow at 3pm with Alex" — should create the
+   event and confirm.
+3. Say "read my emails" — should list unread emails.
+4. Say "send a telegram to myself saying test from VAVE" — should deliver
+   via the Telegram bot.
+5. Store email credentials in the secret store, verify the `secret://`
+   path works.
+
+---
+
+## 10. Phase 8 — Control Plane Enhancements
+
+**Goal**: VAVE becomes proactive rather than purely reactive — it discovers
+devices on the network, suggests actions based on context, and uses the
+wake word engine as a first-class input path.
+
+### Read first
+- `assistant/wakeword.py` — `_load_wakeword_model`, `_wakeword_worker`,
+  `start_wakeword_engine`, `pause_wakeword`, `resume_wakeword`. The engine
+  runs in a daemon thread, detects a wake word, calls a callback, then
+  pauses itself. Currently wired in `controller.py` `_on_wakeword_detected`.
+- `assistant/controller.py` lines 99-117 — `_on_wakeword_detected`: pauses
+  wake word, calls `run_once()`, resumes wake word. This is correct but
+  the callback could be improved.
+- `assistant/control/service.py` — `ControlPlane`, `get_control_plane`,
+  `subscribe`. How events flow.
+- `assistant/control/executor.py` — `TaskExecutor`, `resume_interrupted`.
+  How tasks run.
+- `assistant/config.py` — `DEFAULT_CONFIG`, `get_setting`. Where new config
+  keys go.
+- `assistant/health_sweep.py` — the daemon sweep thread pattern.
+- `assistant/memory.py` — `remember_fact`, ChromaDB vector memory.
+- `assistant/ai_brain.py` — `query_local_llm_chat`, the Ollama-backed
+  model. How to add proactive suggestion generation.
+
+### Tasks
+
+#### 8.1 Network device discovery
+VAVE should detect devices on the local network so phone pairing is
+easier and the "what's connected to my home" question has a local answer
+independent of Home Assistant.
+
+- New module `assistant/discovery.py`:
+  - `discover_devices(timeout=5)` — on Windows, parse `arp -a` output to
+    find IP + MAC + hostname. On Linux, use `ip neigh`. On macOS, use
+    `arp -a`. Return a list of dicts: `{ip, mac, hostname, vendor}`.
+  - `get_local_device()` — return this machine's hostname and LAN IP
+    (from `socket.gethostname()` + `socket.gethostbyname()`).
+  - Cache results for 60 seconds to avoid repeated scans.
+  - The function is non-blocking: if the scan takes longer than `timeout`,
+    return whatever was found.
+- Register in `AVAILABLE_FUNCTIONS`: `discover_network_devices` (no
+  capability needed — LAN-only, non-sensitive).
+- Add to `TOOL_GROUPS`: "network" group with keywords "devices", "network",
+  "connected", "who is on my network".
+- Wire a voice command: "what devices are on my network" routes through the
+  AI brain (open-ended, not a fixed-schema query).
+- Tests: mock `subprocess.check_output` for `arp -a`, assert the parser
+  returns the right device list. Test cache: second call within 60s returns
+  cached result.
+
+#### 8.2 Proactive suggestions engine
+VAVE should suggest actions based on time, calendar, and context — not
+wait to be asked.
+
+- New module `assistant/proactive.py`:
+  - `check_suggestions()` — returns a list of suggestion strings based on:
+    - Time of day: morning (briefing), lunch (lunch reminder), evening
+      (wind-down).
+    - Calendar: meeting in 10 minutes -> "You have {event} in 10 minutes.
+      Want me to prepare?"
+    - Battery: below 20% -> "Battery is at {n}%. Want me to plug in?"
+    - Health sweep: agent offline -> "Agent {name} went offline."
+  - Each suggestion has a cooldown: the same suggestion is not repeated
+    within 30 minutes.
+  - `start_proactive_engine(interval_seconds=300)` — daemon thread, like
+    `health_sweep.py`. Checks every 5 minutes, emits suggestions through
+    the event bus as `EVENT_STATUS` events. The GUI can show them as
+    toasts; the CLI logs them; the API can expose them.
+  - Config: `proactive_enabled` (default True), `proactive_interval_seconds`
+    (default 300).
+- Wire in `bootstrap_safety()` next to the health sweep start.
+- Register `get_proactive_suggestions` in `AVAILABLE_FUNCTIONS` so the
+  AI brain can be asked "what should I do?" and get the list.
+- Tests: mock `get_setting` for time-of-day, mock `get_upcoming_events`
+  for calendar, assert suggestions are generated. Test cooldown: same
+  suggestion not repeated within the window.
+
+#### 8.3 Wake word: continuous hands-free mode
+The wake word engine already works but is toggled by a config flag and
+only triggers a single `run_once()`. Make it a first-class mode:
+
+- Add `wake_word_mode` config with values: "off" (default for now),
+  "continuous" (always listening), "push-to-talk" (current behavior:
+  wake word triggers one listen, then pauses).
+- In continuous mode: after `run_once()` completes, do NOT pause the wake
+  word engine — let it keep listening. The current code in
+  `_on_wakeword_detected` calls `pause_wakeword()` then `resume_wakeword()`
+  after `run_once()` — in continuous mode, skip the pause.
+- Add a voice command "enable hands-free" / "disable hands-free" that
+  toggles `wake_word_mode` between "continuous" and "off".
+- In the GUI: show the wake word state (listening/idle) in the status bar.
+  Emit an event `EVENT_WAKE_WORD` when the wake word is detected so the GUI
+  can flash a visual indicator.
+- Tests: mock `_on_wakeword_detected`, assert that in continuous mode the
+  engine is not paused. Assert that in push-to-talk mode it is paused.
+
+#### 8.4 Event bus: proactive notifications to phone
+The `Notifier` already pushes events to Telegram. Extend it to push
+proactive suggestions:
+
+- When `check_suggestions()` generates a suggestion, emit it as a
+  `EventType.TASK_COMPLETED` event (or a new `EventType.SUGGESTION` if
+  one is added) so the notifier picks it up and sends it to the phone.
+- This means "meeting in 10 minutes" appears on the phone without the
+  user asking — the PWA picks it up via SSE.
+- Tests: subscribe to the event bus, run `check_suggestions`, assert the
+  event is emitted.
+
+### Automated tests
+- `tests/test_discovery.py` (new file): mock `arp -a` output, test
+  parsing, test cache, test timeout.
+- `tests/test_proactive.py` (new file): mock time/calendar/battery,
+  test suggestion generation, test cooldown, test event emission.
+- `tests/test_wakeword_mode.py` (new file): test continuous vs
+  push-to-talk behavior via mocked wake word engine.
+
+### Definition of done
+Suite green, CI green. "What devices are on my network" returns a device
+list. "Enable hands-free" activates continuous listening. Suggestions
+appear in the GUI status bar and on the phone via SSE.
+
+### User manual test (Sohail)
+1. Say "what devices are on my network" — should list devices with IPs.
+2. Say "enable hands-free" — the wake word should keep listening after
+   each command without pausing.
+3. Say "disable hands-free" — should revert to push-to-talk.
+4. Wait 5 minutes with a meeting coming up — a suggestion should appear
+   in the GUI and/or on the phone.
+5. Let the battery drop below 20% — a suggestion should appear.
+
+---
+
+## 11. Stretch (unscheduled — do not start without asking)
 
 - ntfy.sh push bridge for notifications with no connected client.
 - Coverage measurement in CI (`coverage run -m unittest`).
@@ -439,7 +821,7 @@ denied (mirror how existing capability tests do it).
 
 ---
 
-## 9. Completed (compact record)
+## 12. Completed (compact record)
 
 - **Phases 1-3 (original stages), Phase 4 control plane, Stage 4.1 waves 0-4,
   Stage 4.5 waves 5-9, Phase 5 Google Workspace + R1-R4, Stage 6A/6B, Stage
@@ -452,8 +834,24 @@ denied (mirror how existing capability tests do it).
   chain guards; `GET /api/commands/frequent` + shortcut REST; GUI suggestion
   chips from real usage; `icons.reset_cache()` on window destroy;
   `playwright>=1.42.0` (greenlet cp313 fix).
+- **Plan Phase 2** (`92fe7fd`): PWA in `mobile/pwa/` served at `/m`
+  (login/pair, tasks+SSE, approvals with double-tap, notifications,
+  installable shell-only service worker, `docs/mobile.md`). Serves only
+  `pwa/`, Expo project untouched.
+- **Plan Phase 3** (`a3042aa`): background health sweep
+  (`assistant/health_sweep.py`, wired in `bootstrap_safety()`), secrets
+  backup tool + runbook (`docs/secrets-backup.md`), GUI Journal filter on
+  the Activity page. 733 green (719 baseline + 14 new).
+- **Plan Phase 4** (`3c6deb1`): `assistant/home.py` over the HA REST API
+  (states, verified control), `home.read`/`home.control` capabilities,
+  brain + guard registration, `GET /api/home/devices` + approval-held
+  `POST /api/home/control`. 14 new tests.
+- **Plan Phase 5** (`8a28828`): `pyproject.toml` (v1.3.0, `vave` console
+  script), subcommands `gui/serve/once/smoke/pair`, clean-room
+  `pip install .` + `vave smoke` 11/11 verified, README pip flow. 9 new
+  tests. 756 green.
 
-## 10. Progress Log
+## 13. Progress Log
 
 | Date | Entry |
 | --- | --- |

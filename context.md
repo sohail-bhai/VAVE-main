@@ -164,24 +164,9 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
 - [x] **Centralized Safety Bootstrap**: Created `assistant/bootstrap.py` unifying global event bus, logging, audit ledger, guard, confirm, and overwatch initialization across CLI (`main.py`), GUI (`gui/app.py`), and API Server (`assistant/api/app.py`).
 - [x] **Ollama Context Window Alignment**: Unified `num_ctx` default to `8192` in `ai_brain.py` matching prompt and tool definition requirements.
 
-### Stages 12-13: Upgrade Plan Execution (Phases 0-4 Complete)
+### Stages 12-14: Upgrade Plan Execution (Phases 0-5 Complete)
 
-Driven by `plan.md`. Completed so far:
-
-- [x] **Mobile PWA client** (`mobile/pwa/`, served at `/m`): login/pairing,
-      tasks with live SSE steps, approvals with double-tap confirm,
-      notifications with badges, installable shell, `docs/mobile.md`.
-      Serves only `pwa/` — the sibling Expo project in `mobile/` stays off
-      the web boundary.
-- [x] **Reliability**: `assistant/health_sweep.py` daemon (wired in
-      `bootstrap_safety()`), passphrase-encrypted secrets backup tool
-      (`python -m assistant.secrets_backup export|verify|restore`,
-      `docs/secrets-backup.md`), GUI Activity "Journal" filter over
-      `task_journal.recent_entries()`.
-- [x] **Home Assistant bridge** (`assistant/home.py`): device states and
-      verified control actions over the HA REST API; `home.read` (safe) and
-      `home.control` (sensitive, approval-held, REACHES_OUTWARD);
-      `GET /api/home/devices`, `POST /api/home/control`.
+Driven by `plan.md`. Completed:
 
 - [x] **Phase 0 — Quick Fixes, Docs Drift, CI**:
   - `disk_warning_gb` setting (default 15 GB) replaces the hardcoded 7 GB GUI threshold.
@@ -196,6 +181,25 @@ Driven by `plan.md`. Completed so far:
   - Home screen suggestion chips built from real usage (`gui/integrations.frequent_command_chips`), static fallback on fresh installs.
   - GUI icon cache cleared on window destroy (`icons.reset_cache`) so repeated windows/tests render live bitmaps.
   - `playwright>=1.42.0` in requirements (1.42.0 pinned greenlet 3.0.3, which has no Python 3.13 wheels).
+- [x] **Phase 2 — Mobile PWA** (`mobile/pwa/`, served at `/m`):
+      login/pairing, tasks with live SSE steps, approvals with double-tap
+      confirm, notifications with badges, installable shell, `docs/mobile.md`.
+      Serves only `pwa/` — the sibling Expo project in `mobile/` stays off
+      the web boundary.
+- [x] **Phase 3 — Reliability & Ops**:
+      `assistant/health_sweep.py` daemon (wired in `bootstrap_safety()`),
+      passphrase-encrypted secrets backup tool
+      (`python -m assistant.secrets_backup export|verify|restore`,
+      `docs/secrets-backup.md`), GUI Activity "Journal" filter over
+      `task_journal.recent_entries()`.
+- [x] **Phase 4 — Home Assistant Bridge** (`assistant/home.py`):
+      device states and verified control actions over the HA REST API;
+      `home.read` (safe) and `home.control` (sensitive, approval-held,
+      REACHES_OUTWARD); `GET /api/home/devices`, `POST /api/home/control`.
+- [x] **Phase 5 — Packaging & Distribution**:
+      `pyproject.toml` (v1.3.0), `vave` console script with subcommands
+      `gui/serve/once/smoke/pair`, clean-room `pip install .` verified,
+      README pip flow.
 
 *(Note: Phase 7 Proactive AI & Morning Briefings omitted per user directive.)*
 
@@ -203,10 +207,10 @@ Driven by `plan.md`. Completed so far:
 
 ## 4. Current Operational Stage
 
-> **CURRENT STATUS: STAGES 12-13 (UPGRADE PLAN PHASES 0-4) COMPLETED**
+> **CURRENT STATUS: STAGES 12-14 (UPGRADE PLAN PHASES 0-5) COMPLETED**
 
 - **Verification Status**:
-  - **747 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
+  - **756 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -221,7 +225,10 @@ Driven by `plan.md`. Completed so far:
 
 ## 5. Next Steps & Future Roadmap
 
-1. **Mobile Client Integration**:
-   - Pair standalone mobile app (Flutter/React Native) via `/api/pair` and test WebSocket/SSE push notifications.
-2. **Smart Home Expansion**:
-   - Webhook bridge for IoT appliances and ambient control.
+1. **Phase 6 — Daily Reliability**: App launch failure reporting, window
+   management exposure, command routing tightening, error feedback.
+2. **Phase 7 — Service Integrations**: Google Calendar/Email fast-path
+   commands, Telegram sync verification, secret store credential migration.
+3. **Phase 8 — Control Plane Enhancements**: Network device discovery,
+   proactive suggestions engine, continuous hands-free wake word mode,
+   proactive notifications to phone.
