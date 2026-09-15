@@ -62,6 +62,9 @@ def main(argv=None):
         passed = run_smoke_tests()
         return 0 if passed else 1
 
+    from assistant.bootstrap import bootstrap_safety
+    bus = bootstrap_safety()
+
     if args.gui:
         from vave_gui import main as gui_main
         return gui_main()
@@ -82,17 +85,6 @@ def main(argv=None):
                 return 1
             raise
         return api_main(["--host", args.host, "--port", str(args.port)])
-
-    bus = events.EventBus(maxsize=2000)
-    events.set_global_event_bus(bus)
-    logging_setup.configure_logging(event_bus=bus)
-
-    from assistant import audit, guard, confirm, overwatch
-    from pathlib import Path
-    audit.configure(Path("logs/audit.jsonl"), max_bytes=5_000_000, backup_count=20)
-    guard.configure(event_bus=bus)
-    confirm.configure(event_bus=bus)
-    overwatch.configure(event_bus=bus)
 
     controller = AssistantController(event_bus=bus, speech_enabled=not args.no_speech)
 

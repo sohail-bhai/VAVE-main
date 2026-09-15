@@ -108,6 +108,7 @@ AVAILABLE_FUNCTIONS = {
     "click_element": system_tasks.click_element,
     "double_click_at": system_tasks.double_click_at,
     "right_click_at": system_tasks.right_click_at,
+    "find_and_click_text": system_tasks.find_and_click_text,
     "move_mouse": system_tasks.move_mouse,
     "type_text": system_tasks.type_text,
     "press_key": system_tasks.press_key,
@@ -405,12 +406,14 @@ TOOL_GROUPS = {
          "volume", "sound", "mute", "unmute", "screenshot", "screen", "click", "type",
          "write", "press", "key", "battery", "charge", "time", "clock", "date", "today",
          "lock", "shutdown", "restart", "file", "folder", "directory",
-         "clipboard", "window", "windows"),
+         "clipboard", "window", "windows",
+         "scroll", "scroll down", "scroll up", "double click", "right click", "drag", "drop", "find text"),
         ("open_app", "close_app", "tell_battery", "tell_time", "tell_date",
          "set_volume", "mute_volume", "take_screenshot",
          "type_text", "press_key", "press_hotkey",
          "focus_window", "list_windows", "close_window",
          "read_screen", "analyze_screen", "get_clickable_elements", "click_element",
+         "scroll", "double_click_at", "right_click_at", "drag_and_drop", "find_and_click_text",
          "wait", "list_directory", "read_file", "write_file",
          "read_clipboard", "write_clipboard", "run_terminal_command", "lock_laptop"),
     ),
@@ -437,6 +440,11 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(volume|mute|unmute|sound|louder|quieter)\b"), ("set_volume", "mute_volume")),
     (re.compile(r"\b(notepad|calculator|calc|paint|cmd|terminal|explorer|launch|open app)\b"), ("open_app", "close_app")),
     (re.compile(r"\b(click|press button|tap|select)\b"), ("click_element", "click_at", "get_clickable_elements")),
+    (re.compile(r"\b(double click|double tap)\b"), ("double_click_at", "click_element")),
+    (re.compile(r"\b(right click|context menu)\b"), ("right_click_at",)),
+    (re.compile(r"\b(scroll|scroll down|scroll up|page down|page up)\b"), ("scroll",)),
+    (re.compile(r"\b(drag|drop|drag and drop)\b"), ("drag_and_drop",)),
+    (re.compile(r"\b(find and click|find text|click text)\b"), ("find_and_click_text", "click_element")),
     (re.compile(r"\b(type|write|typing|press|key|enter|shortcut)\b"), ("type_text", "press_key")),
     (re.compile(r"\b(note|notes|remind|memo)\b"), ("add_note", "read_notes", "clear_notes")),
     (re.compile(r"\b(search|google for|look up online|find online)\b"), ("search_web", "browse")),
@@ -712,19 +720,22 @@ def select_tools(instruction, tools=None):
         is_web = True
         is_desktop = False
 
+    desktop_primitives = (
+        "list_windows", "get_clickable_elements", "read_screen", "focus_window",
+        "close_window", "click_element", "click_at", "type_text", "press_key", "scroll", "wait"
+    )
     desktop_core = ("open_app", "focus_window", "type_text", "press_key", "wait", "click_element", "click_at", "get_clickable_elements", "list_windows", "close_app", "close_window")
     web_core = ("browser_elements", "browser_click", "browser_type", "browser_press", "browser_wait_for", "browser_wait_for_login", "browser_read", "wait")
-    required_atomic = ("press_key", "type_text", "click_at", "get_clickable_elements", "focus_window", "list_windows", "close_window")
 
     # Filter wanted tools by domain BEFORE offering to avoid crowding out slots
     if is_desktop and not is_web:
         clean_wanted = [name for name in wanted if name not in BROWSER_ONLY_TOOLS]
-        wanted = list(dict.fromkeys(list(required_atomic) + clean_wanted + list(desktop_core)))
+        wanted = list(dict.fromkeys(list(desktop_primitives) + clean_wanted + list(desktop_core)))
     elif is_web and not is_desktop:
         clean_wanted = [name for name in wanted if name not in DESKTOP_ONLY_TOOLS]
         wanted = list(dict.fromkeys(clean_wanted + list(web_core)))
     else:
-        wanted = list(dict.fromkeys(list(required_atomic) + wanted + list(CORE_TOOL_NAMES)))
+        wanted = list(dict.fromkeys(list(desktop_primitives) + wanted + list(CORE_TOOL_NAMES)))
 
     chosen, seen = [], set()
 
@@ -1433,6 +1444,20 @@ LLM_TOOLS = WEB_TOOLS + [
     {
         "type": "function",
         "function": {
+            "name": "find_and_click_text",
+            "description": "Finds a button or text on screen by search text and clicks it using UI Automation / OCR.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_text": {"type": "string", "description": "The text label to search for and click"}
+                },
+                "required": ["target_text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "click_at",
             "description": "Clicks at specific screen coordinates (x, y). Use this only when the target has no label - click_element is more reliable for anything named.",
             "parameters": {
@@ -1719,6 +1744,61 @@ LLM_TOOLS = WEB_TOOLS + [
                 "required": ["left_app", "right_app"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_auto_commit_and_push",
+            "description": "Analyzes git diff, generates a clean commit message, commits changes, and optionally pushes to remote.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "push": {"type": "boolean", "description": "Whether to run git push after committing (default False)"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scaffold_code",
+            "description": "Generates code based on a prompt and writes it to a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Description of the code or module to scaffold"},
+                    "filename": {"type": "string", "description": "Target filename to save the generated code"}
+                },
+                "required": ["prompt", "filename"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scrape_project_ideas",
+            "description": "Analyzes project repository context and suggests high-impact open source references and ideas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Path to project root directory (default '.')"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "deep_test_project",
+            "description": "Boots project dev server, launches browser, takes vision screenshots, and generates a QA report.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_command": {"type": "string", "description": "Command to boot the project, e.g. 'npm run dev'"},
+                    "url": {"type": "string", "description": "URL to inspect, e.g. 'http://localhost:3000'"}
+                }
+            }
+        }
     }
 ]
 
@@ -1896,7 +1976,7 @@ def query_local_llm_chat(messages, model="qwen2.5:3b", tools=None):
     # the next. Deciding which action to take is not a creative act, so sampling
     # is pulled right down whenever tools are on the table, and left alone when
     # the model is only talking.
-    options = {"num_ctx": 4096}
+    options = {"num_ctx": int(get_setting("ollama_num_ctx", 8192))}
     if offering_tools:
         options["temperature"] = float(get_setting("llm_tool_temperature", 0.1))
         options["top_p"] = 0.9
@@ -2374,7 +2454,7 @@ def _prune_conversation_context(messages, max_history=18):
 
 def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps=12,
                 should_continue=None, authorize=None, resolve_secrets=None,
-                tools=None):
+                tools=None, return_details=False):
     """Run the tool-calling loop over `conversation`, which is mutated in place.
 
     `extra_messages` are injected into the payload just before the latest user
@@ -2694,22 +2774,45 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                 })
                 continue
 
+        if return_details:
+            return {
+                "outcome": "completed",
+                "output": said,
+                "tools": [p[0] for p in performed],
+                "steps": step + 1,
+                "reason": "",
+            }
         return said
 
     # The loop ran out of steps. Report what was said or wrap up state rather than nothing.
-    if said:
-        return said
+    last_tool = performed[-1][0] if performed else "none"
+    login_required = False
     try:
         from assistant.browser.actions import _session
         s = _session()
         if s.started and s.looks_like_login():
-            return "I have opened the page, but signing in is required to continue. Please log in directly in the browser window."
+            login_required = True
     except Exception:
         pass
-    if performed:
-        last_tool = performed[-1][0]
-        return f"Completed actions up to {last_tool}."
-    return "I completed the available actions."
+
+    if login_required:
+        out_msg = "I have opened the page, but signing in is required to continue. Please log in directly in the browser window."
+    elif said:
+        out_msg = said
+    elif performed:
+        out_msg = f"Completed actions up to {last_tool}."
+    else:
+        out_msg = "I completed the available actions."
+
+    if return_details:
+        return {
+            "outcome": "out_of_steps",
+            "output": out_msg,
+            "tools": [p[0] for p in performed],
+            "steps": max_steps,
+            "reason": f"Exceeded maximum steps ({max_steps}) without finishing.",
+        }
+    return out_msg
 
 
 # Openings that make an utterance a request for information rather than an
@@ -2817,16 +2920,43 @@ def ask_ai(command, auto_confirm=False):
     reply = _agent_loop(conversation_history,
                         extra_messages=[_memory_message(clean_command)],
                         tools=select_tools(clean_command),
-                        auto_confirm=auto_confirm)
+                        auto_confirm=auto_confirm,
+                        return_details=True)
 
     if reply is None:
         speak("I'm sorry, I couldn't reach my local brain. Please ensure Ollama is running.")
         conversation_history.pop()  # Remove failed prompt
         return None
 
-    if reply:
-        speak(reply)
-    return reply
+    outcome = "completed"
+    output = reply
+    tools = []
+    steps = 1
+    reason = ""
+    if isinstance(reply, dict):
+        outcome = reply.get("outcome", "completed")
+        output = str(reply.get("output", ""))
+        tools = reply.get("tools", [])
+        steps = reply.get("steps", 0)
+        reason = reply.get("reason", "")
+
+    try:
+        from assistant import task_journal
+        task_journal.record_task_attempt(
+            request=clean_command,
+            origin="voice",
+            model=select_model(clean_command),
+            tools_run=tools,
+            step_count=steps,
+            outcome=outcome,
+            reason=reason,
+        )
+    except Exception:
+        pass
+
+    if output:
+        speak(output)
+    return output
 
 
 def run_task_step(instruction, context="", auto_confirm=True,
@@ -2865,10 +2995,45 @@ def run_task_step(instruction, context="", auto_confirm=True,
                         auto_confirm=auto_confirm,
                         max_steps=max_steps or get_setting("agent_max_steps", 15),
                         should_continue=should_continue, authorize=authorize,
-                        resolve_secrets=resolve_secrets)
+                        resolve_secrets=resolve_secrets,
+                        return_details=True)
 
     if reply is None:
         raise RuntimeError("Could not reach the local model. Is Ollama running?")
+
+    if isinstance(reply, dict):
+        outcome = reply.get("outcome", "completed")
+        output = str(reply.get("output", "")).strip() or "Done."
+        tools = reply.get("tools", [])
+        steps = reply.get("steps", 0)
+        reason = reply.get("reason", "")
+        try:
+            from assistant import task_journal
+            task_journal.record_task_attempt(
+                request=instruction,
+                origin=call_context.get_origin(),
+                model=select_model(instruction),
+                tools_run=tools,
+                step_count=steps,
+                outcome=outcome,
+                reason=reason,
+            )
+        except Exception:
+            pass
+
+        if outcome == "out_of_steps":
+            return {
+                "ok": False,
+                "output": output,
+                "error": reason or f"Out of steps ({steps} steps taken).",
+            }
+        elif outcome != "completed":
+            return {
+                "ok": False,
+                "output": output,
+                "error": reason or f"Step ended with outcome: {outcome}",
+            }
+        return output
 
     return reply.strip() or "Done."
 
@@ -2896,6 +3061,7 @@ SENSITIVE_TOOLS = [
     # Pointing and clicking: a click can submit a form, buy something or
     # confirm a dialog, and VAVE cannot know which until it has happened.
     "click_element", "click_at", "double_click_at", "right_click_at", "drag_and_drop",
+    "find_and_click_text",
     "close_window", "scroll", "move_mouse",
     # Typing is how most work gets done. The dangerous part is which keys, and
     # the guard reads the chord itself: alt+f4 and win+r are destructive, the

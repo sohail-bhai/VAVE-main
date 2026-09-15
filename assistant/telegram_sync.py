@@ -4,6 +4,7 @@ logger = logging.getLogger(__name__)
 import json
 import os
 import queue
+import random
 import threading
 import time
 import urllib.request
@@ -24,20 +25,19 @@ _telegram_active = False
 _command_queue: "queue.Queue" = queue.Queue()
 _worker_thread = None
 
+# One-time Telegram Pairing PIN state
 _telegram_pairing_code = None
 _telegram_pairing_expiry = 0
 
 def issue_telegram_pairing_code() -> str:
     """Issue a 6-digit one-time pairing code valid for 10 minutes."""
     global _telegram_pairing_code, _telegram_pairing_expiry
-    import random, time
     _telegram_pairing_code = f"{random.randint(100000, 999999)}"
     _telegram_pairing_expiry = time.time() + 600
     return _telegram_pairing_code
 
 def get_active_telegram_pairing_code() -> str:
     """Return active pairing code or generate a fresh one if expired/unset."""
-    import time
     if _telegram_pairing_code and time.time() < _telegram_pairing_expiry:
         return _telegram_pairing_code
     return issue_telegram_pairing_code()
@@ -353,7 +353,6 @@ def _telegram_worker():
                             clean_t = str(text or "").strip()
                             if clean_t.lower().startswith("/pair ") or clean_t.lower().startswith("pair "):
                                 code_entered = clean_t.split(" ", 1)[1].strip()
-                                import time
                                 if _telegram_pairing_code and time.time() < _telegram_pairing_expiry and code_entered == _telegram_pairing_code:
                                     logger.info(f"[VAVE] Telegram successfully paired with Chat ID: {sender_chat_id}")
                                     update_setting("telegram_chat_id", sender_chat_id)

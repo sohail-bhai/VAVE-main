@@ -228,6 +228,9 @@ def create_app(control=None, executor=None, security=None, notifier=None):
     tests, and any embedding app, can inject their own instead of driving the
     shared ones.
     """
+    from assistant.bootstrap import bootstrap_safety
+    bootstrap_safety()
+
     plane = control or get_control_plane()
     runner = executor or get_executor(plane=plane)
     guard = security if security is not None else ApiSecurity(plane.store)
@@ -1447,6 +1450,9 @@ def main(argv=None):
         return request_pairing_code(args.port)
 
     import uvicorn
+
+    from assistant.bootstrap import bootstrap_safety
+    bootstrap_safety()
 
     if args.host not in ("127.0.0.1", "localhost"):
         logger.warning(

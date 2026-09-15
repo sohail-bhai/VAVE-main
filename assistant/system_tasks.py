@@ -1579,6 +1579,17 @@ def click_element(name, window_title=None):
 
         matches = exact or starts or contains
         if not matches:
+            # Fallback to OCR search before giving up
+            try:
+                from assistant.vision import find_text_on_screen
+                coords = find_text_on_screen(wanted)
+                if coords:
+                    cx, cy = coords
+                    logger.info("UIAutomation missed '%s', but OCR found coordinates (%d, %d). Clicking...", wanted, cx, cy)
+                    return click_at(cx, cy)
+            except Exception as e:
+                logger.debug("OCR fallback search failed: %s", e)
+
             return (f"Nothing labelled '{wanted}' in the window "
                     f"'{window.Name}'.\n" + get_clickable_elements(window_title))
 

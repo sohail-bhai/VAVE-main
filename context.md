@@ -124,19 +124,64 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
   - Tools wired to `ai_brain.py` (`sync_google_drive`, `semantic_search_google_drive`, `export_to_google_drive`, `draft_gmail_message`) with sensitivity classification.
   - REST API endpoints: `POST /api/google/drive/sync`, `GET /api/google/drive/semantic-search`, `POST /api/google/drive/export`, `POST /api/google/gmail/draft`, `POST /api/google/gmail/send`.
 
+### Stage 5 Refinements (R1–R4 Complete)
+- [x] **Store Resource Lifecycle (R1)**: Added `close()`, `__enter__`, and `__exit__` context management to `DriveIndexer` ensuring SQLite connections terminate cleanly without handle leakage.
+- [x] **Strict RFC 5322 Email Validation (R2)**: Hardened `_EMAIL_RE` in `assistant/workspace/gmail.py` to prevent consecutive dots (`..`) and leading/trailing dots in local parts.
+- [x] **Indexer Transactional Rollback (R3)**: `DriveIndexer` rolls back ChromaDB document insertions when SQLite `drive_sync_state` record commits fail, preventing ghost embeddings.
+- [x] **Unindexable File Diagnostic Logging (R4)**: Explicit warning logged for unparseable or binary files with 0 extracted chunks.
+
+### Stage 6A: API Hardening & Network Resilience (Complete)
+- [x] **Persistent TokenBucket Rate Limiting**: Migrated in-memory rate-limiter buckets to SQLite table `rate_limits` (migration `0016_rate_limits`), persisting quotas and refill timestamps across server restarts.
+- [x] **Token Rotation Audit Ledger**: SQLite table `token_rotations` (migration `0017_token_rotation_audit`) tracking every device token renewal with timestamps and requesting device ID; exposed via `GET /api/auth/audit/rotations`.
+- [x] **WebSocket Heartbeats / Liveness Pings**: Added automated 25-second ping interval to `/ws/activity`, `/ws/notifications`, and `/ws/events` to prevent silent proxy drops.
+
+### Stage 6B: Command Intelligence & Frequency Tracking (Complete)
+- [x] **Command Usage Frequency Tracking**: SQLite table `command_usage` (migration `0018_command_shortcuts`) storing command pattern name, usage count, category, and last-used timestamp.
+- [x] **Execution Integration**: `commands.py` records usage frequency across core voice/text command routes.
+- [x] **Personalized Shortcuts Schema**: Table `command_shortcuts` providing database foundation for custom user shorthand triggers.
+
+### Stage 8: GUI Observability & Usability (Complete)
+- [x] **Real-Time System Health Bar**: Custom header bar in `HomePage` rendering CPU %, RAM %, and free disk space.
+- [x] **Low Disk Warning**: Dynamic alert badge when C: drive has < 15 GB free to enforce the critical disk preservation policy.
+- [x] **Drive Sync Status Card**: Live display of last Drive sync timestamp, indexed files, and chunk counts with interactive background `[Sync]` trigger button.
+- [x] **Notifications [Mark All Read]**: Instant action button in `NotificationsModal` clearing all unread badges across the control plane.
+
+### Stage 9: Developer Git Automation (Complete)
+- [x] **GitLab Diff-Only Merge Requests**: Upgraded `gitlab_propose_fix()` in `assistant/gitlab_agent.py` to compute and attach unified diff blocks in MR descriptions for instant review.
+- [x] **GitHub REST API Agent**: Created `assistant/github_agent.py` providing `github_list_issues`, `github_read_issue`, `github_find_file`, `github_read_file`, and `github_propose_fix`.
+- [x] **Zero-Trust Classification**: GitHub tools registered in `guard.py` (read tools safe, `github_propose_fix` destructive & reaching outward) and `capabilities.py` (`github.read`, `github.write`).
+
+### Stage 10: Cross-Platform System Layer (Complete)
+- [x] **macOS Volume Backend**: Native AppleScript (`osascript`) controls in `assistant/system_tasks.py` for reading and setting volume.
+- [x] **Linux Volume Backend**: Native ALSA (`amixer`) and PulseAudio (`pactl`) integration for volume get/set.
+- [x] **Multi-Distro Linux Screen Lock**: Fallback chain supporting `loginctl lock-session`, `xdg-screensaver lock`, and `gnome-screensaver-command -l`.
+
+### Stage 11: VAVE Reliability Core (Complete)
+- [x] **Test Isolation Guard**: Added `get_data_dir()`, dynamic `VAVE_DATA_DIR` environment override, `reset_chroma()`, and `reset_drive_collection()` to guarantee tests never pollute user storage (`data/notes.txt`, `data/chroma_db`, `data/control.db`). Created `VaveTestCase` base class.
+- [x] **Desktop Primitive Priority**: Reserved slots in `select_tools` for core atomic primitives (`list_windows`, `get_clickable_elements`, `read_screen`, `focus_window`, `close_window`, `click_element`, `click_at`, `type_text`, `press_key`, `scroll`, `wait`), preventing trivia tools from evicting control capabilities.
+- [x] **OCR Fallback & Aliases**: Added OCR fallback via `vision.find_text_on_screen` when UIAutomation finds no match in `click_element`. Added semantic aliases and regex for scroll, double-click, right-click, drag-and-drop, and text search clicks.
+- [x] **Honest Step Reporting & Task Journal**: Enhanced `_agent_loop` to report structured dict outcomes, ensuring `out_of_steps` marks `ok=False` in `StepResult`. Created `assistant/task_journal.py` reusing append-only redacted audit logs for failure tracking and weekly summaries.
+- [x] **Centralized Safety Bootstrap**: Created `assistant/bootstrap.py` unifying global event bus, logging, audit ledger, guard, confirm, and overwatch initialization across CLI (`main.py`), GUI (`gui/app.py`), and API Server (`assistant/api/app.py`).
+- [x] **Ollama Context Window Alignment**: Unified `num_ctx` default to `8192` in `ai_brain.py` matching prompt and tool definition requirements.
+
+*(Note: Phase 7 Proactive AI & Morning Briefings omitted per user directive.)*
+
 ---
 
 ## 4. Current Operational Stage
 
-> **CURRENT STATUS: STAGE 5 (Google Workspace Cloud Sync & Verified Comms) COMPLETED**
+> **CURRENT STATUS: STAGE 11 (VAVE Reliability Core) COMPLETED**
 
 - **Verification Status**:
-  - **673/673 Unit Tests Green** (`python -m unittest discover -s tests -p "test_*.py"` across 24 test suites in 110s with 0 failures).
+  - **702 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
+  - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
+  - **One-Shot CLI Verified**: Tested with speech suppressed.
 - **Security Posture**:
-  - Zero hardcoded secrets; credentials encrypted with AES-GCM and scoped by capability.
-  - Unified emergency stop active across all interfaces.
-  - Hard-deny enforcement protects codebase and operating system.
+  - Zero hardcoded secrets; AES-GCM credential vault scoped by capability.
+  - Unified emergency stop active across GUI, hotkeys, Telegram, and REST API.
+  - Guard hard-deny enforcement and REACHES_OUTWARD classification protecting host and network.
+  - Centralized safety bootstrap ensures guard, audit, and overwatch are active on every entry point.
 
 ---
 

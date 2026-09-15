@@ -369,12 +369,33 @@ python main.py --text "what time is it" --no-speech
   - Persistent SQLite notifications (`GET /api/notifications`, `POST /api/notifications/{id}/read`).
   - Agent busy lifecycle tracking (`idle` -> `working` with `current_task_id` -> `idle`).
   - Capability-scoped secrets (AES-GCM credentials gated by matching capability patterns).
-- [x] **Phase 5: Google Workspace Cloud Sync**:
+- [x] **Phase 5: Google Workspace Cloud Sync & Hardening**:
   - Bi-directional Google Drive semantic indexer with ChromaDB vector search and instant export (`sync_google_drive`, `semantic_search_google_drive`, `export_to_google_drive`).
   - Multi-format document parser (Google Docs, Sheets, Slides, plain text).
   - Verified Gmail drafting and sending with recipient syntax validation, zero-trust approval gate, and capability-scoped credential protection (`google.gmail.*`).
   - REST endpoints: `POST /api/google/drive/sync`, `GET /api/google/drive/semantic-search`, `POST /api/google/drive/export`, `POST /api/google/gmail/draft`, `POST /api/google/gmail/send`.
-- [ ] **Phase 6: Mobile Client Integration & Remote Execution**:
+  - Production refinements: Store lifecycle context manager (`close()`), strict RFC 5322 regex email validation, transactional indexer rollback on SQLite commit failure, and unparseable file warnings.
+- [x] **Phase 6A: API Hardening & Network Resilience**:
+  - Persistent SQLite TokenBucket rate limiting across server restarts (`rate_limits` table).
+  - Token rotation audit trail (`token_rotations` table) accessible via `GET /api/auth/audit/rotations`.
+  - 25-second WebSocket ping/pong heartbeats on `/ws/activity`, `/ws/notifications`, and `/ws/events`.
+- [x] **Phase 6B: Command Intelligence & Frequency Tracking**:
+  - SQLite command pattern usage frequency tracker (`command_usage` table) recording usage counts and timestamps.
+  - Personal shortcuts database foundation (`command_shortcuts` table).
+- [x] **Phase 8: GUI Observability & Usability**:
+  - Real-time System Health Bar rendering CPU %, RAM %, and free disk space.
+  - Critical low disk warning badge (< 15 GB free on C: drive).
+  - Live Drive Sync status card with one-click background `[Sync]` trigger.
+  - Notification drawer `[Mark all read]` instant action button.
+- [x] **Phase 9: Developer Git Automation**:
+  - GitLab diff-only patch preview in merge request descriptions (`gitlab_propose_fix`).
+  - First-class GitHub REST API agent (`assistant/github_agent.py`) supporting issues, file search, file read, and diff-enabled pull requests (`github_propose_fix`).
+  - Zero-trust security gates (`guard.py` & `capabilities.py`) with `github.read` and `github.write` capability mapping.
+- [x] **Phase 10: Cross-Platform System Layer**:
+  - Native macOS volume control via AppleScript (`osascript`).
+  - Native Linux volume control via ALSA (`amixer`) and PulseAudio (`pactl`).
+  - Multi-distro Linux lock screen support (`loginctl`, `xdg-screensaver`, `gnome-screensaver-command`).
+- [ ] **Phase 11: Mobile Client Integration & Remote Execution**:
   - Standalone mobile client pairing (`/api/pair`) and remote goal execution.
   - WebSocket / SSE push notifications to mobile.
 

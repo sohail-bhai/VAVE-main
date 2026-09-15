@@ -58,20 +58,8 @@ class VaveDashboardApp(ctk.CTk):
         self.configure(fg_color=theme.MAIN_BG)
 
         # 1. Event Bus & Assistant Controller
-        self.event_bus = EventBus(maxsize=2000)
-        set_global_event_bus(self.event_bus)
-        logging_setup.configure_logging(event_bus=self.event_bus)
-
-        # Initialize safe optional backend modules
-        try:
-            from assistant import audit, guard, confirm, overwatch
-            from pathlib import Path
-            audit.configure(Path("logs/audit.jsonl"), max_bytes=5_000_000, backup_count=20)
-            guard.configure(event_bus=self.event_bus)
-            confirm.configure(event_bus=self.event_bus)
-            overwatch.configure(event_bus=self.event_bus)
-        except Exception as e:
-            logger.warning(f"Optional assistant subsystem initialization note: {e}")
+        from assistant.bootstrap import bootstrap_safety
+        self.event_bus = bootstrap_safety()
 
         self.controller = AssistantController(
             event_bus=self.event_bus,
