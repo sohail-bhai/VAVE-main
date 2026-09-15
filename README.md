@@ -315,6 +315,18 @@ Only the folders you list are reachable, every path is resolved before it is
 checked, and each transfer is written to the timeline with the device that
 asked. See [`docs/remote-files.md`](docs/remote-files.md).
 
+#### 🗣️ Personal Voice Shortcuts
+Teach VAVE your own shorthand once, and it survives restarts:
+```
+"When I say coffee mode, do open youtube."
+"Delete shortcut coffee mode."
+"List my shortcuts."
+```
+A trigger may not shadow a built-in command ("what time is it" stays the
+clock), and shortcuts may not point at other shortcuts, so nothing can loop.
+Shortcuts and the most-used command patterns are also reachable over REST:
+`GET /api/commands/frequent`, `GET|POST|DELETE /api/commands/shortcuts`.
+
 #### 🗝️ Credentials
 Secrets live in an encrypted store rather than in `config.json`. Agents receive
 `secret://<name>` and never the value — the control plane resolves it at the
@@ -381,7 +393,8 @@ python main.py --text "what time is it" --no-speech
   - 25-second WebSocket ping/pong heartbeats on `/ws/activity`, `/ws/notifications`, and `/ws/events`.
 - [x] **Phase 6B: Command Intelligence & Frequency Tracking**:
   - SQLite command pattern usage frequency tracker (`command_usage` table) recording usage counts and timestamps.
-  - Personal shortcuts database foundation (`command_shortcuts` table).
+  - Personal voice shortcuts (`command_shortcuts` table): "when I say X do Y", managed by voice and REST (`GET/POST/DELETE /api/commands/shortcuts`), with use counts and chain protection.
+  - Most-used command patterns exposed via `GET /api/commands/frequent`; home screen suggestion chips built from real usage.
 - [x] **Phase 8: GUI Observability & Usability**:
   - Real-time System Health Bar rendering CPU %, RAM %, and free disk space.
   - Critical low disk warning badge (< 15 GB free on C: drive).

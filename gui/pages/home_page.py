@@ -194,7 +194,11 @@ class HomePage(ctk.CTkScrollableFrame):
             text_color=theme.TEXT_MUTED,
         ).pack(side="left", padx=(0, 10))
 
-        chips = [
+        # Suggestion chips come from what is actually used, so the home screen
+        # teaches the commands that matter to this user. Fresh installs with no
+        # history yet fall back to a sensible starter set.
+        from gui import integrations
+        chips = integrations.frequent_command_chips(limit=4) or [
             ("Find my presentation", "file"),
             ("Continue my project", "play"),
             ("Research something", "search"),

@@ -895,6 +895,156 @@ def is_quit_command(command):
     return bool(_QUIT_PATTERN.match(str(command or "")))
 
 
+# Personal voice shortcuts: "when I say X do Y". Stored in the control plane's
+# SQLite store so they survive restarts and are reachable from every client.
+_SHORTCUT_CREATE_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?when\s+(?:i|we)\s+(?:say|ask)\s+(?P<trigger>.+?)\s+"
+    r"(?:do|run|execute|open|say)\s+(?P<expansion>.+?)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_SHORTCUT_CREATE2_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:create|make|add)\s+(?:a\s+)?shortcut\s+(?:called\s+|named\s+)?"
+    r"(?P<trigger>.+?)\s+(?:for|that\s+(?:does|runs)|to\s+(?:do|run))\s+"
+    r"(?P<expansion>.+?)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_SHORTCUT_DELETE_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:delete|remove|forget)\s+(?:the\s+)?shortcut\s+"
+    r"(?:called\s+|named\s+)?(?P<trigger>.+?)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_SHORTCUT_LIST_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:list|show)\s+(?:my\s+)?shortcuts\s*[.!]?\s*$"
+    r"|^\s*(?:please\s+)?what\s+are\s+my\s+shortcuts\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _shortcut_store():
+    """The control plane's store when shortcut tables are reachable."""
+    try:
+        from assistant.control.service import get_control_plane
+        plane = get_control_plane()
+        if plane is not None and hasattr(plane.store, "save_command_shortcut"):
+            return plane.store
+    except Exception:
+        pass
+    return None
+
+
+def _shortcut_trigger_reserved(trigger):
+    """A description of the built-in a trigger may not shadow, or None."""
+    checks = (
+        ("the stop and goodbye words", _QUIT_PATTERN),
+        ("asking for the time", _TIME_PATTERN),
+        ("asking for the date", _DATE_PATTERN),
+        ("the battery check", _BATTERY_PATTERN),
+        ("taking a screenshot", _SCREENSHOT_PATTERN),
+        ("locking the laptop", _LOCK_PATTERN),
+        ("shutting down", _SYSTEM_SHUTDOWN_PATTERN),
+        ("restarting", _SYSTEM_RESTART_PATTERN),
+        ("adding a note", _ADD_NOTE_PATTERN),
+        ("reading notes", _READ_NOTES_PATTERN),
+        ("clearing notes", _CLEAR_NOTES_PATTERN),
+    )
+    for description, pattern in checks:
+        if pattern.match(trigger):
+            return description
+    for pattern, keys, spoken in _ATOMIC_PATTERNS:
+        if pattern.match(trigger):
+            return "a built-in desktop action"
+    for pattern, name, spoken in _MEDIA_PATTERNS:
+        if pattern.match(trigger):
+            return "a media command"
+    if "volume" in trigger or "mute" in trigger:
+        return "a volume command"
+    if "shortcut" in trigger:
+        return "the shortcut commands"
+    for routine_name in get_setting("routines", {}):
+        r_name = routine_name.lower().strip()
+        if trigger == r_name or trigger in (
+                f"run {r_name}", f"start {r_name}", f"activate {r_name}",
+                f"routine {r_name}", f"run routine {r_name}"):
+            return f"the '{routine_name}' routine"
+    return None
+
+
+def handle_shortcut_command(command):
+    """Create, delete or list personal shortcuts: 'when I say X do Y'."""
+    command = str(command or "").strip()
+
+    if _SHORTCUT_LIST_PATTERN.match(command):
+        store = _shortcut_store()
+        if store is None:
+            speak("My shortcut store is not available right now.")
+            return True
+        shortcuts = store.list_command_shortcuts()
+        if not shortcuts:
+            speak("You have no shortcuts yet. Say: when I say something, do something.")
+        else:
+            names = ", ".join(s["trigger"] for s in shortcuts[:10])
+            speak(f"You have {len(shortcuts)} shortcuts: {names}.")
+        return True
+
+    match = _SHORTCUT_DELETE_PATTERN.match(command)
+    if match:
+        store = _shortcut_store()
+        if store is None:
+            speak("My shortcut store is not available right now.")
+            return True
+        trigger = match.group("trigger").strip().lower()
+        if store.delete_command_shortcut(trigger):
+            speak(f"Removed the shortcut {trigger}.")
+        else:
+            speak(f"There is no shortcut called {trigger}.")
+        return True
+
+    match = _SHORTCUT_CREATE_PATTERN.match(command) or _SHORTCUT_CREATE2_PATTERN.match(command)
+    if match:
+        store = _shortcut_store()
+        if store is None:
+            speak("My shortcut store is not available right now.")
+            return True
+        trigger = match.group("trigger").strip().lower()
+        expansion = match.group("expansion").strip().lower()
+        if not trigger or not expansion:
+            return True
+        if trigger == expansion:
+            speak("A shortcut has to do something different from its trigger.")
+            return True
+        reserved = _shortcut_trigger_reserved(trigger)
+        if reserved:
+            speak(f"'{trigger}' is already {reserved}, so it cannot be a shortcut.")
+            return True
+        if store.get_command_shortcut(expansion) is not None:
+            speak("That would point one shortcut at another, so I left it alone.")
+            return True
+        store.save_command_shortcut(trigger, expansion)
+        speak(f"Okay. From now on, saying {trigger} means {expansion}.")
+        return True
+
+    return False
+
+
+def apply_shortcut(command):
+    """Expand an exact shortcut match. Returns False when it is not a shortcut."""
+    clean = str(command or "").strip().lower()
+    if not clean:
+        return False
+    store = _shortcut_store()
+    if store is None:
+        return False
+    shortcut = store.get_command_shortcut(clean)
+    if shortcut is None:
+        return False
+    store.record_command_shortcut_use(clean)
+    _record_usage(f"shortcut:{clean}", category="shortcut")
+    expansion = str(shortcut.get("expansion", "")).strip()
+    speak(f"Shortcut: {expansion}.")
+    execute_single_command(expansion)
+    return True
+
+
 def execute_command(command, auto_confirm=False):
     """
     Main command router for VAVE Version 1.2.
@@ -918,6 +1068,12 @@ def execute_single_command(command, auto_confirm=False):
         return True
         
     if check_routines(command):
+        return True
+
+    if handle_shortcut_command(command):
+        return True
+
+    if apply_shortcut(command):
         return True
 
     if handle_workspace_split_command(command):

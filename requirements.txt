@@ -34,7 +34,9 @@ pytesseract
 wikipedia
 googlesearch-python
 duckduckgo-search
-playwright==1.42.0
+# 1.42.0 pinned greenlet 3.0.3, which has no Python 3.13 wheels; newer
+# playwright releases accept greenlet 3.5+ and install cleanly on 3.13.
+playwright>=1.42.0
 
 # Google Workspace
 google-api-python-client

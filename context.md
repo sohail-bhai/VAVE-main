@@ -164,6 +164,24 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
 - [x] **Centralized Safety Bootstrap**: Created `assistant/bootstrap.py` unifying global event bus, logging, audit ledger, guard, confirm, and overwatch initialization across CLI (`main.py`), GUI (`gui/app.py`), and API Server (`assistant/api/app.py`).
 - [x] **Ollama Context Window Alignment**: Unified `num_ctx` default to `8192` in `ai_brain.py` matching prompt and tool definition requirements.
 
+### Stage 12: Upgrade Plan Execution (In Progress)
+
+Driven by `plan.md` (Phases 0-5). Completed so far:
+
+- [x] **Phase 0 — Quick Fixes, Docs Drift, CI**:
+  - `disk_warning_gb` setting (default 15 GB) replaces the hardcoded 7 GB GUI threshold.
+  - TokenBucket clamps negative elapsed time (NTP clock-step guard) and prunes stale `rate_limit_buckets` rows.
+  - AGENTS.md / docs/control-plane.md limitation lists corrected to current truth.
+  - GitHub Actions CI (`windows-latest`, Python 3.13): compileall + unittest + smoke test.
+- [x] **Phase 1 — Command Intelligence Completion**:
+  - Migration `0019_command_shortcuts_table` and store CRUD (save/get/list/delete/use-count).
+  - Voice shortcuts: "when I say X do Y" / "delete shortcut X" / "list my shortcuts", routed before built-ins in `commands.py`.
+  - Reserved-trigger guard (built-ins, media, volume, routines) and chain guard (no shortcut pointing at a shortcut).
+  - REST: `GET /api/commands/frequent`, `GET|POST|DELETE /api/commands/shortcuts`.
+  - Home screen suggestion chips built from real usage (`gui/integrations.frequent_command_chips`), static fallback on fresh installs.
+  - GUI icon cache cleared on window destroy (`icons.reset_cache`) so repeated windows/tests render live bitmaps.
+  - `playwright>=1.42.0` in requirements (1.42.0 pinned greenlet 3.0.3, which has no Python 3.13 wheels).
+
 *(Note: Phase 7 Proactive AI & Morning Briefings omitted per user directive.)*
 
 ---

@@ -36,21 +36,21 @@ Verification: full test suite green locally, CI green on GitHub.
 
 ## Phase 1 — Command Intelligence Completion (1 day)
 
-- [ ] 1.1 **Make `command_shortcuts` real.** Table exists (migration 0018) but
-      nothing reads it. Add store methods `save_command_shortcut`,
-      `get_command_shortcut`, `list_command_shortcuts`, `delete_command_shortcut`.
-- [ ] 1.2 **Voice shortcut creation.** "when I say <trigger> do <command>" /
-      "create a shortcut" routed early in `commands.py` before other matching.
-      Conflicts with built-in patterns are refused.
-- [ ] 1.3 **Shortcut use.** Before the AI fallback, check exact-match shortcut
-      triggers and expand to the stored command.
-- [ ] 1.4 **Expose usage data.** `GET /api/commands/frequent` (top N patterns)
-      and `GET /api/commands/shortcuts` + DELETE endpoint.
-- [ ] 1.5 **GUI suggestion chips from real usage.** HomePage chips come from
-      `get_frequent_commands()` instead of the static list.
+- [x] 1.1 **Make `command_shortcuts` real.** Migration 0019 creates the table;
+      store gained `save/get/list/delete_command_shortcut` and
+      `record_command_shortcut_use`.
+- [x] 1.2 **Voice shortcut creation.** "when I say X do Y" routed early in
+      `commands.py`; reserved triggers (built-ins, media, volume, routines)
+      refused with a spoken reason; chains refused.
+- [x] 1.3 **Shortcut use.** Exact-match expansion before all built-in
+      handlers, with use counts and usage recording.
+- [x] 1.4 **Expose usage data.** `GET /api/commands/frequent`,
+      `GET/POST/DELETE /api/commands/shortcuts`.
+- [x] 1.5 **GUI suggestion chips from real usage.** HomePage chips come from
+      `get_frequent_commands()` + shortcuts, static fallback when empty.
 
-Verification: new unit tests for shortcut save/expand/conflict + frequent
-endpoint; existing suite stays green.
+Verification: 10 new tests in `tests/test_command_shortcuts.py`; full suite
+714 green in both the dev venv and a clean-install venv (CI dry run).
 
 ## Phase 2 — Mobile PWA Client (3-5 days)
 
@@ -129,3 +129,5 @@ live HA instance by the user.
 | --- | --- |
 | 2026-09-15 | Plan created. Phase 0 started. |
 | 2026-09-15 | Phase 0 complete: disk warning configurable (default 15 GB), TokenBucket clock clamp, stale bucket pruning, docs drift fixed, CI workflow added. 704 tests green. |
+| 2026-09-15 | CI dry run in clean venv caught two real bugs: `playwright==1.42.0` pins greenlet 3.0.3 (no cp313 wheels) — bumped to `>=1.42.0`; module-level icon cache outlived a destroyed Tk root — cache now cleared on window destroy. |
+| 2026-09-15 | Phase 1 complete: voice shortcuts end-to-end (migration 0019, router, REST, GUI chips), 714 tests green in dev + clean venv. |

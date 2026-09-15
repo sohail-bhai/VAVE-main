@@ -91,6 +91,16 @@ class VaveDashboardApp(ctk.CTk):
         # 6. Event Bus Polling
         self.after(100, self._poll_events)
 
+    def destroy(self):
+        # Tk deletes every PhotoImage with the root that created it, so the
+        # module-level icon cache must not outlive this window: a second
+        # window reusing a cached glyph would render from a dead bitmap.
+        try:
+            icons.reset_cache()
+        except Exception:
+            pass
+        super().destroy()
+
     def _build_layout(self):
         # Configure columns: Sidebar (0), Content (1), Right Panel (2)
         self.grid_columnconfigure(0, weight=0, minsize=234)

@@ -228,6 +228,47 @@ def all_integrations():
     ]
 
 
+def frequent_command_chips(limit=4):
+    """Suggestion chips built from real usage: frequent commands and shortcuts."""
+    try:
+        from assistant.control.service import get_control_plane
+        plane = get_control_plane()
+        frequent = plane.store.get_frequent_commands(limit=15)
+        shortcuts = plane.store.list_command_shortcuts()
+    except Exception:
+        return []
+    labels = {
+        "time": "What time is it?",
+        "date": "What's the date?",
+        "battery": "Battery percentage",
+        "screenshot": "Take a screenshot",
+        "lock": "Lock the laptop",
+        "shutdown": "Shut down",
+        "restart": "Restart",
+        "add_note": "Add a note",
+        "read_notes": "Read my notes",
+    }
+    icons_for = {
+        "time": "search", "date": "search", "battery": "search",
+        "screenshot": "file", "lock": "file",
+        "add_note": "mail", "read_notes": "mail",
+    }
+    chips = []
+    for row in frequent:
+        pattern = row.get("command_pattern", "")
+        if pattern.startswith("shortcut:"):
+            chips.append((pattern.split(":", 1)[1], "play"))
+        elif pattern in labels:
+            chips.append((labels[pattern], icons_for.get(pattern, "play")))
+        if len(chips) >= limit:
+            return chips
+    for shortcut in shortcuts:
+        chips.append((shortcut["trigger"], "play"))
+        if len(chips) >= limit:
+            break
+    return chips
+
+
 def system_health_status():
     """Returns real-time CPU, RAM, Disk, and Battery metrics."""
     try:

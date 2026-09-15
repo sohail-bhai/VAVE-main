@@ -1111,6 +1111,40 @@ def create_app(control=None, executor=None, security=None, notifier=None):
             raise HTTPException(status_code=404, detail="No such notification.")
         return result
 
+    # -- command intelligence ----------------------------------------------
+
+    @app.get("/api/commands/frequent", tags=["commands"])
+    def frequent_commands(limit: int = 10):
+        """Most-used command patterns, for personalization and suggestions."""
+        return {"commands": plane.store.get_frequent_commands(limit=limit)}
+
+    @app.get("/api/commands/shortcuts", tags=["commands"])
+    def list_shortcuts():
+        """All personal shortcuts, newest first."""
+        return {"shortcuts": plane.store.list_command_shortcuts()}
+
+    @app.post("/api/commands/shortcuts", tags=["commands"])
+    def create_shortcut(body: dict):
+        """Create or replace a shortcut: {"trigger": ..., "expansion": ...}."""
+        trigger = str(body.get("trigger", "") or "").strip().lower()
+        expansion = str(body.get("expansion", "") or "").strip()
+        if not trigger or not expansion:
+            raise HTTPException(status_code=400, detail="trigger and expansion are required.")
+        if trigger == expansion:
+            raise HTTPException(status_code=400, detail="A shortcut must expand to something different.")
+        if plane.store.get_command_shortcut(expansion) is not None:
+            raise HTTPException(status_code=400, detail="That expansion is itself a shortcut; chaining is not allowed.")
+        if not plane.store.save_command_shortcut(trigger, expansion):
+            raise HTTPException(status_code=400, detail="Could not save the shortcut.")
+        return plane.store.get_command_shortcut(trigger)
+
+    @app.delete("/api/commands/shortcuts/{trigger}", tags=["commands"])
+    def delete_shortcut(trigger: str):
+        """Remove one personal shortcut."""
+        if not plane.store.delete_command_shortcut(trigger):
+            raise HTTPException(status_code=404, detail="No such shortcut.")
+        return {"deleted": trigger.lower().strip()}
+
     # -- emergency stop ----------------------------------------------------
 
     @app.post("/api/emergency-stop", tags=["security"])

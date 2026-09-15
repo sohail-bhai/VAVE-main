@@ -129,6 +129,18 @@ def image(name: str, size: int = 18, color: str = "#1A1B1E", stroke_width: float
     return rendered
 
 
+def reset_cache():
+    """Drop every cached bitmap.
+
+    Tk deletes a PhotoImage with the root that created it, so the cache must
+    not outlive that root: a second window reusing a cached icon would render
+    from a dead bitmap ("image doesn't exist"). The dashboard clears this when
+    it is destroyed, which keeps repeated windows - and repeated GUI tests -
+    working.
+    """
+    _cache.clear()
+
+
 def prewarm(sizes=(ICON_PREWARM_SMALL, ICON_PREWARM_BASE), colors=()):
     """Rasterise the common icons ahead of time, off the UI thread.
 

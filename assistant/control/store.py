@@ -255,6 +255,15 @@ MIGRATIONS = [
         );
         CREATE INDEX IF NOT EXISTS idx_cmd_usage_count ON command_usage (call_count DESC);
     """),
+    ("0019_command_shortcuts_table", """
+        CREATE TABLE IF NOT EXISTS command_shortcuts (
+            trigger TEXT PRIMARY KEY,
+            expansion TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            last_used REAL
+        );
+    """),
 ]
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "control.db"
@@ -791,6 +800,61 @@ class ControlStore:
             (limit,)
         )
         return [dict(r) for r in rows]
+
+    def save_command_shortcut(self, trigger: str, expansion: str) -> bool:
+        """Create or replace a personal shortcut: trigger -> expansion."""
+        trigger = str(trigger or "").strip().lower()
+        expansion = str(expansion or "").strip()
+        if not trigger or not expansion:
+            return False
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT INTO command_shortcuts (trigger, expansion, created_at, use_count, last_used)
+                VALUES (?, ?, ?, 0, NULL)
+                ON CONFLICT(trigger) DO UPDATE SET
+                    expansion = excluded.expansion
+                """,
+                (trigger, expansion, time.time())
+            )
+            self._connection.commit()
+        return True
+
+    def get_command_shortcut(self, trigger: str):
+        """The expansion for an exact trigger, or None."""
+        trigger = str(trigger or "").strip().lower()
+        row = self._row(
+            "SELECT trigger, expansion, created_at, use_count, last_used FROM command_shortcuts WHERE trigger = ?",
+            (trigger,)
+        )
+        return dict(row) if row else None
+
+    def list_command_shortcuts(self):
+        """All shortcuts, most recently created first."""
+        rows = self._rows(
+            "SELECT trigger, expansion, created_at, use_count, last_used FROM command_shortcuts ORDER BY created_at DESC"
+        )
+        return [dict(r) for r in rows]
+
+    def delete_command_shortcut(self, trigger: str) -> bool:
+        """Remove one shortcut. Returns True when a row was actually removed."""
+        trigger = str(trigger or "").strip().lower()
+        with self._lock:
+            cursor = self._connection.execute(
+                "DELETE FROM command_shortcuts WHERE trigger = ?", (trigger,)
+            )
+            self._connection.commit()
+        return cursor.rowcount > 0
+
+    def record_command_shortcut_use(self, trigger: str) -> None:
+        """Bump a shortcut's use count without creating it."""
+        trigger = str(trigger or "").strip().lower()
+        with self._lock:
+            self._connection.execute(
+                "UPDATE command_shortcuts SET use_count = use_count + 1, last_used = ? WHERE trigger = ?",
+                (time.time(), trigger)
+            )
+            self._connection.commit()
 
 
 # -- row -> dataclass -------------------------------------------------------
