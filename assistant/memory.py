@@ -8,28 +8,47 @@ from assistant.speech import speak
 import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+
+def get_data_dir() -> Path:
+    override = os.environ.get("VAVE_DATA_DIR")
+    if override:
+        return Path(override)
+    return PROJECT_ROOT / "data"
+
+DATA_DIR = get_data_dir()
 
 # Initialize ChromaDB Persistent Client
 chroma_client = None
 memory_collection = None
+document_collection = None
 _memory_enabled = False
 
-try:
-    import chromadb
-    from chromadb.config import Settings
-    chroma_client = chromadb.PersistentClient(path=str(DATA_DIR / "chroma_db"))
-    memory_collection = chroma_client.get_or_create_collection(
-        name="vave_memory",
-        metadata={"hnsw:space": "cosine"}
-    )
-    document_collection = chroma_client.get_or_create_collection(
-        name="vave_documents",
-        metadata={"hnsw:space": "cosine"}
-    )
-    _memory_enabled = True
-except Exception as e:
-    logger.info(f"[VAVE] WARNING: Could not initialize ChromaDB (Semantic Memory is disabled). Error: {e}")
+def reset_chroma(data_dir=None):
+    global chroma_client, memory_collection, document_collection, _memory_enabled, DATA_DIR
+    if data_dir:
+        DATA_DIR = Path(data_dir)
+    else:
+        DATA_DIR = get_data_dir()
+    try:
+        import chromadb
+        chroma_client = chromadb.PersistentClient(path=str(DATA_DIR / "chroma_db"))
+        memory_collection = chroma_client.get_or_create_collection(
+            name="vave_memory",
+            metadata={"hnsw:space": "cosine"}
+        )
+        document_collection = chroma_client.get_or_create_collection(
+            name="vave_documents",
+            metadata={"hnsw:space": "cosine"}
+        )
+        _memory_enabled = True
+    except Exception as e:
+        logger.info(f"[VAVE] WARNING: Could not initialize ChromaDB (Semantic Memory is disabled). Error: {e}")
+        chroma_client = None
+        memory_collection = None
+        document_collection = None
+        _memory_enabled = False
+
+reset_chroma()
 
 def remember_fact(fact):
     """

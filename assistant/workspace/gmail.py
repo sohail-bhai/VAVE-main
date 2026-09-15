@@ -16,7 +16,7 @@ from assistant.workspace.auth import get_google_service
 
 logger = logging.getLogger(__name__)
 
-_EMAIL_RE = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)+$")
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9_+-]+(?:\.[a-zA-Z0-9_+-]+)*@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$")
 
 
 def validate_email_recipient(email_address: str) -> bool:

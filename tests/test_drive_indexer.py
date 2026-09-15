@@ -11,12 +11,13 @@ from unittest import mock
 
 from assistant.control.store import ControlStore
 from assistant.workspace.drive_indexer import DriveSemanticIndexer, chunk_text
+from tests.support import VaveTestCase
 
 
-class DriveIndexerTests(unittest.TestCase):
+class DriveIndexerTests(VaveTestCase):
     def setUp(self):
-        self.tempdir = tempfile.mkdtemp(prefix="vave-drive-indexer-test-")
-        self.db_path = Path(self.tempdir) / "control.db"
+        super().setUp()
+        self.db_path = Path(self.temp_dir) / "control.db"
         self.store = ControlStore(self.db_path)
         self.indexer = DriveSemanticIndexer(store=self.store)
 
@@ -27,8 +28,7 @@ class DriveIndexerTests(unittest.TestCase):
     def tearDown(self):
         if hasattr(self, "store") and self.store:
             self.store.close()
-        import shutil
-        shutil.rmtree(self.tempdir, ignore_errors=True)
+        super().tearDown()
 
     def test_chunk_text_splits_large_content_cleanly(self):
         sample = ("Line one of the proposal. " * 30) + "\n\n" + ("Second section content. " * 30)

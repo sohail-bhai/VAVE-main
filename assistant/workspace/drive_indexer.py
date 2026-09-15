@@ -53,6 +53,14 @@ def _get_drive_collection():
     return None
 
 
+def reset_drive_collection():
+    """Resets the cached Drive collection to allow testing or path redirection."""
+    global _drive_collection, _indexer_initialized
+    with _drive_collection_lock:
+        _drive_collection = None
+        _indexer_initialized = False
+
+
 def chunk_text(text: str, chunk_size: int = 600, overlap: int = 100) -> List[str]:
     """Splits text into overlapping chunks respecting sentence/line boundaries."""
     if not text or not text.strip():
@@ -104,6 +112,19 @@ class DriveSemanticIndexer:
     @store.setter
     def store(self, value: Optional[ControlStore]):
         self._store = value
+
+    def close(self):
+        """Closes the underlying store connection."""
+        if self._store is not None:
+            self._store.close()
+            self._store = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
     def sync_drive_index(self, full_reindex: bool = False, limit: int = 50) -> Dict[str, Any]:
         """Scans Google Drive, ingests updated files, and purges deleted files.
@@ -169,6 +190,7 @@ class DriveSemanticIndexer:
                 logger.warning("No indexable text chunks extracted for Drive file %s (%s)", file_id, name)
 
             # Ingest new chunks into ChromaDB
+            upserted_chunk_ids = []
             if collection is not None and chunks:
                 chunk_ids = [f"drive_{file_id}_chunk_{i}" for i in range(len(chunks))]
                 metadatas = [
@@ -188,19 +210,32 @@ class DriveSemanticIndexer:
                         ids=chunk_ids,
                         metadatas=metadatas,
                     )
+                    upserted_chunk_ids = chunk_ids
                 except Exception as e:
                     logger.error("Failed indexing chunks into ChromaDB for %s: %s", file_id, e)
 
-            # Record in SQLite store
-            self.store.save_drive_sync_file(
-                file_id=file_id,
-                name=name,
-                mime_type=mime_type,
-                modified_time=modified_time,
-                last_indexed_at=now,
-                chunk_count=len(chunks),
-                web_view_link=web_view_link,
-            )
+            # Record in SQLite store with rollback protection
+            try:
+                self.store.save_drive_sync_file(
+                    file_id=file_id,
+                    name=name,
+                    mime_type=mime_type,
+                    modified_time=modified_time,
+                    last_indexed_at=now,
+                    chunk_count=len(chunks) if (upserted_chunk_ids or not collection) else 0,
+                    web_view_link=web_view_link,
+                )
+            except Exception as e:
+                if collection is not None and upserted_chunk_ids:
+                    try:
+                        collection.delete(where={"file_id": {"$eq": file_id}})
+                    except Exception:
+                        try:
+                            collection.delete(ids=upserted_chunk_ids)
+                        except Exception:
+                            pass
+                logger.error("Failed saving drive sync state for %s; rolled back ChromaDB chunks: %s", file_id, e)
+                raise
 
             if is_new:
                 indexed_count += 1
@@ -312,6 +347,7 @@ class DriveSemanticIndexer:
         web_view_link = uploaded.get("webViewLink", "")
         chunks = chunk_text(content)
 
+        upserted_chunk_ids = []
         collection = _get_drive_collection()
         if collection is not None and chunks:
             chunk_ids = [f"drive_{file_id}_chunk_{i}" for i in range(len(chunks))]
@@ -328,18 +364,31 @@ class DriveSemanticIndexer:
             ]
             try:
                 collection.upsert(documents=chunks, ids=chunk_ids, metadatas=metadatas)
+                upserted_chunk_ids = chunk_ids
             except Exception as e:
                 logger.error("Failed indexing exported file into ChromaDB: %s", e)
 
-        self.store.save_drive_sync_file(
-            file_id=file_id,
-            name=name,
-            mime_type=mime_type,
-            modified_time=modified_time,
-            last_indexed_at=now,
-            chunk_count=len(chunks),
-            web_view_link=web_view_link,
-        )
+        try:
+            self.store.save_drive_sync_file(
+                file_id=file_id,
+                name=name,
+                mime_type=mime_type,
+                modified_time=modified_time,
+                last_indexed_at=now,
+                chunk_count=len(chunks) if (upserted_chunk_ids or not collection) else 0,
+                web_view_link=web_view_link,
+            )
+        except Exception as e:
+            if collection is not None and upserted_chunk_ids:
+                try:
+                    collection.delete(where={"file_id": {"$eq": file_id}})
+                except Exception:
+                    try:
+                        collection.delete(ids=upserted_chunk_ids)
+                    except Exception:
+                        pass
+            logger.error("Failed saving exported file record in store: %s", e)
+            raise
 
         return {
             "status": "success",
