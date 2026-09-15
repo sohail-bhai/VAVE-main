@@ -236,7 +236,7 @@ Home Assistant is Phase 4; keep everything behind existing auth.
 
 ### Tasks
 
-- [ ] 3.1 **Background health sweep.** New module `assistant/health_sweep.py`:
+- [x] ~~3.1 **Background health sweep.** New module `assistant/health_sweep.py`:
       `start(interval_seconds=60)` — idempotent (module-level `_thread` guard),
       daemon thread, loop = sleep interval, then try: get control plane
       (only if already created or creatable cheaply — read `service.py`'s
@@ -248,8 +248,12 @@ Home Assistant is Phase 4; keep everything behind existing auth.
       of `bootstrap_safety()` in `assistant/bootstrap.py`, behind
       try/except so a sweep failure never blocks startup. Add config
       `health_sweep_seconds` (default 60, 0 disables) to `DEFAULT_CONFIG`
-      and `config.json`.
-- [ ] 3.2 **Secrets backup runbook + tool.** New module
+      and `config.json`.~~
+      (Deviation: wired once in `bootstrap_safety()`, which all three entry
+      points share — including the API server. `start()` is idempotent. The
+      sweep only touches `service._control_plane` when it already exists, so
+      short-lived processes and tests pay nothing.)
+- [x] ~~3.2 **Secrets backup runbook + tool.** New module
       `assistant/secrets_backup.py`, runnable as
       `venv\Scripts\python.exe -m assistant.secrets_backup <export|verify|restore> ...`
       - `export --out FILE --passphrase PASS`: bundle `data/secret.key` +
@@ -265,15 +269,19 @@ Home Assistant is Phase 4; keep everything behind existing auth.
         if a `secret.key` already exists unless `--force`.
       - Docs: `docs/secrets-backup.md` with the restore-after-reinstall runbook.
       IMPORTANT: `export` reads real `data/` — that is its job — but tests
-      MUST run it with `VAVE_DATA_DIR` pointed at a temp dir.
-- [ ] 3.3 **Audit view in GUI.** Extend `assistant/task_journal.py` with
+      MUST run it with `VAVE_DATA_DIR` pointed at a temp dir.~~
+      (Passphrase key derivation reuses `secrets._coerce_key`; rows carry
+      allowed_capabilities so scopes survive the round trip.)
+- [x] ~~3.3 **Audit view in GUI.** Extend `assistant/task_journal.py` with
       `recent_entries(limit=50)` parsing only the ACTIVE audit file for
       `task_journal` records (reuse the parsing already in
       `get_weekly_failure_summary`). In the GUI, extend the Activity page
       (or add a modal reachable from it) showing: time, request, outcome
       (color-coded), tools run, step count. Read-only. Follow the EventBus/
       main-thread rules in `AGENTS.md` — build data in a worker thread if
-      reading is slow, post through `gui/ui_queue`.
+      reading is slow, post through `gui/ui_queue`.~~
+      (A "Journal" filter on the Activity page; entries carry an outcome
+      tone on the category badge. Tail-read of the live file only.)
 
 ### Automated tests
 - `tests/test_health_sweep.py`: `start()` twice -> one thread; with a fake
@@ -438,3 +446,4 @@ denied (mirror how existing capability tests do it).
 | 2026-09-15 | CI dry run caught playwright/greenlet pin + icon-cache bug. Fixed. |
 | 2026-09-15 | Phase 1 complete (`18e5a21`): shortcuts end-to-end. 714 green dev + clean venv. |
 | 2026-09-15 | Phase 2 complete: PWA in `mobile/pwa/` served at `/m` (login/pair, tasks+SSE, approvals with double-tap, notifications, installable shell, `docs/mobile.md`). Coexists with the sibling Expo app — `/m` serves only `pwa/`. |
+| 2026-09-15 | Phase 3 complete: background health sweep (`assistant/health_sweep.py`, wired in `bootstrap_safety()`), secrets backup tool + runbook (`docs/secrets-backup.md`), GUI Journal filter on the Activity page. 733 green (719 baseline + 14 new). |

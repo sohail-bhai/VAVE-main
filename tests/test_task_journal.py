@@ -88,3 +88,23 @@ class TaskJournalTests(VaveTestCase):
         step_result = StepResult.of(output)
         self.assertFalse(step_result.ok)
         self.assertIn("Exceeded maximum steps", step_result.error)
+
+    def test_recent_entries_returns_newest_first(self):
+        task_journal.record_task_attempt(request="first", outcome="completed",
+                                         tools_run=["tell_time"])
+        task_journal.record_task_attempt(request="second", outcome="error",
+                                         tools_run=["click_element"], reason="missed")
+
+        entries = task_journal.recent_entries(limit=10)
+        self.assertEqual(2, len(entries))
+        self.assertEqual("second", entries[0]["request"])
+        self.assertEqual("error", entries[0]["outcome"])
+        self.assertEqual(["click_element"], entries[0]["tools_run"])
+        self.assertEqual("first", entries[1]["request"])
+
+        limited = task_journal.recent_entries(limit=1)
+        self.assertEqual(1, len(limited))
+        self.assertEqual("second", limited[0]["request"])
+
+    def test_recent_entries_empty_without_ledger(self):
+        self.assertEqual([], task_journal.recent_entries(limit=10))

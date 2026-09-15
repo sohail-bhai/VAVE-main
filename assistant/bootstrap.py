@@ -46,6 +46,15 @@ def bootstrap_safety(event_bus: Optional[events.EventBus] = None,
     confirm.configure(event_bus=bus)
     overwatch.configure(event_bus=bus)
 
+    # The health sweep only touches a control plane that already exists and
+    # sleeps before its first run, so short-lived processes pay nothing and a
+    # sweep failure can never block startup.
+    try:
+        from assistant import health_sweep
+        health_sweep.start()
+    except Exception:
+        pass
+
     _bootstrapped = True
     return bus
 

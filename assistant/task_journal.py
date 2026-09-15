@@ -11,7 +11,6 @@ from typing import List, Dict, Any, Optional
 
 from assistant import audit
 
-
 def record_task_attempt(
     request: str,
     origin: str = "voice",
@@ -93,3 +92,45 @@ def get_weekly_failure_summary(days: int = 7) -> Dict[str, Any]:
         "failures_by_outcome": failures_by_outcome,
         "failures_by_tool": failures_by_tool,
     }
+
+
+def recent_entries(limit: int = 50) -> List[Dict[str, Any]]:
+    """Newest task_journal records from the ACTIVE ledger only, newest first.
+
+    Only the live file is read (never the rotated backups), and only the tail
+    is parsed, so this stays fast enough for a GUI refresh. Used by the
+    desktop Activity page's Journal view.
+    """
+    entries: List[Dict[str, Any]] = []
+    path = audit._audit_path
+    if not path or not Path(path).exists():
+        return entries
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            tail = f.readlines()[-500:]
+    except Exception:
+        return entries
+
+    for line in reversed(tail):
+        line = line.strip()
+        if not line or '"task_journal"' not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except Exception:
+            continue
+        if record.get("event") != "task_journal":
+            continue
+        entries.append({
+            "ts": record.get("ts", 0),
+            "request": record.get("request", ""),
+            "origin": record.get("origin", ""),
+            "tools_run": record.get("tools_run") or [],
+            "step_count": record.get("step_count", 0),
+            "outcome": record.get("outcome", "completed"),
+            "reason": record.get("reason", ""),
+        })
+        if len(entries) >= max(1, limit):
+            break
+    return entries

@@ -4,9 +4,47 @@ Displays human-readable timeline of past events and what VAVE has been doing.
 """
 from __future__ import annotations
 
+import datetime
+
 import customtkinter as ctk
 from gui import theme
 from gui.store import store
+
+
+def _journal_item(entry):
+    """One task_journal record in the shape the timeline renders."""
+    outcome = str(entry.get("outcome", "completed"))
+    tools = entry.get("tools_run") or []
+    bits = [outcome]
+    if tools:
+        shown = ", ".join(tools[:4])
+        extra = f" +{len(tools) - 4} more" if len(tools) > 4 else ""
+        bits.append(f"{len(tools)} tool{'s' if len(tools) != 1 else ''}: {shown}{extra}")
+    if entry.get("step_count"):
+        bits.append(f"{entry['step_count']} steps")
+    if entry.get("reason"):
+        bits.append(str(entry["reason"]))
+    ts = entry.get("ts", 0) or 0
+    try:
+        clock = datetime.datetime.fromtimestamp(ts).strftime("%H:%M")
+    except (OSError, OverflowError, ValueError):
+        clock = "--:--"
+    return {
+        "time": clock,
+        "title": (str(entry.get("request") or "Untitled"))[:80],
+        "detail": " · ".join(bits),
+        "category": "Journal",
+        "tone": theme.SUCCESS if outcome == "completed" else theme.DANGER,
+    }
+
+
+def journal_items(limit=50):
+    """Task journal entries for the timeline, newest first. Never raises."""
+    try:
+        from assistant import task_journal
+        return [_journal_item(e) for e in task_journal.recent_entries(limit)]
+    except Exception:
+        return []
 
 
 class ActivityPage(ctk.CTkScrollableFrame):
@@ -43,7 +81,7 @@ class ActivityPage(ctk.CTkScrollableFrame):
         filters_row = ctk.CTkFrame(self, fg_color="transparent")
         filters_row.pack(fill="x", padx=16, pady=(0, 14))
 
-        filters = ["All", "Files", "Google", "Web", "Tasks"]
+        filters = ["All", "Files", "Google", "Web", "Tasks", "Journal"]
         for f in filters:
             btn = ctk.CTkButton(
                 filters_row,
@@ -91,7 +129,11 @@ class ActivityPage(ctk.CTkScrollableFrame):
             child.destroy()
 
         logs = store.activity_logs
-        if self.selected_filter != "All":
+        if self.selected_filter == "Journal":
+            # The journal is not in the GUI store; it is read live from the
+            # audit ledger. Tail-reading a rotated log is fast enough here.
+            logs = journal_items()
+        elif self.selected_filter != "All":
             logs = [item for item in logs if item.get("category") == self.selected_filter]
 
         for item in logs:
@@ -124,7 +166,7 @@ class ActivityPage(ctk.CTkScrollableFrame):
                 title_row,
                 text=item["category"],
                 font=theme.font(9, "bold"),
-                text_color=theme.TEXT_MUTED,
+                text_color=item.get("tone", theme.TEXT_MUTED),
                 fg_color=theme.MAIN_BG,
                 corner_radius=6,
                 padx=6,

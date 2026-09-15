@@ -68,6 +68,9 @@ DEFAULT_CONFIG = {
     # drive below this many gigabytes.
     "disk_warning_gb": 15.0,
 
+    # Background health sweep cadence in seconds. 0 disables it.
+    "health_sweep_seconds": 60,
+
     # Folders a paired phone can reach. Nothing is shared until you list one.
     # Example: ["~/Documents", "~/Pictures"]
     "file_shares": [],
