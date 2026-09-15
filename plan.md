@@ -465,4 +465,4 @@ denied (mirror how existing capability tests do it).
 | 2026-09-15 | Phase 3 complete: background health sweep (`assistant/health_sweep.py`, wired in `bootstrap_safety()`), secrets backup tool + runbook (`docs/secrets-backup.md`), GUI Journal filter on the Activity page. 733 green (719 baseline + 14 new). |
 | 2026-09-15 | Phase 4 complete: `assistant/home.py` over the HA REST API (states, verified control), `home.read`/`home.control` capabilities, brain + guard registration, `GET /api/home/devices` + approval-held `POST /api/home/control`. 14 new tests. |
 | 2026-09-15 | Phase 5 complete: `pyproject.toml` (v1.3.0, `vave` console script), subcommands `gui/serve/once/smoke/pair`, clean-room `pip install .` + `vave smoke` 11/11 verified, README pip flow. 9 new tests. Temp venvs removed (C: critically low at ~5 GB free — user cleanup needed). |
-| 2026-09-15 | ALL PHASES 2-5 DONE. 756 tests green locally, pushed; CI validating on GitHub. |
+| 2026-09-15 | ALL PHASES 2-5 DONE. 756 tests green locally and on GitHub CI (`success` on `8a28828`). Commits: `92fe7fd` (PWA), `a3042aa` (sweep/backup/journal), `3c6deb1` (Home Assistant), `8a28828` (packaging). |
