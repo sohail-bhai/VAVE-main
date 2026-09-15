@@ -23,6 +23,7 @@ from assistant.system_tasks import (
     lock_laptop,
     shutdown_laptop,
     restart_laptop,
+    get_weather,
 )
 from assistant.notes import add_note, read_notes, clear_notes
 from assistant.ai_brain import ask_ai
@@ -889,6 +890,22 @@ _BRIEFING_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_WEATHER_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:what(?:'s|\s+is|\s+about)\s+(?:the\s+)?(?:current\s+)?weather\s*"
+    r"(?:like\s+)?(?:in|for|at)\s+(?P<city>.+?)|"
+    r"(?:how(?:'s|\s+is|\s+about)\s+(?:the\s+)?)?weather\s+(?:like\s+)?(?:in|for|at)\s+(?P<city2>.+?))\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_LIST_WINDOWS_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:list|show|what|which|name)\s+"
+    r"(?:the\s+|all\s+|my\s+)?(?:open\s+|running\s+)?(?:windows?|apps?|programs?)\s*"
+    r"(?:\s+(?:are\s+)?(?:open|running))?"
+    r"|(?:what|which)\s+(?:apps?|programs?|windows?)\s+(?:are\s+)?(?:open|running)"
+    r"\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
 
 def is_quit_command(command):
     """True only when the whole utterance asks VAVE itself to shut down."""
@@ -946,6 +963,8 @@ def _shortcut_trigger_reserved(trigger):
         ("adding a note", _ADD_NOTE_PATTERN),
         ("reading notes", _READ_NOTES_PATTERN),
         ("clearing notes", _CLEAR_NOTES_PATTERN),
+        ("checking weather", _WEATHER_PATTERN),
+        ("listing windows", _LIST_WINDOWS_PATTERN),
     )
     for description, pattern in checks:
         if pattern.match(trigger):
@@ -1088,6 +1107,23 @@ def execute_single_command(command, auto_confirm=False):
     if handle_volume_command(command):
         return True
 
+    # Notes: before app_command so "open notes" goes to notes, not browser
+    if _ADD_NOTE_PATTERN.match(command):
+        _record_usage("add_note", category="notes")
+        add_note()
+        return True
+
+    if _READ_NOTES_PATTERN.match(command):
+        _record_usage("read_notes", category="notes")
+        read_notes()
+        return True
+
+    if _CLEAR_NOTES_PATTERN.match(command):
+        _record_usage("clear_notes", category="notes")
+        try: guard.call(clear_notes)
+        except guard.ToolDenied: pass
+        return True
+
     if handle_atomic_gui_command(command):
         return True
 
@@ -1170,6 +1206,24 @@ def execute_single_command(command, auto_confirm=False):
         provide_morning_briefing()
         return True
 
+    # Weather: "what is the weather in Hyderabad" -> get_weather(city)
+    wm = _WEATHER_PATTERN.match(command)
+    if wm:
+        city = (wm.group("city") or wm.group("city2") or "").strip().rstrip(".")
+        if city:
+            _record_usage("weather", category="system")
+            response = get_weather(city)
+            speak(response)
+            return True
+
+    # List windows: "list windows", "what apps are running"
+    if _LIST_WINDOWS_PATTERN.match(command):
+        _record_usage("list_windows", category="system")
+        from assistant.system_tasks import list_windows
+        response = list_windows()
+        speak(response)
+        return True
+
     # System Queries & Fast Paths
     if _TIME_PATTERN.match(command):
         _record_usage("time", category="system")
@@ -1193,16 +1247,6 @@ def execute_single_command(command, auto_confirm=False):
     elif _SYSTEM_RESTART_PATTERN.match(command):
         _record_usage("restart", category="system")
         try: guard.call(restart_laptop)
-        except guard.ToolDenied: pass
-    elif _ADD_NOTE_PATTERN.match(command):
-        _record_usage("add_note", category="notes")
-        add_note()
-    elif _READ_NOTES_PATTERN.match(command):
-        _record_usage("read_notes", category="notes")
-        read_notes()
-    elif _CLEAR_NOTES_PATTERN.match(command):
-        _record_usage("clear_notes", category="notes")
-        try: guard.call(clear_notes)
         except guard.ToolDenied: pass
     else:
         # Route unrecognized commands to the local LLM brain
