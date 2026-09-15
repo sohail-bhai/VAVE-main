@@ -35,6 +35,9 @@ class HomePage(ctk.CTkScrollableFrame):
         # 3. Suggestion Chips
         self._build_suggestion_chips()
 
+        # 3.5 System Health Bar & Workspace Sync
+        self._build_system_health_bar()
+
         # 4. Connected Environment (4 cards)
         self._build_environment_cards()
 
@@ -217,6 +220,81 @@ class HomePage(ctk.CTkScrollableFrame):
                 command=lambda t=text: self.on_execute_command(t),
             )
             chip.pack(side="left", padx=4)
+
+    def _build_system_health_bar(self):
+        self.health_card = ctk.CTkFrame(
+            self,
+            fg_color=theme.CARD_BG,
+            border_width=1,
+            border_color=theme.CARD_BORDER,
+            corner_radius=theme.RADIUS,
+        )
+        self.health_card.pack(fill="x", padx=16, pady=(0, 14))
+        self._render_system_health_bar()
+
+    def _render_system_health_bar(self):
+        for child in self.health_card.winfo_children():
+            child.destroy()
+
+        from gui import integrations
+        health = integrations.system_health_status()
+        drive_info = integrations.drive_sync_status()
+
+        row = ctk.CTkFrame(self.health_card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=10)
+
+        # 1. CPU
+        cpu_box = ctk.CTkFrame(row, fg_color=theme.SURFACE_SUBTLE, corner_radius=theme.RADIUS_SM)
+        cpu_box.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        ctk.CTkLabel(cpu_box, text=f"CPU {health['cpu']}%", font=theme.font(11, "bold"), text_color=theme.TEXT_PRIMARY).pack(pady=6, padx=8)
+
+        # 2. RAM
+        ram_box = ctk.CTkFrame(row, fg_color=theme.SURFACE_SUBTLE, corner_radius=theme.RADIUS_SM)
+        ram_box.pack(side="left", fill="both", expand=True, padx=3)
+        ctk.CTkLabel(ram_box, text=f"RAM {health['ram']}%", font=theme.font(11, "bold"), text_color=theme.TEXT_PRIMARY).pack(pady=6, padx=8)
+
+        # 3. C: Disk
+        c_gb = health["c_free_gb"]
+        disk_color = theme.DANGER if c_gb < 7.0 else theme.SUCCESS
+        disk_box = ctk.CTkFrame(row, fg_color=theme.SURFACE_SUBTLE, corner_radius=theme.RADIUS_SM)
+        disk_box.pack(side="left", fill="both", expand=True, padx=3)
+        ctk.CTkLabel(disk_box, text=f"C: {c_gb} GB free", font=theme.font(11, "bold"), text_color=disk_color).pack(pady=6, padx=8)
+
+        # 4. Drive Sync
+        drive_box = ctk.CTkFrame(row, fg_color=theme.SURFACE_SUBTLE, corner_radius=theme.RADIUS_SM)
+        drive_box.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        d_row = ctk.CTkFrame(drive_box, fg_color="transparent")
+        d_row.pack(pady=4, padx=6)
+        files_count = drive_info.get("total_files", 0)
+        ctk.CTkLabel(d_row, text=f"Drive: {files_count} docs", font=theme.font(11, "bold"), text_color=theme.TEXT_PRIMARY).pack(side="left", padx=(0, 6))
+
+        def _on_sync_click():
+            import threading
+            def _bg_sync():
+                try:
+                    from assistant.workspace.drive_indexer import DriveSemanticIndexer
+                    idx = DriveSemanticIndexer()
+                    idx.sync_drive_index()
+                    idx.close()
+                except Exception:
+                    pass
+                from gui import ui_queue
+                ui_queue.post_to(self, self._render_system_health_bar)
+            threading.Thread(target=_bg_sync, daemon=True).start()
+
+        sync_btn = ctk.CTkButton(
+            d_row,
+            text="Sync",
+            width=42,
+            height=22,
+            font=theme.font(10, "bold"),
+            fg_color=theme.ACCENT,
+            text_color=theme.ON_ACCENT,
+            hover_color=theme.ACCENT_HOVER,
+            corner_radius=theme.RADIUS_SM,
+            command=_on_sync_click,
+        )
+        sync_btn.pack(side="left")
 
     def _build_environment_cards(self):
         self.env_grid = ctk.CTkFrame(self, fg_color="transparent")

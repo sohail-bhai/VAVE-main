@@ -228,6 +228,38 @@ def all_integrations():
     ]
 
 
+def system_health_status():
+    """Returns real-time CPU, RAM, Disk, and Battery metrics."""
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=None)
+        ram = psutil.virtual_memory().percent
+        disk_c = shutil.disk_usage("C:\\") if os.path.exists("C:\\") else None
+        c_free_gb = round(disk_c.free / (1024**3), 1) if disk_c else 0.0
+        battery = psutil.sensors_battery()
+        bat_pct = round(battery.percent) if battery else None
+        bat_plugged = battery.power_plugged if battery else None
+        return {
+            "cpu": cpu,
+            "ram": ram,
+            "c_free_gb": c_free_gb,
+            "battery_pct": bat_pct,
+            "battery_plugged": bat_plugged,
+        }
+    except Exception:
+        return {"cpu": 0, "ram": 0, "c_free_gb": 0.0, "battery_pct": None, "battery_plugged": None}
+
+
+def drive_sync_status():
+    """Retrieve indexed document count, chunks, and last sync timestamp."""
+    try:
+        from assistant.control.service import get_control_plane
+        plane = get_control_plane()
+        return plane.store.get_drive_sync_summary()
+    except Exception:
+        return {"total_files": 0, "total_chunks": 0, "last_sync_at": 0.0}
+
+
 _CHECKS.update({
     "google": google_status,
     "gmail": gmail_status,
@@ -239,4 +271,6 @@ _CHECKS.update({
     "overwatch": overwatch_status,
     "browser": browser_automation_status,
     "screen": screen_reading_status,
+    "system_health": system_health_status,
+    "drive_sync": drive_sync_status,
 })

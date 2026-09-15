@@ -46,6 +46,26 @@ class NotificationsModal(ctk.CTkToplevel):
         ).pack(side="left")
 
         self._close_glyph = icons.image("x", theme.ICON_SM, theme.TEXT_SECONDARY)
+        def _mark_all_read():
+            for notif in store.notifications:
+                notif["unread"] = False
+            store.unread_notifications_count = 0
+            store.notify("notifications_updated")
+            self.destroy()
+
+        ctk.CTkButton(
+            hdr,
+            text="Mark all read",
+            font=theme.font(10),
+            width=75,
+            height=24,
+            fg_color=theme.MAIN_BG,
+            hover_color=theme.CARD_BORDER,
+            text_color=theme.TEXT_SECONDARY,
+            corner_radius=theme.RADIUS_SM,
+            command=_mark_all_read,
+        ).pack(side="right", padx=(0, 8))
+
         ctk.CTkButton(
             hdr,
             image=self._close_glyph,
