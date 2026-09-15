@@ -1,180 +1,83 @@
-# VAVE on your phone
+# VAVE Mobile Clients
 
-The phone is not a second VAVE. It is a way into the one running on your
-computer: you ask for something on the phone, the work happens on the
-computer, and the phone shows what actually happened and asks you to approve
-anything consequential.
+There are two ways to drive VAVE from a phone. Pick whichever fits:
 
-```
-     Your computer (Fedora)              Your teammate's laptop (Windows)
-     control plane + AI brain                    desktop app
-     python -m assistant.api                          |
-             ^        ^                               |
-             |        |  paired device token          |
-             |        +-------------------------------+
-             |
-             |  paired device token
-        Your phone (Expo app)
-```
+1. **The PWA (this document)** — a lightweight web app served by the API
+   server itself at `/m`. No install toolchain, no build step, works in any
+   modern phone browser, installable to the home screen.
+2. **The native app** — a separately built Expo/React Native client living in
+   `mobile/` (`com.vave.app`, see `mobile/package.json`). Built and released
+   by the mobile developer with `build-apk.*`; it talks to the same `/api/*`
+   endpoints and holds no coordination logic of its own.
 
-One computer holds the tasks, the timeline, the approvals and the files.
-Every other device is a client holding its own token, and any one of those
-tokens can be revoked without disturbing the others.
+Both are thin clients over one source of truth: the control plane.
 
-## Start the computer side
+## The PWA
 
-On the machine that should do the work:
+Served from `mobile/pwa/` by the API server. There is no separate mobile
+backend and no app-store build: the phone's browser loads the UI from
+`http://<pc>:8765/m` and every data call goes to the same `/api/*`
+endpoints over the same authenticated control plane.
 
-```bash
-./run-server.sh --host 0.0.0.0
-```
+## What the phone can do
 
-The dependencies live in `./venv`, so a plain `python -m assistant.api` from a
-shell that has not activated it fails with `No module named 'fastapi'`. The
-script picks the project's interpreter and passes your arguments through. With
-the venv activated (`source venv/bin/activate`), `python -m assistant.api
---host 0.0.0.0` is the same thing.
+- Sign in with a device token, or pair fresh with a one-time code.
+- Submit goals (`POST /api/tasks` with `autoplan` + `run`) and watch steps
+  complete, live over the SSE stream.
+- Approve or deny held actions (destructive-looking ones need a second tap).
+- Read notifications, mark them read, clear them all.
+- Install to the home screen and run standalone.
 
-It prints the address to type on the phone:
+## Server setup (on the computer that owns the model)
 
-```
-  VAVE is listening.
-
-  Enter on your phone:     192.168.1.20:8765
-  To connect a phone:      python -m assistant.api --pair --port 8765
+```powershell
+venv\Scripts\python.exe -m assistant.api --host 0.0.0.0 --port 8765
 ```
 
-> `--host 0.0.0.0` means anything on the network can reach the port. That is
-> why reaching it is not the same as being allowed to use it: a client still
-> has to pair. Use it on a network you trust.
+Note the computer's LAN address (e.g. `192.168.1.20`). The phone must be on
+the same Wi-Fi network.
 
-## Install the phone app
+## Pairing (on the phone)
 
-Build a standalone APK once and sideload it. It needs no USB debugging, no
-Expo Go and no Metro dev server on your laptop:
-
-```bash
-cd mobile
-npm install
-npm run build:apk       # Windows: npm run build:apk:windows
-```
-
-The APK lands at `mobile/VAVE.apk`. Copy it to the phone and install it.
-
-It is the **release** variant, which is the whole point: the debug variant has
-no JavaScript bundled into it and looks for a dev server at startup, so it only
-runs while your computer is serving it. The release APK carries the bundle
-inside, and `app.json` turns on `usesCleartextTraffic` so it may talk to your
-computer over plain HTTP on the local network - without that the phone can
-reach the port and still fail every request.
-
-It is signed with the debug keystore that ships with the Android project, which
-is fine for sideloading and demos, and is not the key to publish to Play with.
-
-For development instead, `npx expo start` with Expo Go still works.
-
-## Connect the phone
-
-The app opens on **Connect to your computer**, and asks for two things in the
-order you can actually supply them:
-
-1. **The address.** `192.168.1.20:8765`, or a Tailscale name. It is checked
-   before anything else, so a typo is reported as a wrong address rather than
-   as a wrong code. The scheme and port are filled in when you leave them out.
-2. **The code.** Run this on the computer:
-
-   ```bash
-   ./run-server.sh --pair
+1. Open `http://192.168.1.20:8765/m` in the phone browser (your address).
+2. On the computer, mint a pairing code:
+   ```powershell
+   venv\Scripts\python.exe -m assistant.api --pair --port 8765
    ```
+3. In the phone UI choose "Pair new device", enter the host and the code.
+   The returned token is stored in the browser's local storage and used as
+   the Bearer token for every API call.
 
-   It prints a six-digit code that lasts ten minutes. Type it on the phone.
+Alternatively, if the token is already known, choose "I have a token" and
+paste it. The UI validates it against `GET /api/status` before proceeding.
 
-The phone stores its token in the platform keystore, and the address beside
-it. It stays paired until you disconnect it from **You → Disconnect this
-phone**, or revoke it on the computer:
+## Install as an app
 
-```bash
-curl -X DELETE localhost:8765/api/devices/<id>/token
-```
+- **Android (Chrome):** menu -> "Add to Home screen" / "Install app".
+- **iOS (Safari):** Share -> "Add to Home Screen".
 
-To point a build at a computer by default, set `EXPO_PUBLIC_VAVE_URL`.
-Anything typed on the phone wins over it.
+The service worker (`sw.js`) caches only the static shell. API responses
+are never cached: a stale task list or a cached token-bearing response would
+be wrong and a leak.
 
-## Reaching the computer from anywhere
+## Live updates
 
-The address is all that changes between these:
+The app opens one `EventSource` to
+`/api/events/stream?token=<token>` (query param, because `EventSource`
+cannot set request headers — the server's auth middleware accepts it). On
+any activity event the visible tab refreshes. A 15-second poll is the safety
+net while the app is open, and SSE reconnects with backoff capped at 30s.
 
-| Where you are | What to enter |
-| --- | --- |
-| Same Wi-Fi | The LAN address VAVE printed, e.g. `192.168.1.20:8765` |
-| Anywhere, over Tailscale | The Tailscale name or address of the computer |
-| Same machine, web preview | `127.0.0.1:8765` |
+## Security notes
 
-Tailscale is worth setting up before a demo: a venue's Wi-Fi often blocks
-devices from seeing each other, and a private network is unaffected by that.
-
-## What the phone does with the real API
-
-| Screen | Where its content comes from |
-| --- | --- |
-| Home, command box | `POST /api/tasks` with `autoplan` and `run` - the computer plans the steps and works them |
-| Home, current task | `GET /api/tasks`, then `GET /api/tasks/{id}` for the steps |
-| Tasks | `GET /api/tasks`, `POST /api/tasks/{id}/cancel` |
-| Task detail | `GET /api/tasks/{id}`, following `/ws/events?task_id=` |
-| Activity | `GET /api/activity`, then every event live over `/ws/events` |
-| Approvals | `GET /api/approvals`, `POST /api/approvals/{id}` |
-| Files | `GET /api/files`, `GET /api/files/search` over the shared folders |
-| Devices | `GET /api/devices` |
-| Security | `GET /api/permissions`, `GET /api/status`, `POST /api/emergency-stop` |
-| Google | `GET /api/google/status`, then Drive, Gmail and Calendar through the computer |
-
-### Live rather than polled
-
-The screens used to ask the computer for everything twice a second. Over a
-real network that is both slow and enough to trip the API's own rate limit, so
-the phone now listens on `/ws/events` and reloads when something actually
-changed, with a slow reload behind it for whatever arrived while the phone was
-asleep. The socket carries the same token as the REST calls, drops constantly
-on a phone, and reconnects on its own with a backoff.
-
-## The parts of the app
-
-| File | Responsibility |
-| --- | --- |
-| `src/api/client.ts` | The address, the token, one request shape, one error shape |
-| `src/api/storage.ts` | The keystore on a device, `localStorage` in a browser |
-| `src/api/session.ts` | Pairing, disconnecting, and whether the computer is answering |
-| `src/api/mappers.ts` | Control-plane JSON to the types the screens render |
-| `src/api/live.ts` | The `/ws/events` stream, and reconnecting to it |
-| `src/services/*.ts` | One module per part of the product, all going through the client |
-
-`src/api/mappers.ts` is the only place that knows both vocabularies. The
-server talks about goals, steps, helpers and events; the components were
-written against their own types. Translating in one place means a renamed
-server field breaks in one file rather than in nine screens.
-
-## Starting the computer side from the desktop app
-
-The desktop app can be the server itself. **My Devices → Connect your phone →
-Turn on** starts the same API inside the running app and shows the address to
-type, and **Show pairing code** gives you the six digits without a terminal.
-
-Because it runs inside the desktop app, both are looking at one control plane:
-a task you start on the phone appears in the desktop timeline as it happens.
-`python -m assistant.api --host 0.0.0.0` still works and does the same thing
-for a headless machine.
-
-## What is not connected yet
-
-Said plainly, because a screen that pretends is worse than a screen that
-admits:
-
-- **What VAVE remembers** is example data.
-- **Google** is real, but shows examples until you connect an account, and
-  labels them - see [google.md](google.md).
-- **Notifications** need the app open. There is no push service, so a phone in
-  a pocket sees an approval when it next asks.
-- **Files move both ways now** - browse, download and upload - but there are no
-  thumbnails, no folder downloads, and move and rename have no screen.
-- **A second desktop on another machine** still runs its own control plane
-  rather than pairing into this one.
+- **LAN only.** The PWA has no extra protection beyond the API: whoever holds
+  a device token controls the computer. Do not expose port 8765 to the
+  internet.
+- Tokens are bearer secrets. Log out (footer button) clears local storage,
+  but if a phone is lost, revoke it properly:
+  `DELETE /api/devices/{id}/token` from the desktop GUI or the API.
+- Tokens expire (30-day default) and rotate through
+  `POST /api/auth/rotate`. When a token dies, the app returns to the login
+  screen on its next 401/403.
+- Approvals pause execution until decided: a destructive action can be held
+  on the desktop and answered from the phone.

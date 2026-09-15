@@ -282,7 +282,8 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         client_host = request.client.host if request.client else ""
 
         token = bearer_token(request.headers.get("authorization")) or request.query_params.get("token", "")
-        if path in OPEN_PATHS or path.startswith("/docs") or path.startswith("/static"):
+        if (path in OPEN_PATHS or path.startswith("/docs") or path.startswith("/static")
+                or path.startswith("/m/") or path == "/m"):
             # Open to everyone, but a token still names the caller: pairing a
             # second device from a phone depends on knowing who is asking.
             device = guard.device_for_token(token)
@@ -1370,6 +1371,16 @@ def create_app(control=None, executor=None, security=None, notifier=None):
             logger.exception("Event stream failed")
         finally:
             unsubscribe()
+
+    # -- mobile PWA client ---------------------------------------------------
+    # Mounted last so /m never shadows an API route. The pages are public;
+    # every data call from the JS carries the device token itself.
+    # Only mobile/pwa is served: the sibling Expo project in mobile/ is
+    # source code, not web content.
+    mobile_dir = Path(__file__).resolve().parent.parent.parent / "mobile" / "pwa"
+    if mobile_dir.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/m", StaticFiles(directory=str(mobile_dir), html=True), name="mobile")
 
     return app
 

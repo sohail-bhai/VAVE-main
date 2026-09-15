@@ -301,6 +301,15 @@ After pairing, the phone command box posts goals to `/api/tasks` with
 `TaskExecutor` and `assistant.ai_brain.run_task_step()`, while the phone follows
 progress through `/ws/events` and answers approvals through `/api/approvals`.
 
+#### 📱 Mobile PWA (No Install Toolchain)
+The API also serves a lightweight phone client at `/m` — open
+`http://<computer>:8765/m` on the same Wi-Fi, sign in with a token or a
+pairing code, and submit goals, answer approvals, and read notifications from
+a home-screen-installable app. Files live in `mobile/pwa/` (plain HTML/CSS/JS,
+no build). The service worker caches only the shell, never API data. The
+separately built native app lives alongside in `mobile/`. See
+[`docs/mobile.md`](docs/mobile.md).
+
 #### 📁 Your Files, From Anywhere
 Share folders with your phone and reach them from a train:
 ```json

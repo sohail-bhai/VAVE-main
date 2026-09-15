@@ -138,7 +138,7 @@ Home Assistant is Phase 4; keep everything behind existing auth.
 
 ### Tasks
 
-- [ ] 2.1 **Serve the app.** Create `mobile/` at repo root with `index.html`,
+- [x] ~~2.1 **Serve the app.** Create `mobile/` at repo root with `index.html`,
       `styles.css`, `app.js`, `manifest.webmanifest`, `sw.js`, and icon files
       (SVG is acceptable for the manifest; declare `purpose: "any"`).
       In `create_app` (after routes are registered):
@@ -151,37 +151,43 @@ Home Assistant is Phase 4; keep everything behind existing auth.
       The auth middleware must let `/m` through like `/docs`: add
       `or path.startswith("/m")` to the open-path branch (~line 285). The
       PAGES are public; the API calls from JS carry the token. Note the
-      middleware still rate-limits open paths by host — that stays.
-- [ ] 2.2 **Login screen.** `localStorage` keys: `vave_token`, `vave_host`
+      middleware still rate-limits open paths by host — that stays.~~
+      (Done with one change: serves `mobile/pwa/` only, because `mobile/`
+      holds the sibling Expo project — its source must not be web content.)
+- [x] ~~2.2 **Login screen.** `localStorage` keys: `vave_token`, `vave_host`
       (e.g. `http://192.168.1.20:8765`). Fields: host, token; plus a "pair a
       new device" flow (host + pairing code -> `POST /api/pair`, store the
       returned token). Validate on save with `GET /api/status`. Show the
       device name and a logout button (clears storage only — revocation is
-      `DELETE /api/devices/{id}/token` from the desktop GUI).
-- [ ] 2.3 **Tasks screen.** Text input + submit -> `POST /api/tasks`
+      `DELETE /api/devices/{id}/token` from the desktop GUI).~~
+- [x] ~~2.3 **Tasks screen.** Text input + submit -> `POST /api/tasks`
       `{goal, autoplan: true, run: true}`. List recent tasks
       (`GET /api/tasks?limit=20`). Tapping one shows steps with status
       (pending/running/done/failed) and progress. Live updates: one
       EventSource to `{host}/api/events/stream?token={token}`; refresh the
-      open task on relevant events; fall back to 5s polling if SSE errors.
-- [ ] 2.4 **Approvals.** Poll `GET /api/approvals` every few seconds while
+      open task on relevant events; fall back to 5s polling if SSE errors.~~
+      (SSE live + 15s poll safety net; task cards always show steps/progress.)
+- [x] ~~2.4 **Approvals.** Poll `GET /api/approvals` every few seconds while
       the app is open (or react to SSE events if they carry approval ids —
       check `assistant/events.py` for the event types). Approve/Deny buttons
       -> `POST /api/approvals/{id}` `{"approved": bool}`. Destructive-looking
-      approvals should require a second tap (confirm step) in the UI.
-- [ ] 2.5 **Notifications.** List from `GET /api/notifications`, unread
-      badge, mark-one and mark-all read. (Mark-all: loop the endpoint.)
-- [ ] 2.6 **Installable PWA.** `manifest.webmanifest` (name, theme color
+      approvals should require a second tap (confirm step) in the UI.~~
+      (Approve requires a second tap; refresh-driven, no polling loop — SSE + 15s net.)
+- [x] ~~2.5 **Notifications.** List from `GET /api/notifications`, unread
+      badge, mark-one and mark-all read. (Mark-all: loop the endpoint.)~~
+      (Badge + per-item read state; mark-all loops the read endpoint.)
+- [x] ~~2.6 **Installable PWA.** `manifest.webmanifest` (name, theme color
       matching the dashboard, display `standalone`, icons). `sw.js` caches
       ONLY the static shell (html/css/js/icons) on install; NEVER cache
       `/api/*` responses. Register with a network-first strategy for the
-      shell so updates land.
-- [ ] 2.7 **(Optional) QR pairing.** Only if it stays dependency-free or the
-      user approves adding `qrcode`. Otherwise the phone types host+code once.
-- [ ] 2.8 **Docs.** `docs/mobile.md`: pairing, install, what works over LAN,
+      shell so updates land.~~
+- [x] ~~2.7 **(Optional) QR pairing.** Only if it stays dependency-free or the
+      user approves adding `qrcode`. Otherwise the phone types host+code once.~~
+      (Deferred to Stretch item "QR pairing for the PWA".)
+- [x] ~~2.8 **Docs.** `docs/mobile.md`: pairing, install, what works over LAN,
       security notes (LAN only, tokens are bearer secrets, log out clears
       storage). Add `mobile/` to the repository map in `AGENTS.md` and a
-      short subsection in `README.md`.
+      short subsection in `README.md`.~~
 
 ### Automated tests (new file `tests/test_mobile_pwa.py`)
 - Static serving: TestClient on `create_app()` -> `GET /m/` returns 200 and
@@ -431,4 +437,4 @@ denied (mirror how existing capability tests do it).
 | 2026-09-15 | Phase 0 complete (`f06bc0d`): disk warning, clock clamp, pruning, docs, CI. 704 green. |
 | 2026-09-15 | CI dry run caught playwright/greenlet pin + icon-cache bug. Fixed. |
 | 2026-09-15 | Phase 1 complete (`18e5a21`): shortcuts end-to-end. 714 green dev + clean venv. |
-| 2026-09-15 | plan.md rewritten as agent handoff edition (this file). Phase 2 is next. |
+| 2026-09-15 | Phase 2 complete: PWA in `mobile/pwa/` served at `/m` (login/pair, tasks+SSE, approvals with double-tap, notifications, installable shell, `docs/mobile.md`). Coexists with the sibling Expo app — `/m` serves only `pwa/`. |

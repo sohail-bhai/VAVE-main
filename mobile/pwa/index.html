@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FBF7F2">
+  <title>VAVE Mobile</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icon-192.svg">
+  <link rel="apple-touch-icon" href="icon-192.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="bolt">&#9889;</span> VAVE</div>
+    <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Offline</span></div>
+  </header>
+
+  <main id="view-login" class="view">
+    <section class="card">
+      <h1>Connect to VAVE</h1>
+      <p class="muted">Enter this computer's address, then sign in with a
+        device token or a one-time pairing code.</p>
+      <label>Server host
+        <input id="login-host" type="text" inputmode="url" placeholder="http://192.168.1.20:8765" autocomplete="off">
+      </label>
+      <label>Device name (for new pairings)
+        <input id="login-name" type="text" placeholder="My phone" autocomplete="off">
+      </label>
+      <div class="tabs-mini">
+        <button class="tab-mini active" id="tab-token">I have a token</button>
+        <button class="tab-mini" id="tab-pair">Pair new device</button>
+      </div>
+      <div id="pane-token">
+        <label>Device token
+          <input id="login-token" type="password" placeholder="Paste the token" autocomplete="off">
+        </label>
+        <button class="primary" id="btn-token">Connect</button>
+      </div>
+      <div id="pane-pair" hidden>
+        <label>Pairing code (from <span class="code">python -m assistant.api --pair</span>)
+          <input id="login-code" type="text" inputmode="numeric" placeholder="6-digit code" autocomplete="off">
+        </label>
+        <button class="primary" id="btn-pair">Pair this phone</button>
+      </div>
+      <p class="error" id="login-error" hidden></p>
+    </section>
+  </main>
+
+  <main id="view-app" class="view" hidden>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="tasks" role="tab">Tasks <span class="badge" id="badge-tasks" hidden></span></button>
+      <button class="tab" data-tab="approvals" role="tab">Approvals <span class="badge" id="badge-approvals" hidden></span></button>
+      <button class="tab" data-tab="alerts" role="tab">Alerts <span class="badge" id="badge-alerts" hidden></span></button>
+    </nav>
+
+    <section id="tab-tasks" class="pane">
+      <form id="goal-form" class="card goal">
+        <input id="goal-input" type="text" placeholder="Ask VAVE something&hellip;" autocomplete="off">
+        <button class="primary" type="submit">Send</button>
+      </form>
+      <div id="task-list"></div>
+    </section>
+
+    <section id="tab-approvals" class="pane" hidden>
+      <div id="approval-list"></div>
+    </section>
+
+    <section id="tab-alerts" class="pane" hidden>
+      <div class="row-between">
+        <span class="muted" id="alerts-hint">Newest first</span>
+        <button class="ghost" id="btn-read-all">Mark all read</button>
+      </div>
+      <div id="alert-list"></div>
+    </section>
+
+    <footer class="foot">
+      <span class="muted" id="device-line"></span>
+      <button class="ghost" id="btn-logout">Log out</button>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
