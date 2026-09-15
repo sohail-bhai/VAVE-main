@@ -72,6 +72,7 @@ REACHES_OUTWARD = frozenset({
     "send_email", "draft_gmail_message", "send_telegram_update",
     "web_api_call", "upload_google_drive_file", "git_auto_commit_and_push",
     "gitlab_merge", "gitlab_propose_fix", "github_propose_fix", "browser_fill_form",
+    "control_device",
     "create_google_doc", "create_google_slides",
     "create_google_calendar_event", "schedule_meeting", "write_clipboard",
 })

@@ -28,6 +28,7 @@
     "auto_resume_tasks": true,
     "disk_warning_gb": 15.0,
     "health_sweep_seconds": 60,
+    "home_assistant_url": "",
     "file_shares": [
         "~/Documents",
         "~/Pictures",

@@ -64,6 +64,11 @@ CATALOG = {
     "github.read": (RiskLevel.MEDIUM, "Read your GitHub issues and code"),
     "github.write": (RiskLevel.HIGH, "Push a branch and open a pull request"),
 
+    # -- Smart home -------------------------------------------------------
+    # Reading states reveals presence and habits; acting moves the physical world.
+    "home.read": (RiskLevel.MEDIUM, "Read your smart home device states"),
+    "home.control": (RiskLevel.HIGH, "Switch home devices on and off"),
+
     # -- Knowledge --------------------------------------------------------
     "memory.read": (RiskLevel.LOW, "Read what VAVE remembers"),
     "memory.write": (RiskLevel.MEDIUM, "Remember something new"),
@@ -145,6 +150,11 @@ TOOL_CAPABILITIES = {
     "github_find_file": "github.read",
     "github_read_file": "github.read",
     "github_propose_fix": "github.write",
+
+    # Smart home (assistant/home.py).
+    "list_home_devices": "home.read",
+    "get_device_state": "home.read",
+    "control_device": "home.control",
 
     # Google Workspace gateway (assistant/workspace/).
     "search_google_drive": "google.drive.read",

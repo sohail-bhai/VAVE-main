@@ -330,7 +330,7 @@ as first-class VAVE capabilities, over the HA REST API, zero-trust gated.
 
 ### Tasks
 
-- [ ] 6.1? No — **4.1** `assistant/home.py`: `HomeAssistantClient` with a
+- [x] ~~4.1 `assistant/home.py`: `HomeAssistantClient` with a
       transport seam (`_request(method, path, json)`) like the GitHub agent.
       Config: `home_assistant_url` (default `""` = disabled) added to
       `DEFAULT_CONFIG` + `config.json`. Credential: `secret://homeassistant`
@@ -338,29 +338,35 @@ as first-class VAVE capabilities, over the HA REST API, zero-trust gated.
       `allowed_capabilities="home.*"` — see `SecretStore.put(name, value,
       description="", allowed_capabilities="")` in `secrets.py:93`. When the
       URL or secret is missing, tools return a helpful "not configured" string
-      instead of raising.
-- [ ] 4.2 **Tools**: `list_home_devices()` (GET `/api/states`, filtered to
+      instead of raising.~~
+      (Module functions take `_client_override` like the GitHub agent; narrow
+      secret scopes produce a "not allowed" sentence instead of raising.)
+- [x] ~~4.2 **Tools**: `list_home_devices()` (GET `/api/states`, filtered to
       sensible domains: light, switch, climate, media_player, sensor,
       binary_sensor), `get_device_state(entity_id)`, `control_device(entity_id,
       action, value=None)` (on/off/toggle/brightness 0-100/temperature;
       POST `/api/services/<domain>/<service>` with `entity_id`). All return
       readable strings; state changes VERIFY by re-reading the state after
-      the call (honest reporting, matching `open_app`'s pattern).
-- [ ] 4.3 **Registration**: functions in `AVAILABLE_FUNCTIONS`; schemas in
+      the call (honest reporting, matching `open_app`'s pattern).~~
+- [x] ~~4.3 **Registration**: functions in `AVAILABLE_FUNCTIONS`; schemas in
       `LLM_TOOLS`; new `"home"` entry in `TOOL_GROUPS` (keywords: "light",
       "lights", "lamp", "thermostat", "temperature", "fan", "tv", "home",
       "living room", "bedroom", "kitchen"); aliases in
       `SEMANTIC_TOOL_ALIASES` for "turn on/off". Guard: reads in
       `SAFE_TOOLS`, `control_device` in `SENSITIVE_TOOLS`. Capabilities:
       `home.read` (safe), `home.control` (sensitive) in
-      `TOOL_CAPABILITIES`.
-- [ ] 4.4 **Voice routing**: NO new anchored regex patterns — the phrases are
+      `TOOL_CAPABILITIES`.~~
+      (Reads registered MEDIUM risk via `home.read`; `control_device` is also
+      in `REACHES_OUTWARD` so tainted contexts must confirm.)
+- [x] ~~4.4 **Voice routing**: NO new anchored regex patterns — the phrases are
       open-ended ("dim the bedroom light to 40") so they must flow to the AI
       brain, which now has the tools. This is deliberate: overlapping
-      substring patterns are a known bug source (see AGENTS.md).
-- [ ] 4.5 **REST**: `GET /api/home/devices` and `POST /api/home/control`
-      following the permission/policy gating used by `/api/google/*`.
-- [ ] 4.6 **Docs**: README section + AGENTS.md map entry.
+      substring patterns are a known bug source (see AGENTS.md).~~
+- [x] ~~4.5 **REST**: `GET /api/home/devices` and `POST /api/home/control`
+      following the permission/policy gating used by `/api/google/*`.~~
+      (Control reuses `_held_for_approval`: 202 + approval first, one-shot
+      grant spent on the second identical call.)
+- [x] ~~4.6 **Docs**: README section + AGENTS.md map entry.~~
 
 ### Automated tests (`tests/test_home_assistant.py`)
 Fake transport pattern from `tests/test_developer_git.py`: list devices
@@ -447,3 +453,4 @@ denied (mirror how existing capability tests do it).
 | 2026-09-15 | Phase 1 complete (`18e5a21`): shortcuts end-to-end. 714 green dev + clean venv. |
 | 2026-09-15 | Phase 2 complete: PWA in `mobile/pwa/` served at `/m` (login/pair, tasks+SSE, approvals with double-tap, notifications, installable shell, `docs/mobile.md`). Coexists with the sibling Expo app — `/m` serves only `pwa/`. |
 | 2026-09-15 | Phase 3 complete: background health sweep (`assistant/health_sweep.py`, wired in `bootstrap_safety()`), secrets backup tool + runbook (`docs/secrets-backup.md`), GUI Journal filter on the Activity page. 733 green (719 baseline + 14 new). |
+| 2026-09-15 | Phase 4 complete: `assistant/home.py` over the HA REST API (states, verified control), `home.read`/`home.control` capabilities, brain + guard registration, `GET /api/home/devices` + approval-held `POST /api/home/control`. 14 new tests. |

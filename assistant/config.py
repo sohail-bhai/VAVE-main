@@ -71,6 +71,10 @@ DEFAULT_CONFIG = {
     # Background health sweep cadence in seconds. 0 disables it.
     "health_sweep_seconds": 60,
 
+    # Smart home bridge. Empty URL disables the Home Assistant tools; the
+    # long-lived access token lives in the secret store as "homeassistant".
+    "home_assistant_url": "",
+
     # Folders a paired phone can reach. Nothing is shared until you list one.
     # Example: ["~/Documents", "~/Pictures"]
     "file_shares": [],

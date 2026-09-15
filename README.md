@@ -336,6 +336,18 @@ clock), and shortcuts may not point at other shortcuts, so nothing can loop.
 Shortcuts and the most-used command patterns are also reachable over REST:
 `GET /api/commands/frequent`, `GET|POST|DELETE /api/commands/shortcuts`.
 
+#### 🏠 Smart Home (Home Assistant)
+Point VAVE at Home Assistant and speak plainly — "turn off the bedroom
+light", "dim the kitchen to 40", "set the living room to 24 degrees":
+```json
+"home_assistant_url": "http://homeassistant.local:8123"
+```
+Store a long-lived access token as the `homeassistant` secret (scoped
+`home.*`). Reads are safe; every control action re-reads the device to
+report what actually happened, and switching things is a sensitive,
+approval-held capability (`home.control`) over `GET /api/home/devices` and
+`POST /api/home/control`.
+
 #### 🗝️ Credentials
 Secrets live in an encrypted store rather than in `config.json`. Agents receive
 `secret://<name>` and never the value — the control plane resolves it at the
@@ -417,9 +429,17 @@ python main.py --text "what time is it" --no-speech
   - Native macOS volume control via AppleScript (`osascript`).
   - Native Linux volume control via ALSA (`amixer`) and PulseAudio (`pactl`).
   - Multi-distro Linux lock screen support (`loginctl`, `xdg-screensaver`, `gnome-screensaver-command`).
-- [ ] **Phase 11: Mobile Client Integration & Remote Execution**:
-  - Standalone mobile client pairing (`/api/pair`) and remote goal execution.
-  - WebSocket / SSE push notifications to mobile.
+- [x] **Phase 11: Mobile Client Integration & Remote Execution**:
+  - Pairing (`/api/pair`), token rotation, and remote goal execution shared by both clients.
+  - Native Expo app in `mobile/` plus a dependency-free PWA in `mobile/pwa/` served at `/m` (tasks, approvals, notifications over SSE). See `docs/mobile.md`.
+- [x] **Phase 12: Home Assistant Smart Home Bridge**:
+  - `assistant/home.py` over the HA REST API: device listing, state reads, and verified control actions (on/off/toggle/brightness/temperature).
+  - Zero-trust gating: `home.read` (safe) and `home.control` (sensitive, approval-held, REACHES_OUTWARD); token in the secret store as `homeassistant`.
+  - REST: `GET /api/home/devices`, `POST /api/home/control`.
+- [x] **Phase 13: Reliability Core — Sweep, Backup, Journal**:
+  - Background health sweep thread (`assistant/health_sweep.py`, `health_sweep_seconds` setting).
+  - Encrypted secrets backup tool (`python -m assistant.secrets_backup export|verify|restore`). See `docs/secrets-backup.md`.
+  - GUI Activity page "Journal" filter over the redacted task ledger.
 
 ---
 

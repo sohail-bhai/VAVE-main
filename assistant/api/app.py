@@ -120,6 +120,12 @@ class RegisterDeviceRequest(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
 
 
+class HomeControlRequest(BaseModel):
+    entity_id: str = Field(..., min_length=1, description="The device, e.g. 'light.bedroom'.")
+    action: str = Field(..., min_length=1, description="on, off, toggle, brightness, temperature.")
+    value: float | None = Field(None, description="Number for brightness or temperature.")
+
+
 class DeviceHeartbeatRequest(BaseModel):
     capabilities: list[str] | None = None
 
@@ -1145,6 +1151,59 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         if not plane.store.delete_command_shortcut(trigger):
             raise HTTPException(status_code=404, detail="No such shortcut.")
         return {"deleted": trigger.lower().strip()}
+
+    # -- smart home ----------------------------------------------------------
+
+    @app.get("/api/home/devices", tags=["home"])
+    def home_devices(domain: str = ""):
+        """Smart home device states, structured for clients."""
+        from assistant import home as home_module
+        try:
+            client = home_module._client("home.read")
+            states = client.get_states() or []
+        except home_module.HomeAssistantError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+        wanted = str(domain or "").strip().lower()
+        devices = []
+        for state in states:
+            entity_id = str(state.get("entity_id", ""))
+            if "." not in entity_id:
+                continue
+            state_domain = entity_id.split(".", 1)[0]
+            if state_domain not in home_module.DEVICE_DOMAINS:
+                continue
+            if wanted and state_domain != wanted:
+                continue
+            attrs = state.get("attributes") or {}
+            devices.append({
+                "entity_id": entity_id,
+                "state": state.get("state"),
+                "friendly_name": attrs.get("friendly_name") or entity_id,
+            })
+        return {"live": True, "devices": devices}
+
+    @app.post("/api/home/control", tags=["home"])
+    def home_control(body: HomeControlRequest, request: Request):
+        """Act on a home device - held for approval, then verified."""
+        from assistant import home as home_module
+        arguments = {"entity_id": body.entity_id.strip().lower(),
+                     "action": body.action.strip().lower(),
+                     "value": body.value}
+        approval = _held_for_approval(
+            "home.control", "Control home device",
+            f"{arguments['action']} {arguments['entity_id']}?",
+            "This moves something in your physical home.",
+            arguments, request)
+        if approval is not None:
+            return JSONResponse(status_code=202, content={
+                "status": "waiting_approval",
+                "approval": approval.to_dict(),
+                "detail": "Approve this, then send it again."})
+
+        result = home_module.control_device(
+            arguments["entity_id"], arguments["action"], arguments["value"])
+        plane.record(f"Controlled home device {arguments['entity_id']}.", result=result)
+        return {"live": True, "status": "done", "result": result}
 
     # -- emergency stop ----------------------------------------------------
 

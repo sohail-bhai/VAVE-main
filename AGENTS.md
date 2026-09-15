@@ -60,6 +60,7 @@ Primary user-facing capabilities:
 - `assistant/web_api.py`: `web_api_get` and `web_api_call` reach any service with a REST API, resolving a named credential from the secret store. Prefer this over a per-service module.
 - `assistant/site_memory.py`: per-domain notes in `data/site_notes.json`, handed back when that domain is opened again.
 - `assistant/gitlab_agent.py`: GitLab over its API - issues, files, a fix on its own branch, a merge request, and merging as a separate critical step.
+- `assistant/home.py`: Home Assistant over its REST API - device states and verified control actions. Reads are `home.read`, acting is `home.control` (sensitive, approval-held, REACHES_OUTWARD). Token lives in the secret store as `homeassistant`; base URL is `home_assistant_url`.
 - `assistant/task_journal.py`: every high-level request/outcome in the redacted audit ledger (`record_task_attempt`, `get_weekly_failure_summary`, `recent_entries` for the GUI Journal view).
 - `assistant/health_sweep.py`: daemon thread calling `plane.sweep()` on `health_sweep_seconds` cadence; only touches an existing plane; started from `bootstrap_safety()`.
 - `assistant/secrets_backup.py`: passphrase-encrypted export/verify/restore of `secret.key` + encrypted vault rows (`python -m assistant.secrets_backup ...`). See `docs/secrets-backup.md`.

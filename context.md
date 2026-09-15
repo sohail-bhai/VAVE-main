@@ -164,9 +164,24 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
 - [x] **Centralized Safety Bootstrap**: Created `assistant/bootstrap.py` unifying global event bus, logging, audit ledger, guard, confirm, and overwatch initialization across CLI (`main.py`), GUI (`gui/app.py`), and API Server (`assistant/api/app.py`).
 - [x] **Ollama Context Window Alignment**: Unified `num_ctx` default to `8192` in `ai_brain.py` matching prompt and tool definition requirements.
 
-### Stage 12: Upgrade Plan Execution (In Progress)
+### Stages 12-13: Upgrade Plan Execution (Phases 0-4 Complete)
 
-Driven by `plan.md` (Phases 0-5). Completed so far:
+Driven by `plan.md`. Completed so far:
+
+- [x] **Mobile PWA client** (`mobile/pwa/`, served at `/m`): login/pairing,
+      tasks with live SSE steps, approvals with double-tap confirm,
+      notifications with badges, installable shell, `docs/mobile.md`.
+      Serves only `pwa/` — the sibling Expo project in `mobile/` stays off
+      the web boundary.
+- [x] **Reliability**: `assistant/health_sweep.py` daemon (wired in
+      `bootstrap_safety()`), passphrase-encrypted secrets backup tool
+      (`python -m assistant.secrets_backup export|verify|restore`,
+      `docs/secrets-backup.md`), GUI Activity "Journal" filter over
+      `task_journal.recent_entries()`.
+- [x] **Home Assistant bridge** (`assistant/home.py`): device states and
+      verified control actions over the HA REST API; `home.read` (safe) and
+      `home.control` (sensitive, approval-held, REACHES_OUTWARD);
+      `GET /api/home/devices`, `POST /api/home/control`.
 
 - [x] **Phase 0 — Quick Fixes, Docs Drift, CI**:
   - `disk_warning_gb` setting (default 15 GB) replaces the hardcoded 7 GB GUI threshold.
@@ -188,13 +203,14 @@ Driven by `plan.md` (Phases 0-5). Completed so far:
 
 ## 4. Current Operational Stage
 
-> **CURRENT STATUS: STAGE 11 (VAVE Reliability Core) COMPLETED**
+> **CURRENT STATUS: STAGES 12-13 (UPGRADE PLAN PHASES 0-4) COMPLETED**
 
 - **Verification Status**:
-  - **702 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
+  - **747 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
+  - **CI Green**: GitHub Actions (windows-latest, Python 3.13) runs compileall, unittest, and smoke on every push.
 - **Security Posture**:
   - Zero hardcoded secrets; AES-GCM credential vault scoped by capability.
   - Unified emergency stop active across GUI, hotkeys, Telegram, and REST API.

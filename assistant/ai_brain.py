@@ -20,6 +20,7 @@ import assistant.calendar_sync as calendar_sync
 import assistant.browser as browser
 import assistant.gitlab_agent as gitlab_agent
 import assistant.github_agent as github_agent
+import assistant.home as home_agent
 import assistant.web_api as web_api
 import assistant.site_memory as site_memory
 import assistant.files as shared_files
@@ -200,6 +201,11 @@ AVAILABLE_FUNCTIONS = {
     "github_read_file": github_agent.github_read_file,
     "github_propose_fix": github_agent.github_propose_fix,
 
+    # Home Assistant, through its REST API rather than by clicking.
+    "list_home_devices": home_agent.list_home_devices,
+    "get_device_state": home_agent.get_device_state,
+    "control_device": home_agent.control_device,
+
 }
 
 def _tool(name, description, properties, required=None):
@@ -357,6 +363,27 @@ WEB_TOOLS = [
                            "description": "The whole file, after your fix."},
            "summary": {"type": "string", "description": "One line on what changed."}},
           ["repo", "issue_number", "path", "new_content"]),
+
+    _tool("list_home_devices", "List the smart home devices and their current "
+          "states, from Home Assistant. Optionally narrow to one domain such "
+          "as 'light' or 'climate'.",
+          {"domain": {"type": "string",
+                      "description": "Optional domain filter, e.g. 'light'."}},
+          []),
+    _tool("get_device_state", "Read the current state of one smart home "
+          "device, e.g. 'light.bedroom'.",
+          {"entity_id": {"type": "string",
+                         "description": "The device, e.g. 'light.bedroom'."}},
+          ["entity_id"]),
+    _tool("control_device", "Act on a smart home device and report the "
+          "verified state afterwards. Actions: on, off, toggle, brightness "
+          "(needs a 0-100 value, lights only), temperature (needs degrees, "
+          "climate only).",
+          {"entity_id": {"type": "string"},
+           "action": {"type": "string",
+                      "description": "on, off, toggle, brightness, temperature"},
+           "value": {"description": "Number for brightness or temperature."}},
+          ["entity_id", "action"]),
 ]
 
 
@@ -390,6 +417,12 @@ TOOL_GROUPS = {
         ("github", "gh ", "pull request", "pr ", "repo", "branch", "commit"),
         ("github_list_issues", "github_read_issue", "github_find_file",
          "github_read_file", "github_propose_fix", "web_api_get", "web_api_call"),
+    ),
+    "home": (
+        ("home assistant", "home", "light", "lights", "lamp", "thermostat",
+         "temperature", "fan", "tv", "living room", "bedroom", "kitchen",
+         "bedroom light", "turn off the", "turn on the"),
+        ("list_home_devices", "get_device_state", "control_device"),
     ),
     "google": (
         ("email", "mail", "gmail", "inbox", "drive", "calendar", "meeting",
@@ -441,6 +474,9 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(notepad|calculator|calc|paint|cmd|terminal|explorer|launch|open app)\b"), ("open_app", "close_app")),
     (re.compile(r"\b(click|press button|tap|select)\b"), ("click_element", "click_at", "get_clickable_elements")),
     (re.compile(r"\b(double click|double tap)\b"), ("double_click_at", "click_element")),
+    (re.compile(r"\b(turn on the|turn off the|switch on the|switch off the)\s+"
+                r"(?:bedroom|bathroom|kitchen|living room|hall|porch|garage|office)\b"),
+     ("control_device", "get_device_state", "list_home_devices")),
     (re.compile(r"\b(right click|context menu)\b"), ("right_click_at",)),
     (re.compile(r"\b(scroll|scroll down|scroll up|page down|page up)\b"), ("scroll",)),
     (re.compile(r"\b(drag|drop|drag and drop)\b"), ("drag_and_drop",)),
@@ -3077,6 +3113,7 @@ SENSITIVE_TOOLS = [
     "start_overwatch", "stop_overwatch", "open_app", "close_app",
     "set_volume", "mute_volume", "schedule_meeting", "add_note",
     "send_telegram_screenshot", "media_control",
+    "control_device",
 ]
 
 for t in DESTRUCTIVE_TOOLS:
@@ -3102,6 +3139,7 @@ SAFE_TOOLS = [
     "gitlab_read_file", "remember_about_site", "scaffold_code",
     "github_list_issues", "github_read_issue", "github_find_file",
     "github_read_file",
+    "list_home_devices", "get_device_state",
 ]
 for t in SAFE_TOOLS:
     guard.register_name("safe", t)
