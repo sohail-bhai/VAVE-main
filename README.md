@@ -201,8 +201,8 @@ sequenceDiagram
 
 ```bash
 # Clone the repository
-git clone https://github.com/sohail-bhai/vave.git
-cd vave
+git clone https://github.com/sohail-bhai/VAVE-main.git
+cd VAVE-main
 
 # Create and activate a clean virtual environment
 python -m venv venv
@@ -212,6 +212,21 @@ venv\Scripts\activate      # On Windows
 # Install dependencies
 pip install -r requirements.txt
 ```
+
+Or install VAVE itself as a package (same dependencies, plus the `vave`
+command). Development still happens from the repo; the install is for
+running:
+```bash
+pip install .
+vave smoke                 # 11/11 safe checks, no microphone needed
+vave gui                   # dashboard
+vave serve --host 0.0.0.0  # API server for the phone
+vave once                  # one microphone command
+vave pair --port 8765      # pairing code from a running server
+```
+Every `vave <word>` above also works as `python main.py --<flag>`. Note:
+an installed copy reads its config next to the installed package, so keep
+day-to-day use in the repo checkout.
 
 ### 2. Configuration (`config.json`)
 Personalize names, models, and safety levels directly in `config.json`:

@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from assistant.controller import AssistantController
 from assistant.smoke_test import run_smoke_tests
@@ -53,8 +54,48 @@ def build_parser():
     return parser
 
 
+# `vave <word>` spellings for the installed console script. Every flag form
+# keeps working; these are just shorter to say and to document.
+_SUBCOMMANDS = {
+    "gui": ["--gui"],
+    "serve": ["--server"],
+    "once": ["--once"],
+    "smoke": ["--smoke-test"],
+}
+
+
+def _expand_subcommand(argv):
+    """Translate a leading `vave <word>` into its flag form. Pure function."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and not args[0].startswith("-") and args[0] in _SUBCOMMANDS:
+        return _SUBCOMMANDS[args[0]] + args[1:]
+    return args
+
+
+def _pair_args(rest):
+    """Keep `--port N` for `vave pair`; anything else is not a pairing option."""
+    out = []
+    items = list(rest)
+    i = 0
+    while i < len(items):
+        if items[i] == "--port" and i + 1 < len(items):
+            out += ["--port", items[i + 1]]
+            i += 2
+        else:
+            i += 1
+    return out
+
+
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    expanded = _expand_subcommand(argv)
+
+    if expanded and expanded[0] == "pair":
+        # `vave pair` is not an assistant mode; it asks a running server
+        # for a pairing code. Route straight to the API entry point.
+        from assistant.api.app import main as api_main
+        return api_main(["--pair"] + _pair_args(expanded[1:]))
+
+    args = build_parser().parse_args(expanded)
 
     if args.smoke_test:
         # Configure logging first; the smoke test reports results through logging.

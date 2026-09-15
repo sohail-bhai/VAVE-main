@@ -42,3 +42,6 @@ data/.telegram.pid
 # Credentials for this machine. config.json is committed and must stay
 # free of tokens; anything here overrides it.
 config.local.json
+
+# Packaging artifacts
+vave.egg-info/

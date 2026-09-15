@@ -394,23 +394,33 @@ denied (mirror how existing capability tests do it).
 **Goal**: `pip install .` works; `vave` command exists; versioned releases.
 
 ### Tasks
-- [ ] 7.1 `pyproject.toml`: metadata, `version` (start `1.3.0`), pinned deps
+- [x] ~~7.1 `pyproject.toml`: metadata, `version` (start `1.3.0`), pinned deps
       mirrored from `requirements.txt` (keep requirements.txt as the dev
       pin source; pyproject can reference it or duplicate — decide and
       document which is canonical: requirements.txt stays canonical, pyproject
-      uses `dependencies` parsed to match).
-- [ ] 7.2 Console script `vave = main:main` (check `main.py`'s `main(argv)`
+      uses `dependencies` parsed to match).~~
+      (`requirements.txt` stays canonical; pyproject mirrors it with the same
+      win32 markers.)
+- [x] ~~7.2 Console script `vave = main:main` (check `main.py`'s `main(argv)`
       signature works as an entry point; adjust if it needs `sys.argv`
-      handling).
-- [ ] 7.3 Subcommands: `vave gui`, `vave serve`, `vave once`, `vave smoke`,
+      handling).~~
+      (Installed and verified; `main(argv=None)` reads sys.argv itself.)
+- [x] ~~7.3 Subcommands: `vave gui`, `vave serve`, `vave once`, `vave smoke`,
       `vave pair` mapping to existing flags. Implement in `main.py` as an
       argv pre-parser (PowerShell-friendly), keeping ALL current flags
-      working (backwards compatible).
-- [ ] 7.4 Clean-room test: fresh venv, `pip install .`, run `vave smoke`,
-      verify `vave gui` imports (don't open the window in automation).
-- [ ] 7.5 README: replace setup section with both flows (git-clone venv flow
+      working (backwards compatible).~~
+      (Pure `_expand_subcommand` + `_pair_args`; 9 unit tests.)
+- [x] ~~7.4 Clean-room test: fresh venv, `pip install .`, run `vave smoke`,
+      verify `vave gui` imports (don't open the window in automation).~~
+      (Done: `vave` 1.3.0 installed clean, `vave smoke` 11/11 from a foreign
+      cwd. Installed copies read config next to the package — repo checkout
+      stays the day-to-day home; README says so.)
+- [x] ~~7.5 README: replace setup section with both flows (git-clone venv flow
       stays; add pip flow). Optional: `scripts/build_exe.ps1` PyInstaller
-      spec documented but NOT in CI.
+      spec documented but NOT in CI.~~
+      (Both flows documented; clone URL fixed to VAVE-main. PyInstaller
+      skipped deliberately: no PyInstaller in the tree and the
+      model/browser/OCR stack does not freeze cleanly.)
 
 ### User manual test (Sohail)
 `pip install .` in a fresh venv on your machine, run `vave smoke`, then
@@ -454,3 +464,5 @@ denied (mirror how existing capability tests do it).
 | 2026-09-15 | Phase 2 complete: PWA in `mobile/pwa/` served at `/m` (login/pair, tasks+SSE, approvals with double-tap, notifications, installable shell, `docs/mobile.md`). Coexists with the sibling Expo app — `/m` serves only `pwa/`. |
 | 2026-09-15 | Phase 3 complete: background health sweep (`assistant/health_sweep.py`, wired in `bootstrap_safety()`), secrets backup tool + runbook (`docs/secrets-backup.md`), GUI Journal filter on the Activity page. 733 green (719 baseline + 14 new). |
 | 2026-09-15 | Phase 4 complete: `assistant/home.py` over the HA REST API (states, verified control), `home.read`/`home.control` capabilities, brain + guard registration, `GET /api/home/devices` + approval-held `POST /api/home/control`. 14 new tests. |
+| 2026-09-15 | Phase 5 complete: `pyproject.toml` (v1.3.0, `vave` console script), subcommands `gui/serve/once/smoke/pair`, clean-room `pip install .` + `vave smoke` 11/11 verified, README pip flow. 9 new tests. Temp venvs removed (C: critically low at ~5 GB free — user cleanup needed). |
+| 2026-09-15 | ALL PHASES 2-5 DONE. 756 tests green locally, pushed; CI validating on GitHub. |

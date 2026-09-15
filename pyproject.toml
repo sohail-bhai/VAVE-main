@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vave"
+version = "1.3.0"
+description = "VAVE: the personal AI control plane — voice, desktop, and phone in one zero-trust loop."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Sohail" }]
+# requirements.txt stays the canonical dev pin source; this list mirrors it.
+# Windows-only integrations carry the same sys_platform markers.
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "websockets",
+    "SpeechRecognition>=3.16.1",
+    "standard-aifc",
+    "pyttsx3==2.90",
+    "pyautogui>=0.9.54",
+    "pyscreeze>=1.0.1",
+    "pillow>=11.0.0",
+    "cairosvg>=2.7.0",
+    "psutil==5.9.8",
+    "customtkinter",
+    "requests",
+    "PyAudio==0.2.14",
+    "edge-tts",
+    "pygame",
+    "piper-tts",
+    "pytesseract",
+    "wikipedia",
+    "googlesearch-python",
+    "duckduckgo-search",
+    "playwright>=1.42.0",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "python-dateutil",
+    "PyPDF2==3.0.1",
+    "chromadb",
+    "pyperclip==1.11.0",
+    "openwakeword",
+    "numpy",
+    "keyboard",
+    "pycaw>=20240210; sys_platform == 'win32'",
+    "comtypes>=1.4.0; sys_platform == 'win32'",
+    "uiautomation==2.0.29; sys_platform == 'win32'",
+    "cryptography",
+    "python-multipart",
+]
+
+[project.scripts]
+vave = "main:main"
+
+[tool.setuptools.packages.find]
+include = ["assistant*", "gui*"]
+
+[tool.setuptools]
+py-modules = ["main", "vave_gui"]
