@@ -228,12 +228,15 @@ Known limits in Version 1.2:
 - Command parsing is mostly substring matching, so overlapping phrases can misroute.
 - `notes.py` assumes `data/` exists.
 - Speech recognition depends on Google's online recognition service.
-- Much of `system_tasks.py` is Windows-first. Volume control, lock, and window
-  automation have no working Linux or macOS path, although the app targets all
-  three. Platform-specific imports must stay lazy so the app still starts.
-- The API authenticates remote clients with paired device tokens, but tokens
-  never expire and rate limit buckets reset when the process restarts. See
-  `docs/control-plane.md` for the full list of known gaps.
+- Much of `system_tasks.py` is Windows-first. Volume and lock now have macOS
+  and Linux backends, but window automation and some app-launch paths are still
+  Windows-only. Platform-specific imports must stay lazy so the app still
+  starts everywhere.
+- The API authenticates remote clients with paired device tokens that expire
+  (30-day default) and rotate through an audited endpoint; rate limits are
+  persisted in SQLite. Remaining API gaps: notifications need a connected
+  client or Telegram (no push service), and agents have no credential of their
+  own. See `docs/control-plane.md` for the full list of known gaps.
 - Control plane steps run through `ai_brain.run_task_step()` and can be
   interrupted between tool calls by a cancel token.
 - A running step is interrupted between tool calls, not inside one. A shell

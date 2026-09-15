@@ -255,7 +255,9 @@ class HomePage(ctk.CTkScrollableFrame):
 
         # 3. C: Disk
         c_gb = health["c_free_gb"]
-        disk_color = theme.DANGER if c_gb < 7.0 else theme.SUCCESS
+        from assistant.config import get_setting
+        warn_gb = float(get_setting("disk_warning_gb", 15.0))
+        disk_color = theme.DANGER if c_gb < warn_gb else theme.SUCCESS
         disk_box = ctk.CTkFrame(row, fg_color=theme.SURFACE_SUBTLE, corner_radius=theme.RADIUS_SM)
         disk_box.pack(side="left", fill="both", expand=True, padx=3)
         ctk.CTkLabel(disk_box, text=f"C: {c_gb} GB free", font=theme.font(11, "bold"), text_color=disk_color).pack(pady=6, padx=8)

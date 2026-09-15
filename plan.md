@@ -1,193 +1,131 @@
-# VAVE Implementation Plan
+# VAVE Upgrade Plan
 
-This document outlines the detailed steps to bridge the gap between our current V1.2 (rule-based, rigid) and the ultimate VAVE vision (autonomous, self-learning, locally intelligent, and screen-aware).
+Last updated: 2026-09-15
+Baseline: Stage 11 complete, 702 tests green, HEAD `af592c3`, repo `sohail-bhai/VAVE-main`.
 
-## 🛑 Major Changes
-
-### Phase 1: Local AI Brain & Natural Language Understanding
-*Goal: Move away from rigid `if/else` keywords to an intelligent local agent that understands complex requests.*
-- [x] ~~**Step 1:** Integrate a local LLM engine (e.g., Ollama, Llama.cpp) into `assistant/ai_brain.py`.~~
-- [x] ~~**Step 2:** Refactor `assistant/commands.py` to route unrecognized commands to the local LLM.~~
-- [x] ~~**Step 3:** Implement "Tool Calling" for the local LLM, allowing the AI to intelligently decide when to trigger existing functions (like `set_volume` or `open_app`) based on intent rather than hardcoded keywords.~~
-- [x] ~~**Step 4:** Add short-term conversation memory so VAVE remembers the context of the current session.~~
-
-### Phase 2: Autonomous UI Control & Screen Awareness
-*Goal: Allow VAVE to use the computer like a human (clicking, typing, reading the screen).*
-- [x] ~~**Step 1:** Implement a screen-reading module (using OCR like Tesseract or a local Vision model) to let VAVE "see" what is on the screen and identify clickable elements.~~
-- [x] ~~**Step 2:** Expand the system tasks to include generic `pyautogui` actions: `click_element(x, y)`, `type_text(text)`, `scroll(direction)`.~~
-- [x] ~~**Step 3:** Build a loop where VAVE can: Look at the screen -> Decide next action -> Execute action -> Verify result.~~
-- [x] ~~**Step 4:** Test with a complex multi-step task (e.g., "Vave, open Notepad, write a poem, and save it to the desktop").~~
-
-### Phase 3: Long-Term Memory & Self-Learning
-*Goal: VAVE learns from corrections and remembers facts permanently.*
-- [x] ~~**Step 1:** Set up a local vector database (like ChromaDB, FAISS, or a simple SQLite JSON store) for persistent memory storage.~~
-- [x] ~~**Step 2:** Create a mechanism to store user preferences and explicit facts (e.g., "Vave, remember that my favorite color is red").~~
-- [x] ~~**Step 3:** Implement a feedback loop: When the user corrects VAVE, it saves the correction to memory and retrieves it next time a similar task is requested.~~
-- [x] ~~**Step 4:** Modify the system prompt in `ai_brain.py` to always query the vector database for relevant past memories before acting.~~
+Decisions (from user):
+- Mobile client: **PWA served by the existing FastAPI API** (no new toolchain).
+- CI: **GitHub Actions on a Windows runner**.
+- Smart home: **Home Assistant** bridge.
+- Session scope: work through phases sequentially, as much as possible.
 
 ---
 
-## 🛠️ Minor Changes
+## Phase 0 — Quick Fixes, Docs Drift, CI (half day)
 
-### Phase 4: Quality of Life Upgrades
-*Goal: Make VAVE feel like a premium, privacy-focused assistant.*
-- [x] ~~**Step 1:** Replace `pyttsx3` with a more natural sounding online TTS (Edge-TTS) and build an offline fail-safe fallback using Piper TTS.~~
-- [x] ~~**Step 2:** Optimize the response latency by using smaller LLMs (qwen2.5:3b) and fast TTS.~~
+- [x] 0.1 **Unify low-disk threshold.** `gui/pages/home_page.py` warns at `< 7.0` GB
+      while README/context.md claim `< 15 GB`. Make it configurable
+      (`disk_warning_gb`, default 15) in `DEFAULT_CONFIG` + `config.json`, read it
+      in the GUI.
+- [x] 0.2 **TokenBucket clock-jump guard.** `assistant/api/auth.py` now uses
+      `time.time()` (needed for persistence). An NTP step backwards makes elapsed
+      negative and freezes the bucket. Clamp elapsed to `>= 0` in both the
+      store-backed and in-memory paths.
+- [x] 0.3 **Prune stale rate-limit buckets.** `rate_limit_buckets` grows forever.
+      On each `update_rate_limit`, opportunistically delete rows untouched for
+      more than 1 hour. Cheap, no timer thread.
+- [x] 0.4 **Fix docs drift.** `AGENTS.md` and `docs/control-plane.md` still list
+      "tokens never expire" and "rate limit buckets reset when the process
+      restarts" as known gaps — both were fixed in Waves 5/6A and Stage 6A.
+      Update the limitations lists to reflect current truth.
+- [x] 0.5 **GitHub Actions CI.** `.github/workflows/ci.yml`: `windows-latest`,
+      `pip install -r requirements.txt`, `python -m compileall`, then
+      `python -m unittest discover -s tests`. Runs on push + PR.
 
-### Phase 5: Strict Offline Patch (DEFERRED)
-- [ ] **Step 1:** Replace Google Speech Recognition with an offline wake-word and STT engine (like Vosk or openWakeWord) for total privacy without internet.
-- [x] ~~**Step 2:** Update the `CustomTkinter` GUI to display real-time agent states (e.g., "Listening...", "Thinking...", "Executing Action...") and show a live log of the LLM's thought process.~~
-- [x] ~~**Step 3:** Add dynamic configuration commands so the user can ask VAVE to change its own settings (which updates `config.json` automatically).~~
+Verification: full test suite green locally, CI green on GitHub.
 
-### Phase 6: Phone Notifications & Remote Execution
-*Goal: Sync Android/iOS phone to VAVE so he can read notifications AND accept remote commands from your phone to execute on the laptop.*
-- [x] ~~**Step 1:** Install a connector app on the phone (e.g., Telegram Bot or Pushbullet).~~
-- [x] ~~**Step 2:** Background thread to read incoming messages. If a message is a command (e.g., "Vave, lock laptop"), execute it locally.~~
-- [x] ~~**Step 3:** Have VAVE read out important phone notifications (WhatsApp, SMS) through the PC speakers.~~
+## Phase 1 — Command Intelligence Completion (1 day)
 
-### Phase 7: Hardcoded Model Switching
-*Goal: Allow instant, reliable LLM model switching without routing through the LLM.*
-- [x] ~~**Step 1:** Add a hardcoded regex intercept in `commands.py` (e.g., "switch model [name]") to update `config.json` instantly before the request ever reaches the AI brain. This ensures that even if a model is broken, you can safely switch to a working one.~~
+- [ ] 1.1 **Make `command_shortcuts` real.** Table exists (migration 0018) but
+      nothing reads it. Add store methods `save_command_shortcut`,
+      `get_command_shortcut`, `list_command_shortcuts`, `delete_command_shortcut`.
+- [ ] 1.2 **Voice shortcut creation.** "when I say <trigger> do <command>" /
+      "create a shortcut" routed early in `commands.py` before other matching.
+      Conflicts with built-in patterns are refused.
+- [ ] 1.3 **Shortcut use.** Before the AI fallback, check exact-match shortcut
+      triggers and expand to the stored command.
+- [ ] 1.4 **Expose usage data.** `GET /api/commands/frequent` (top N patterns)
+      and `GET /api/commands/shortcuts` + DELETE endpoint.
+- [ ] 1.5 **GUI suggestion chips from real usage.** HomePage chips come from
+      `get_frequent_commands()` instead of the static list.
+
+Verification: new unit tests for shortcut save/expand/conflict + frequent
+endpoint; existing suite stays green.
+
+## Phase 2 — Mobile PWA Client (3-5 days)
+
+- [ ] 2.1 **Static serving.** FastAPI mounts `mobile/` at `/m` (html, css, js,
+      manifest, service worker). No build step, plain files.
+- [ ] 2.2 **Login + pairing.** Enter device token (or scan QR from
+      `POST /api/pair` output). Token stored in localStorage, used as Bearer.
+- [ ] 2.3 **Task submission.** Text goal input → `POST /api/tasks`, show
+      steps and live progress via `GET /api/events/stream` (SSE).
+- [ ] 2.4 **Approvals.** Pending approvals list + approve/deny buttons
+      (existing approval endpoints).
+- [ ] 2.5 **Notifications.** Persistent notification list, mark-read, badge
+      count. Live updates over SSE `/ws/notifications` fallback.
+- [ ] 2.6 **Installable.** `manifest.webmanifest` + minimal service worker
+      (app shell cache only — never cache API responses).
+- [ ] 2.7 **QR pairing flow on desktop.** GUI/CLI command shows a QR
+      (pairing code + host) so the phone can pair without typing tokens.
+- [ ] 2.8 **Docs.** `docs/mobile.md` with pairing and usage instructions.
+
+Verification: manual test over LAN with a real phone; API tests for any new
+endpoints; AGENTS.md updated with `mobile/` map entry.
+
+## Phase 3 — Reliability & Ops (1-2 days)
+
+- [ ] 3.1 **Background health sweep.** Agent/device health is only swept on
+      read. Add a repeating task: asyncio task (60s) in the API server lifespan;
+      a daemon thread in CLI/GUI entry points that calls the same sweep.
+- [ ] 3.2 **Secrets backup runbook.** `data/secret.key` loss = all credentials
+      gone. Add `python -m assistant.secrets_backup export|verify` writing an
+      encrypted (passphrase-protected) bundle of key + vault, plus docs on
+      restore. Restore stays manual and explicit.
+- [ ] 3.3 **Audit view in GUI.** Small page/modal reading the last N
+      `task_journal` entries and recent audit events, so the user can see what
+      VAVE did without opening the JSONL file.
+
+Verification: unit tests for sweep cadence and backup round-trip
+(encrypt → verify → restore into temp dir); suite green.
+
+## Phase 4 — Home Assistant Bridge (2-3 days)
+
+- [ ] 4.1 **Adapter.** `assistant/home.py` talking to the HA REST API
+      (`/api/states`, `/api/services`) with the HA long-lived token stored as
+      `secret://homeassistant` (capability `home.*`).
+- [ ] 4.2 **Capabilities + policy.** `home.read` (safe), `home.control`
+      (sensitive), risk-tiered in `capabilities.py`; guard classification.
+- [ ] 4.3 **Brain tools.** `list_home_devices`, `get_device_state`,
+      `control_device` (on/off/brightness/temperature targets).
+- [ ] 4.4 **Voice routes.** "turn off the bedroom light", "what's the
+      temperature in the living room" through the structured router.
+- [ ] 4.5 **API endpoints.** `GET /api/home/devices`, `POST /api/home/control`
+      going through the policy engine like every other capability.
+
+Verification: unit tests against a mocked HA transport; manual test against a
+live HA instance by the user.
+
+## Phase 5 — Packaging & Distribution (1 day)
+
+- [ ] 5.1 `pyproject.toml` with metadata, version, pinned dependencies.
+- [ ] 5.2 Console entry point `vave` (`vave gui`, `vave serve`, `vave once`).
+- [ ] 5.3 `pip install .` works in a clean venv; README setup section updated.
+- [ ] 5.4 Optional: PyInstaller one-file build script (documented, not CI).
+
+## Stretch (not scheduled)
+
+- Complete the anchored-regex router for remaining substring commands.
+- Coverage measurement in CI (`coverage run -m unittest`).
+- ntfy.sh push bridge so mobile notifications work with no connected client.
+- Agent-owned credentials (currently agents call through a paired device).
+- PostgreSQL-backed store variant (only `store.py` would change).
 
 ---
 
-## 🚀 Advanced Roadmap / Backlog
+## Progress Log
 
-### Phase 8: True Vector Memory (RAG)
-*Goal: Make VAVE's memory infinitely scalable without slowing down his context window.*
-- [x] ~~**Step 1:** Replace the flat `memory.json` list with a local Vector Database (e.g., FAISS or ChromaDB).~~
-- [x] ~~**Step 2:** Use local embeddings to only inject the top 3 most relevant memories into the prompt based on the current conversation.~~
-
-### Phase 9: Fast Offline Wake-Word (Hands-Free)
-*Goal: Allow the user to activate VAVE from across the room without clicking UI buttons.*
-- [x] ~~**Step 1:** Integrate `openWakeWord` or `Porcupine` to listen silently in the background with ~0% CPU usage.~~
-- [x] ~~**Step 2:** Automatically trigger the main listening loop when the wake-word is detected.~~
-
-### Phase 10: Graceful Interruption (The "Shut Up" Feature)
-*Goal: Give the user full control to halt runaway AI tasks.*
-- [x] ~~**Step 1:** Implement a global hotkey (e.g., `Ctrl+Shift+Space`) using the `keyboard` module.~~
-- [x] ~~**Step 2:** When pressed, instantly clear the threaded audio queue, halt any PyAutoGUI typing loops, and reset the AI Brain state.~~
-
-### Phase 11: Screen Awareness (Local Vision)
-*Goal: Give VAVE eyes so he can understand what the user is looking at.*
-- [x] ~~**Step 1:** Add a background screenshot capture tool using `Pillow` and `pyautogui`.~~
-- [x] ~~**Step 2:** Pass the Base64 image to Ollama's local vision models (`llava` or `moondream`) so he can answer questions like "What game am I playing?"~~
-- [x] ~~**Step 3:** Enable commands like "What am I looking at?" or "Read this error message".~~
-
-### Phase 12: Routine Automation Engine
-*Goal: Allow VAVE to chain multiple hardcoded tools together based on a single intent.*
-- [x] ~~**Step 1:** Create a new configuration file (`routines.json` or add to `config.json`) where users can define macros.~~
-
-
-### Comprehensive System Audit: Edge Cases & Shortcomings
-
-After a deep codebase review across all 12 Phases, I have identified 8 critical architectural flaws, race conditions, and edge cases that need to be addressed before VAVE can be considered "Production Ready".
-
-#### 1. Context Window Overflow (The "OOM" Crash)
-- **Bug:** `ai_brain.py` keeps the last 10 messages in history. If `read_screen` returns a 5,000-word Wikipedia page, and `read_emails` returns 20 long emails, the context window easily exceeds 10,000 tokens. Ollama's default limit is 2,048 tokens. If exceeded, Ollama throws an `HTTP 400 Bad Request` or an Out Of Memory (OOM) error, and VAVE crashes.
-- **Proposed Fix:** Limit the character count of tool returns (e.g., truncate `read_screen` to 2000 chars), dynamically trim history based on total character length, and increase `num_ctx` in the Ollama payload to 8192.
-
-#### 2. Wakeword Thread Collision (Audio Race Condition)
-- **Bug:** The `_on_wakeword_detected` callback executes synchronously inside the background `openwakeword` thread. It calls `self.run_once()`, which locks the microphone via `SpeechRecognition`. If the user manually clicks "Start Listening" on the GUI at the exact same moment, PyAudio crashes because it cannot open the microphone stream twice simultaneously.
-- **Proposed Fix:** `controller.py` must use a `threading.Lock()` around `self.run_once()`, or push a "START_LISTENING" event to the main queue rather than executing directly in the background thread.
-
-#### 3. Telegram Thread Blocking (The Webhook Backlog)
-- **Bug:** `telegram_sync.py` uses `execute_command` directly inside its polling loop. If a user texts 5 commands rapidly, the loop blocks for ~15-30 seconds while the LLM generates answers. This causes a massive backlog, delays telegram responses, and can cause API timeouts.
-- **Proposed Fix:** Incoming Telegram commands should be pushed to a standard `queue.Queue()`, and a dedicated execution thread should pop and execute them sequentially.
-
-#### 4. The "Silent" Offline Piper TTS Failure
-- **Bug:** `speech.py` brilliantly falls back to local Piper TTS if the internet drops (Edge-TTS fails). However, it hardcodes the path to `data/voices/en_US-ryan-medium.onnx`. If the user never manually downloaded this model, it fails silently. VAVE becomes completely mute offline.
-- **Proposed Fix:** If the Piper `.onnx` file is missing, automatically download it on first boot, OR fallback to the built-in Windows `pyttsx3` robotic voice as a last-resort failsafe.
-
-#### 5. Screenshot Storage Memory Leak
-- **Bug:** `system_tasks.py -> take_screenshot()` saves a new timestamped PNG every time it is called. There is no cleanup logic. Over months of use, the `assets/screenshots/` folder will inflate to gigabytes of wasted hard drive space.
-- **Proposed Fix:** Add a cleanup routine that deletes screenshots older than 7 days, or caps the directory to a maximum of 50 images.
-
-#### 6. ChromaDB First-Run Offline Crash
-- **Bug:** `memory.py` initializes `chroma_client.get_or_create_collection("vave_memory")` on import. By default, ChromaDB uses the `all-MiniLM-L6-v2` embedding model. On the very first run, it attempts to download this model from HuggingFace. If the user installs VAVE and runs him offline on day one, it crashes instantly on boot.
-- **Proposed Fix:** Wrap ChromaDB initialization in a `try/except` block and fallback to a graceful "Offline Memory Disabled" state if the model cannot be fetched.
-
-#### 7. Infinite Tool Loops (The LLM Trap)
-- **Bug:** In `ai_brain.py`, the `for step in range(5)` loop allows the LLM to call tools up to 5 times per turn. If the LLM hallucinates and calls the exact same tool with the exact same arguments 5 times in a row, VAVE freezes for 30 seconds doing nothing, then gives up.
-- **Proposed Fix:** Track previous tool calls in the loop. If the LLM repeats an identical tool call, force a hard exit from the loop and inject a system message: "You already tried that tool and it failed. Try something else."
-
-
-### Comprehensive System Audit: Edge Cases & Shortcomings
-
-After a deep codebase review across all 12 Phases, I have identified 8 critical architectural flaws, race conditions, and edge cases that need to be addressed before VAVE can be considered "Production Ready".
-
-#### 1. Context Window Overflow (The "OOM" Crash)
-- **Bug:** `ai_brain.py` keeps the last 10 messages in history. If `read_screen` returns a 5,000-word Wikipedia page, and `read_emails` returns 20 long emails, the context window easily exceeds 10,000 tokens. Ollama's default limit is 2,048 tokens. If exceeded, Ollama throws an `HTTP 400 Bad Request` or an Out Of Memory (OOM) error, and VAVE crashes.
-- **Proposed Fix:** Limit the character count of tool returns (e.g., truncate `read_screen` to 2000 chars), dynamically trim history based on total character length, and increase `num_ctx` in the Ollama payload to 8192.
-
-#### 2. Wakeword Thread Collision (Audio Race Condition)
-- **Bug:** The `_on_wakeword_detected` callback executes synchronously inside the background `openwakeword` thread. It calls `self.run_once()`, which locks the microphone via `SpeechRecognition`. If the user manually clicks "Start Listening" on the GUI at the exact same moment, PyAudio crashes because it cannot open the microphone stream twice simultaneously.
-- **Proposed Fix:** `controller.py` must use a `threading.Lock()` around `self.run_once()`, or push a "START_LISTENING" event to the main queue rather than executing directly in the background thread.
-
-#### 3. Telegram Thread Blocking (The Webhook Backlog)
-- **Bug:** `telegram_sync.py` uses `execute_command` directly inside its polling loop. If a user texts 5 commands rapidly, the loop blocks for ~15-30 seconds while the LLM generates answers. This causes a massive backlog, delays telegram responses, and can cause API timeouts.
-- **Proposed Fix:** Incoming Telegram commands should be pushed to a standard `queue.Queue()`, and a dedicated execution thread should pop and execute them sequentially.
-
-#### 4. The "Silent" Offline Piper TTS Failure
-- **Bug:** `speech.py` brilliantly falls back to local Piper TTS if the internet drops (Edge-TTS fails). However, it hardcodes the path to `data/voices/en_US-ryan-medium.onnx`. If the user never manually downloaded this model, it fails silently. VAVE becomes completely mute offline.
-- **Proposed Fix:** If the Piper `.onnx` file is missing, automatically download it on first boot, OR fallback to the built-in Windows `pyttsx3` robotic voice as a last-resort failsafe.
-
-#### 5. Screenshot Storage Memory Leak
-- **Bug:** `system_tasks.py -> take_screenshot()` saves a new timestamped PNG every time it is called. There is no cleanup logic. Over months of use, the `assets/screenshots/` folder will inflate to gigabytes of wasted hard drive space.
-- **Proposed Fix:** Add a cleanup routine that deletes screenshots older than 7 days, or caps the directory to a maximum of 50 images.
-
-#### 6. ChromaDB First-Run Offline Crash
-- **Bug:** `memory.py` initializes `chroma_client.get_or_create_collection("vave_memory")` on import. By default, ChromaDB uses the `all-MiniLM-L6-v2` embedding model. On the very first run, it attempts to download this model from HuggingFace. If the user installs VAVE and runs him offline on day one, it crashes instantly on boot.
-- **Proposed Fix:** Wrap ChromaDB initialization in a `try/except` block and fallback to a graceful "Offline Memory Disabled" state if the model cannot be fetched.
-
-#### 7. Infinite Tool Loops (The LLM Trap)
-- **Bug:** In `ai_brain.py`, the `for step in range(5)` loop allows the LLM to call tools up to 5 times per turn. If the LLM hallucinates and calls the exact same tool with the exact same arguments 5 times in a row, VAVE freezes for 30 seconds doing nothing, then gives up.
-- **Proposed Fix:** Track previous tool calls in the loop. If the LLM repeats an identical tool call, force a hard exit from the loop and inject a system message: "You already tried that tool and it failed. Try something else."
-
-#### 8. Routines Break the "Ask for Confirmation" Rule
-- **Bug:** We explicitly ordered the LLM to ALWAYS ask "Shall I proceed?" before executing tools. However, when a Routine runs (e.g. "Good Morning" -> ["read my emails"]), it passes the string to `ask_ai()`. The LLM receives it, deduces it needs the `read_unread_emails` tool, and asks "Shall I proceed?" instead of just doing it! This completely breaks the fluidity of hands-free routines.
-- **Proposed Fix:** Add an `auto_confirm=True` flag to `ask_ai()` and `execute_command()`. When a routine passes a command, it strips the confirmation rule from the system prompt dynamically so VAVE just executes the routine silently.
-
-
-### Phase 13: Hackathon & Developer Mode
-*Goal: Turn VAVE into a genuine pair-programmer and hackathon copilot for coding, git workflows, and project research.*
-- [ ] **Feature 1: Auto-Git Committer & Push.** "Vave, commit my changes" / "Vave, push my code". Scans git status & git diff, uses local LLM to generate concise, professional commit messages, runs `git add .`, `git commit`, and optionally `git push`.
-- [ ] **Feature 2: Autonomous Deep Tester Agent.** "Vave, deep test the project". Dynamically swaps to `qwen3.5:9b`, acts as an autonomous QA agent looping through terminal start commands, opening Chrome, and using OCR/Vision to inspect the rendered UI. It iterates until satisfied, then writes a comprehensive `deep_test_report.md` without modifying any code.
-- [ ] **Feature 3: Project Idea & Open-Source Reference Scraper.** "Vave, scrape for ideas" / "Vave, find templates for my project". Reads local project files (README.md, package.json, main docs), summarizes current stack/concept, searches the web for relevant open-source templates, libraries, and reference architectures, and provides actionable suggestions.
-- [ ] **Feature 4: Deep Work / Hackathon Focus Mode.** "Vave, start deep work". Configures volume, sets focus timer, and logs session stats.
-
-- [ ] **Feature 2:** Refactor deep_test_project into an active iteration loop that interacts with the DOM.
-
-### Phase 14: Autonomous Browser QA (Playwright) (Completed)
-
-*Goal: Integrate OAuth-based third-party services for daily schedule management and media control.*
-
-### Phase 15: Google Calendar Integration
-*Goal: Integrate OAuth-based Google Calendar for daily schedule management.*
-- [ ] **Feature 1:** Google Calendar API (Read schedule, add events).
-
-
-### Phase 16: On-Demand Briefing
-*Goal: A 'Vave, brief me' command that safely reads out schedule, weather, and tasks without auto-triggering in public spaces.*
-
-### Phase 17: Smart Home Architecture
-*Goal: Control LG AC (via LG ThinQ API) and prepare Webhook architecture for the Atomberg Fan (requires an IR blaster hub).*
-
-### Phase 18: Full Gmail Integration
-*Goal: Upgrade email integration to actively compose and send emails via voice.*
-
-
-### Phase 19: Local Document RAG (Textbook Reader)
-*Goal: Give VAVE the ability to ingest large PDFs, API docs, and textbooks so the user can ask specific context-aware questions about their college materials.*
-
-
-### Phase 20: Deep Web Researcher
-*Goal: Utilize atomic GUI tools (scroll, click, type) to allow VAVE to autonomously navigate the web, research topics, and compile markdown reports without human intervention.*
-
-### Phase 21: The Multi-Agent Swarm
-*Goal: Refactor the AI Brain from a single LLM loop into a swarm architecture (Commander, Coder, Researcher) that work in parallel to solve complex tasks faster.*
-
-### Phase 21 Architecture Notes:
-- **Role Definition:** VAVE will act as the Helper/Researcher/QA, not the primary Coder, due to local LLM parameter constraints. (Antigravity handles heavy coding).
-- **Dynamic Spawning:** VAVE will not have hardcoded agents. He will dynamically create sub-agents on the fly based on the number of parallel tasks requested.
-- **Actor-Critic Refinement:** For complex tasks (like Deep Web Research), VAVE will spawn a 'Critic Sub-Agent' to challenge his work. The main agent and the critic will iterate to improve quality (with a hard cap to prevent infinite loops) before presenting the final result to the user.
+| Date | Entry |
+| --- | --- |
+| 2026-09-15 | Plan created. Phase 0 started. |
+| 2026-09-15 | Phase 0 complete: disk warning configurable (default 15 GB), TokenBucket clock clamp, stale bucket pruning, docs drift fixed, CI workflow added. 704 tests green. |

@@ -71,6 +71,32 @@ class ApiHardeningTests(unittest.TestCase):
         self.assertEqual(device_id, rotations[0]["device_id"])
         self.assertIn("rotated_at", rotations[0])
 
+    def test_clock_step_backwards_does_not_freeze_bucket(self):
+        # A stored bucket whose last_updated is in the future (NTP stepped the
+        # clock backwards) must not drain the caller's tokens.
+        self.store.update_rate_limit("jumped", tokens=1.0, last_updated=time.time() + 600.0)
+        bucket = TokenBucket(per_minute=60, store=self.store)
+        self.assertEqual(0, bucket.take("jumped"))
+
+        # Same guard for the in-memory path.
+        memory_bucket = TokenBucket(per_minute=60)
+        memory_bucket._tokens["jumped"] = (1.0, time.time() + 600.0)
+        self.assertEqual(0, memory_bucket.take("jumped"))
+
+    def test_stale_rate_limit_buckets_are_pruned(self):
+        now_ts = time.time()
+        # One live bucket, one stale bucket untouched for over an hour.
+        self.store.update_rate_limit("live", tokens=5.0, last_updated=now_ts)
+        self.store.update_rate_limit("stale", tokens=5.0, last_updated=now_ts - 7200.0)
+
+        # A fresh write past the prune interval triggers cleanup.
+        self.store._last_rate_limit_prune = now_ts - 600.0
+        self.store.update_rate_limit("fresh", tokens=5.0, last_updated=now_ts + 1.0)
+
+        self.assertIsNone(self.store.get_rate_limit("stale"))
+        self.assertIsNotNone(self.store.get_rate_limit("live"))
+        self.assertIsNotNone(self.store.get_rate_limit("fresh"))
+
 
 if __name__ == "__main__":
     unittest.main()

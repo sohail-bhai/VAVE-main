@@ -546,19 +546,22 @@ Names are permanent: never renumber or reorder them.
 
 These are known gaps, not oversights:
 
-- **Tokens do not expire.** A paired device stays paired until it is revoked.
-  There is no refresh or rotation yet.
-- **Rate limiting is per process.** Restarting the API resets every bucket.
+- **Tokens expire and rotate.** A paired device holds a token with a 30-day
+  TTL by default (`device_token_ttl_seconds`), renewed through
+  `POST /api/auth/rotate`; every rotation is recorded in an audit table.
+- **Rate limiting survives restarts.** Buckets are persisted in SQLite
+  (`rate_limit_buckets`) and stale buckets are pruned automatically.
 - **Notifications are not delivered while nothing is connected.** There is no
   push service; a phone with no socket open sees them only when it asks for
   recent notifications, or through Telegram if that is switched on.
-- **Notification history is in memory.** It does not survive a restart, unlike
-  the timeline, which does.
+- **Notification history is persistent.** Events and alerts are stored in
+  SQLite and survive a restart, like the timeline.
 - **A remote agent cannot resolve a secret.** References are resolved for
   in-process tools only; an HTTP agent that needs a credential has no way to
   ask for one yet.
-- **Secrets are not capability-scoped.** Any step that can call a tool can use
-  any stored secret; there is no per-secret policy rule.
+- **Secrets are capability-scoped.** Each secret carries
+  `allowed_capabilities` patterns (for example `google.*`), and resolution is
+  refused when the calling tool's capability does not match.
 - **Enforcement covers the tools VAVE knows.** A tool missing from
   `TOOL_CAPABILITIES` is treated as needing no capability, so new tools must be
   added there as they are written.
@@ -573,13 +576,12 @@ These are known gaps, not oversights:
   notices it was stopped.
 - **A failed step fails the task once its retries are used up.** There is no
   alternative branch and no replanning around the failure.
-- **Resuming is not automatic.** `POST /api/tasks/resume` or
-  `executor.resume_interrupted()` has to be called on startup; nothing runs it
-  for you yet.
-- **Agents are selected but not marked busy.** Execution does not yet set an
-  agent to `working` or release it afterwards.
-- **A resumed task stays with its own agent.** Recovery restarts the unfinished
-  steps; it does not move them to a different agent.
+- **Interrupted tasks resume on startup** when `auto_resume_tasks` is on
+  (the default); the unfinished steps restart with their own agent rather than
+  moving to a different one.
+- **Agents are marked busy during execution.** A helper transitions
+  `idle` -> `working` with its `current_task_id` and back to `idle` on
+  completion, failure or cancellation.
 - **Permission expiry is checked on read**, not by a background timer. A grant
   stops authorising the moment it lapses, but its stored status only flips to
   `expired` the next time permissions are listed or checked.
@@ -590,7 +592,7 @@ These are known gaps, not oversights:
 python -m unittest discover -s tests
 ```
 
-324 tests cover the task lifecycle, capability matching, permission expiry and
+The control-plane tests cover the task lifecycle, capability matching, permission expiry and
 revocation, the approval flow, emergency stop, step execution, failure and
 cancellation paths, pairing and token authentication, rate limiting, schema
 migrations, the capability catalog, policy precedence, the broker's grant,

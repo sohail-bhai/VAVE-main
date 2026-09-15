@@ -26,6 +26,7 @@
     "agent_max_steps": 15,
     "browser_headless": false,
     "auto_resume_tasks": true,
+    "disk_warning_gb": 15.0,
     "file_shares": [
         "~/Documents",
         "~/Pictures",

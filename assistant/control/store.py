@@ -281,6 +281,7 @@ class ControlStore:
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute("PRAGMA journal_mode = WAL")
         self._lock = threading.RLock()
+        self._last_rate_limit_prune = 0.0
 
         with self._lock:
             self._migrate()
@@ -727,6 +728,15 @@ class ControlStore:
                 """,
                 (key, tokens, last_updated, window_seconds)
             )
+            # Buckets nobody has touched for an hour are dead callers. They are
+            # pruned at most once every five minutes so the hot path stays one
+            # small write.
+            if last_updated - self._last_rate_limit_prune >= 300.0:
+                self._connection.execute(
+                    "DELETE FROM rate_limit_buckets WHERE last_updated < ?",
+                    (last_updated - 3600.0,)
+                )
+                self._last_rate_limit_prune = last_updated
             self._connection.commit()
 
     def record_token_rotation(self, device_id: str, reason: str = "", ip_address: str = "") -> str:

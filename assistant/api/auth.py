@@ -71,7 +71,11 @@ class TokenBucket:
                 else:
                     tokens = float(self.capacity)
                     last = current
-                tokens = min(float(self.capacity), tokens + (current - last) * self.rate)
+                # Wall-clock time can step backwards (NTP). A negative elapsed
+                # would drain the bucket and freeze the caller until the clock
+                # catches back up, so it is clamped to zero.
+                elapsed = max(0.0, current - last)
+                tokens = min(float(self.capacity), tokens + elapsed * self.rate)
 
                 if tokens < 1.0:
                     self.store.update_rate_limit(identity, tokens, current)
@@ -82,7 +86,8 @@ class TokenBucket:
                 return 0
             else:
                 tokens, last = self._tokens.get(identity, (self.capacity, current))
-                tokens = min(self.capacity, tokens + (current - last) * self.rate)
+                elapsed = max(0.0, current - last)
+                tokens = min(self.capacity, tokens + elapsed * self.rate)
 
                 if tokens < 1:
                     self._tokens[identity] = (tokens, current)

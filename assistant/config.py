@@ -64,6 +64,10 @@ DEFAULT_CONFIG = {
     # Automatically pick up interrupted tasks on startup.
     "auto_resume_tasks": True,
 
+    # Disk preservation policy: the GUI flags low free space on the system
+    # drive below this many gigabytes.
+    "disk_warning_gb": 15.0,
+
     # Folders a paired phone can reach. Nothing is shared until you list one.
     # Example: ["~/Documents", "~/Pictures"]
     "file_shares": [],
