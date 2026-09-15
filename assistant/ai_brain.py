@@ -709,6 +709,23 @@ def select_tools(instruction, tools=None):
     catalogue = tools if tools is not None else LLM_TOOLS
     text = str(instruction or "").lower()
 
+    # Conversational queries need no tools — return empty so the model
+    # answers directly instead of calling tell_date/tell_time for "what is" etc.
+    _CONV_RE = re.compile(
+        r"^\s*(?:hello(?:\s+there)?|hi(?:\s+there)?|hey(?:\s+there)?"
+        r"|how(?:'s|\s+is)\s+(?:it\s+going|you\s+doing|are\s+you)"
+        r"|what(?:'s|\s+is)\s+up|goodbye|bye|see\s+ya|who\s+are\s+you"
+        r"|tell\s+me\s+(?:a\s+)?joke|thanks|thank\s+you|ok(?:ay)?"
+        r"|what\s+is\s+\d+\s*(?:plus|minus|times|divided|\+|\-|\*|\/)\s*\d+"
+        r"|what\s+is\s+\d+\s*(?:plus|minus|times|divided|\+|\-|\*|\/)\s*\d+"
+        r"|what\s+is\s+(?:the\s+)?(?:capital|population|currency|color|meaning)\s+of"
+        r"|what\s+is\s+(?:a\s+)?(?:joke|riddle|fun\s+fact)"
+        r")\s*[.!?]*\s*$",
+        re.IGNORECASE,
+    )
+    if _CONV_RE.search(text):
+        return []
+
     # 1. Direct semantic tool detection: user intent mapped straight to exact tools
     semantic_wanted = []
     for pattern, names in SEMANTIC_TOOL_ALIASES:
@@ -1905,6 +1922,11 @@ def get_system_prompt():
         "If open_app fails → use press_key('win') + type_text(name) + press_key('enter'). "
         "If focus_window fails → use click_at on the taskbar. Always keep trying until the user's goal is achieved.\n\n"
         "CRITICAL RULE: Always use the provided tools to accomplish tasks, chaining them if necessary.\n\n"
+        "WHEN NOT TO USE TOOLS: For simple greetings (hello, hi, hey), casual "
+        "conversation (how are you, what's up), questions about yourself (who are you, "
+        "what can you do), farewell (goodbye, bye, see you), and basic knowledge "
+        "(math like 2+2, general facts, definitions, explanations), respond with plain "
+        "text ONLY. Do NOT call any tool. These are conversational, not operational.\n\n"
 
         "USING THE WEB: You drive a real browser. Never say you cannot open a "
         "website - open it. The loop is always the same: `browse` the page, "
@@ -2013,6 +2035,9 @@ def query_local_llm_chat(messages, model="qwen2.5:3b", tools=None):
     # is pulled right down whenever tools are on the table, and left alone when
     # the model is only talking.
     options = {"num_ctx": int(get_setting("ollama_num_ctx", 8192))}
+    num_gpu = get_setting("ollama_num_gpu", None)
+    if num_gpu is not None:
+        options["num_gpu"] = int(num_gpu)
     if offering_tools:
         options["temperature"] = float(get_setting("llm_tool_temperature", 0.1))
         options["top_p"] = 0.9
