@@ -695,28 +695,75 @@ def get_windows_volume_controller():
         return None
 
 def get_current_volume():
-    volume = get_windows_volume_controller()
-
-    if volume is None:
+    system = get_os()
+    if system == "windows":
+        volume = get_windows_volume_controller()
+        if volume is None:
+            return None
+        try:
+            return round(volume.GetMasterVolumeLevelScalar() * 100)
+        except Exception as error:
+            logger.info("Could not get current volume:", error)
+            return None
+    elif system == "darwin":
+        try:
+            out = subprocess.check_output(
+                ["osascript", "-e", "output volume of (get volume settings)"],
+                stderr=subprocess.DEVNULL
+            ).decode().strip()
+            return int(out)
+        except Exception as error:
+            logger.info("Could not get macOS volume:", error)
+            return None
+    elif system == "linux":
+        try:
+            out = subprocess.check_output(["pactl", "get-sink-volume", "@DEFAULT_SINK@"], stderr=subprocess.DEVNULL).decode()
+            match = re.search(r"(\d+)%", out)
+            if match:
+                return int(match.group(1))
+        except Exception:
+            try:
+                out = subprocess.check_output(["amixer", "get", "Master"], stderr=subprocess.DEVNULL).decode()
+                match = re.search(r"\[(\d+)%\]", out)
+                if match:
+                    return int(match.group(1))
+            except Exception as error:
+                logger.info("Could not get Linux volume:", error)
         return None
-
-    try:
-        return round(volume.GetMasterVolumeLevelScalar() * 100)
-    except Exception as error:
-        logger.info("Could not get current volume:", error)
-        return None
+    return None
 
 def set_volume(level):
     level = clamp_number(level)
-    volume = get_windows_volume_controller()
+    system = get_os()
 
-    if volume is not None:
+    if system == "windows":
+        volume = get_windows_volume_controller()
+        if volume is not None:
+            try:
+                volume.SetMasterVolumeLevelScalar(level / 100, None)
+                speak(f"Volume set to {level} percent.")
+                return
+            except Exception as error:
+                logger.info("Could not set exact volume:", error)
+    elif system == "darwin":
         try:
-            volume.SetMasterVolumeLevelScalar(level / 100, None)
+            subprocess.run(["osascript", "-e", f"set volume output volume {level}"], check=True, stderr=subprocess.DEVNULL)
             speak(f"Volume set to {level} percent.")
             return
         except Exception as error:
-            logger.info("Could not set exact volume:", error)
+            logger.info("Could not set macOS volume:", error)
+    elif system == "linux":
+        try:
+            subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{level}%"], check=True, stderr=subprocess.DEVNULL)
+            speak(f"Volume set to {level} percent.")
+            return
+        except Exception:
+            try:
+                subprocess.run(["amixer", "set", "Master", f"{level}%"], check=True, stderr=subprocess.DEVNULL)
+                speak(f"Volume set to {level} percent.")
+                return
+            except Exception as error:
+                logger.info("Could not set Linux volume:", error)
 
     speak("Exact volume control is not available. Using keyboard volume keys instead.")
     pyautogui = _get_pyautogui()
@@ -760,11 +807,22 @@ def lock_laptop():
 
         elif system == "darwin":
             speak("Locking Mac.")
-            os.system("/System/Library/CoreServices/Menu\\ Extras/User.menu/Contents/Resources/CGSession -suspend")
+            res = os.system("/System/Library/CoreServices/Menu\\ Extras/User.menu/Contents/Resources/CGSession -suspend")
+            if res != 0:
+                os.system("pmset displaysleepnow")
 
         else:
             speak("Locking system.")
-            os.system("gnome-screensaver-command -l")
+            locked = False
+            for cmd in ["loginctl lock-session", "xdg-screensaver lock", "gnome-screensaver-command -l"]:
+                try:
+                    if subprocess.run(cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                        locked = True
+                        break
+                except Exception:
+                    continue
+            if not locked:
+                os.system("gnome-screensaver-command -l")
 
     except Exception as error:
         speak("Could not lock the laptop.")
