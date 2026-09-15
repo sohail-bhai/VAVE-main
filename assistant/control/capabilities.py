@@ -57,9 +57,12 @@ CATALOG = {
     "gcp.iam.write": (RiskLevel.CRITICAL, "Change who has access"),
 
     # -- Source control ---------------------------------------------------
+    # GitLab & GitHub. Proposing a change and merging it are deliberately different.
     "gitlab.read": (RiskLevel.MEDIUM, "Read your GitLab issues and code"),
     "gitlab.write": (RiskLevel.HIGH, "Push a branch and open a merge request"),
     "gitlab.merge": (RiskLevel.CRITICAL, "Merge changes into your repository"),
+    "github.read": (RiskLevel.MEDIUM, "Read your GitHub issues and code"),
+    "github.write": (RiskLevel.HIGH, "Push a branch and open a pull request"),
 
     # -- Knowledge --------------------------------------------------------
     "memory.read": (RiskLevel.LOW, "Read what VAVE remembers"),
@@ -86,6 +89,10 @@ TOOL_CAPABILITIES = {
     "get_clickable_elements": "system.screen.read",
     "take_screenshot": "system.screen.read",
     "click_at": "system.input.control",
+    "click_element": "system.input.control",
+    "double_click_at": "system.input.control",
+    "right_click_at": "system.input.control",
+    "move_mouse": "system.input.control",
     "type_text": "system.input.control",
     "press_key": "system.input.control",
     "scroll": "system.input.control",
@@ -133,6 +140,11 @@ TOOL_CAPABILITIES = {
     "gitlab_read_file": "gitlab.read",
     "gitlab_propose_fix": "gitlab.write",
     "gitlab_merge": "gitlab.merge",
+    "github_list_issues": "github.read",
+    "github_read_issue": "github.read",
+    "github_find_file": "github.read",
+    "github_read_file": "github.read",
+    "github_propose_fix": "github.write",
 
     # Google Workspace gateway (assistant/workspace/).
     "search_google_drive": "google.drive.read",

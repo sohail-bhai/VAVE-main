@@ -19,6 +19,7 @@ import assistant.dev_tools as dev_tools
 import assistant.calendar_sync as calendar_sync
 import assistant.browser as browser
 import assistant.gitlab_agent as gitlab_agent
+import assistant.github_agent as github_agent
 import assistant.web_api as web_api
 import assistant.site_memory as site_memory
 import assistant.files as shared_files
@@ -191,6 +192,13 @@ AVAILABLE_FUNCTIONS = {
     "gitlab_propose_fix": gitlab_agent.gitlab_propose_fix,
     "gitlab_merge": gitlab_agent.gitlab_merge,
 
+    # GitHub, through its API rather than by clicking.
+    "github_list_issues": github_agent.github_list_issues,
+    "github_read_issue": github_agent.github_read_issue,
+    "github_find_file": github_agent.github_find_file,
+    "github_read_file": github_agent.github_read_file,
+    "github_propose_fix": github_agent.github_propose_fix,
+
 }
 
 def _tool(name, description, properties, required=None):
@@ -321,6 +329,33 @@ WEB_TOOLS = [
           "asked for it - it changes the real repository.",
           {"project": {"type": "string"}, "merge_request_iid": {"type": "number"}},
           ["project", "merge_request_iid"]),
+
+    _tool("github_list_issues", "List issues on a GitHub repository, so you can pick "
+          "one to work on. The repo looks like 'owner/repository'.",
+          {"repo": {"type": "string"}, "state": {"type": "string"},
+           "limit": {"type": "number"}}, ["repo"]),
+    _tool("github_read_issue", "Read one GitHub issue in full, with its comments, "
+          "to understand what is actually being asked for.",
+          {"repo": {"type": "string"}, "issue_number": {"type": "number"}},
+          ["repo", "issue_number"]),
+    _tool("github_find_file", "Search a GitHub repository for the file an issue is "
+          "about, before trying to change anything.",
+          {"repo": {"type": "string"}, "query": {"type": "string"}},
+          ["repo", "query"]),
+    _tool("github_read_file", "Read a file from a GitHub repository, so your fix is "
+          "written against the real code rather than a guess.",
+          {"repo": {"type": "string"}, "path": {"type": "string"},
+           "ref": {"type": "string", "description": "Branch or commit. Defaults to default branch."}},
+          ["repo", "path"]),
+    _tool("github_propose_fix", "Put a fix on its own branch and open a pull "
+          "request. Send the complete new contents of the file. This "
+          "does not merge anything.",
+          {"repo": {"type": "string"}, "issue_number": {"type": "number"},
+           "path": {"type": "string"},
+           "new_content": {"type": "string",
+                           "description": "The whole file, after your fix."},
+           "summary": {"type": "string", "description": "One line on what changed."}},
+          ["repo", "issue_number", "path", "new_content"]),
 ]
 
 
@@ -349,6 +384,11 @@ TOOL_GROUPS = {
         ("gitlab_list_issues", "gitlab_read_issue", "gitlab_find_file",
          "gitlab_read_file", "gitlab_propose_fix", "gitlab_merge",
          "web_api_get", "web_api_call"),
+    ),
+    "github": (
+        ("github", "gh ", "pull request", "pr ", "repo", "branch", "commit"),
+        ("github_list_issues", "github_read_issue", "github_find_file",
+         "github_read_file", "github_propose_fix", "web_api_get", "web_api_call"),
     ),
     "google": (
         ("email", "mail", "gmail", "inbox", "drive", "calendar", "meeting",
@@ -2843,7 +2883,7 @@ def run_task_step(instruction, context="", auto_confirm=True,
 DESTRUCTIVE_TOOLS = [
     "run_terminal_command", "shutdown_laptop", "restart_laptop", "clear_notes",
     "write_file", "disable_voice_input", "disable_speech_output",
-    "gitlab_merge", "gitlab_propose_fix",
+    "gitlab_merge", "gitlab_propose_fix", "github_propose_fix",
 ]
 
 SENSITIVE_TOOLS = [
@@ -2894,6 +2934,8 @@ SAFE_TOOLS = [
     "scrape_project_ideas", "deep_test_project", "provide_morning_briefing",
     "gitlab_list_issues", "gitlab_read_issue", "gitlab_find_file",
     "gitlab_read_file", "remember_about_site", "scaffold_code",
+    "github_list_issues", "github_read_issue", "github_find_file",
+    "github_read_file",
 ]
 for t in SAFE_TOOLS:
     guard.register_name("safe", t)

@@ -231,6 +231,21 @@ def gitlab_propose_fix(project, issue_iid, path, new_content, summary="",
         except GitLabError:
             pass        # the branch already exists; commit onto it
 
+        diff_text = ""
+        try:
+            import difflib
+            old_content = client.read_file(project, path, target)
+            diff_lines = list(difflib.unified_diff(
+                old_content.splitlines(keepends=True),
+                new_content.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+            ))
+            if diff_lines:
+                diff_text = "\n\n```diff\n" + "".join(diff_lines[:100]) + "\n```"
+        except Exception:
+            pass
+
         client.commit(project, branch,
                       f"Fix #{issue_iid}: {summary or 'address the reported issue'}",
                       {path: new_content})
@@ -238,7 +253,7 @@ def gitlab_propose_fix(project, issue_iid, path, new_content, summary="",
         merge_request = client.open_merge_request(
             project, branch, target,
             title=f"Fix #{issue_iid}: {summary or 'address the reported issue'}",
-            description=(f"Closes #{issue_iid}\n\n{summary}\n\n"
+            description=(f"Closes #{issue_iid}\n\n{summary}{diff_text}\n\n"
                          "Prepared by VAVE. Please read the change before merging."))
     except GitLabError as error:
         return str(error)
