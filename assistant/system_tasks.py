@@ -265,16 +265,13 @@ def open_app(app_name):
     try:
         # Tier 1: Built-in known app aliases
         if system == "windows":
-            windows_apps = {
+            # Regular Win32 apps — "start app" works fine
+            win32_apps = {
                 "chrome": "start chrome",
                 "google chrome": "start chrome",
                 "notepad": "start notepad",
                 "calculator": "start calc",
                 "calc": "start calc",
-                "netflix": "start netflix:",
-                "spotify": "start spotify:",
-                "whatsapp": "start whatsapp:",
-                "discord": "start discord:",
                 "vscode": "start code",
                 "vs code": "start code",
                 "code": "start code",
@@ -295,7 +292,14 @@ def open_app(app_name):
                 "excel": "start excel",
                 "powerpoint": "start powerpnt",
             }
-            if query in windows_apps:
+            # Store/UWP apps — need PowerShell Start-Process with AppUserModelID
+            store_apps = {
+                "netflix": "Microsoft.Netflix_8wekyb3d8bbwe!Netflix",
+                "spotify": "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify",
+                "whatsapp": "5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App",
+                "discord": "DiscordInc.Discord_8wekyb3d8bbwe!Discord",
+            }
+            if query in win32_apps or query in store_apps:
                 # If window is already open, activate it instead of launching a duplicate blank window
                 target_cls = None  # initialize before try so it's always defined below
                 try:
@@ -309,10 +313,15 @@ def open_app(app_name):
                     pass
 
                 speak(f"Opening {display_name}")
-                cmd = windows_apps[query]
-                if not cmd.startswith("start "):
-                    cmd = f"start {cmd}"
-                os.system(cmd)
+                if query in store_apps:
+                    # Launch Store/UWP app via PowerShell
+                    aumid = store_apps[query]
+                    os.system(f'powershell -Command "Start-Process \'shell:AppsFolder\\{aumid}\'"')
+                else:
+                    cmd = win32_apps[query]
+                    if not cmd.startswith("start "):
+                        cmd = f"start {cmd}"
+                    os.system(cmd)
 
                 # Wait for the launched window to be ready and activated
                 verified_win = None
