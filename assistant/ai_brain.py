@@ -2795,8 +2795,11 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                                 (args_dict or {}).items(), key=str)))
                             action_counts[signature] = action_counts.get(
                                 signature, 0) + 1
-                            if (action_counts[signature] >= _REPEAT_LIMIT
-                                    and signature not in redirected):
+                            # Keep pushing every time past the limit, not just
+                            # once: a small model that ignored the first nudge
+                            # went on to repeat the same dead click five more
+                            # times when the nudge was only issued once.
+                            if action_counts[signature] >= _REPEAT_LIMIT:
                                 redirected.add(signature)
                                 stalled = func_name
                         result_str = str(result) if result is not None else "Success"

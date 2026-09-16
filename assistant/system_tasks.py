@@ -1713,19 +1713,38 @@ def click_element(name, window_title=None):
         x = rect.left + (rect.width() // 2)
         y = rect.top + (rect.height() // 2)
 
-        # Prefer direct programmatic InvokePattern if supported
-        invoked = False
+        # Chromium, Edge PWAs, Electron and friends expose an accessibility
+        # tree but ignore InvokePattern: it reports success while the page
+        # never moves. That is how clicking a Netflix profile "worked" eight
+        # times in a row without the screen changing. Those surfaces do act on
+        # a real mouse click at the element's centre, so web-backed controls
+        # get one; native controls keep the cheaper InvokePattern.
         try:
-            pattern = target.GetInvokePattern()
-            if pattern:
-                pattern.Invoke()
-                invoked = True
+            framework = str(target.GetFrameworkId() or "").lower()
         except Exception:
-            invoked = False
+            framework = ""
+        try:
+            window_class = str(getattr(window, "ClassName", "") or "").lower()
+        except Exception:
+            window_class = ""
+        web_backed = ("chrome" in framework or "electron" in framework
+                      or "chrome" in window_class)
 
-        if not invoked:
+        invoked = False
+        if web_backed:
             pyautogui = _get_pyautogui()
             pyautogui.click(x, y)
+        else:
+            try:
+                pattern = target.GetInvokePattern()
+                if pattern:
+                    pattern.Invoke()
+                    invoked = True
+            except Exception:
+                invoked = False
+            if not invoked:
+                pyautogui = _get_pyautogui()
+                pyautogui.click(x, y)
         kind = target.ControlTypeName.replace("Control", "")
 
         # Closed-loop verification: check if focus switched or state transitioned
