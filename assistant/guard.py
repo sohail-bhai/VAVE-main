@@ -301,7 +301,21 @@ _DESTRUCTIVE_REQUEST_PATTERNS = re.compile(
     r"|"
     r"(?:drop\s+(?:all|every|the|my)\s+(?:tables?|databases?|data))"
     r"|"
-    r"(?:sudo\s+rm\s+-[a-zA-Z]*[rfRF])",
+    r"(?:sudo\s+rm\s+-[a-zA-Z]*[rfRF])"
+    r"|"
+    # Hypothetical/indirect phrasing: "what if I asked you to delete..."
+    r"(?:(?:what|how|what(?:'s| is)|wanna|want to)\s+.*?\s+"
+    r"(?:delete|remove|erase|wipe|clean|clear|destroy|nuke|format))\s+"
+    r".*?"
+    r"(?:all|every|entire|whole|my|everything)\s*"
+    r"(?:files?|data|documents?|drive|disk|computer|laptop)?"
+    r"|"
+    # "can you delete" / "will you delete" / "help me delete" / "go delete"
+    r"(?:(?:can|could|will|would|shall|please|help\s+me|go)\s+"
+    r"(?:you\s+)?(?:delete|remove|erase|wipe|clean|destroy|nuke|format))"
+    r".*?"
+    r"(?:all|every|my|the)\s+"
+    r"(?:files?|data|documents?|drive|disk|everything)",
     re.IGNORECASE,
 )
 

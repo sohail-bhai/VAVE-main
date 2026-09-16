@@ -330,6 +330,19 @@ def open_app(app_name):
                 if verified_win:
                     win_name = getattr(verified_win, "Name", display_name) or display_name
                     return f"Successfully opened {display_name} (Verified active window: '{win_name}')."
+
+                # Fallback: if a web-capable app didn't open, try its website
+                _web_fallbacks = {
+                    "netflix": "https://www.netflix.com/browse",
+                    "spotify": "https://open.spotify.com",
+                    "discord": "https://discord.com/app",
+                    "whatsapp": "https://web.whatsapp.com",
+                }
+                if query in _web_fallbacks:
+                    speak(f"{display_name} app not found, opening in browser.")
+                    webbrowser.open(_web_fallbacks[query])
+                    return f"Opened {display_name} in browser."
+
                 return f"Action sent for {display_name}; effect unconfirmed."
 
         elif system == "darwin":
