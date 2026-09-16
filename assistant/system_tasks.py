@@ -331,16 +331,31 @@ def open_app(app_name):
                     win_name = getattr(verified_win, "Name", display_name) or display_name
                     return f"Successfully opened {display_name} (Verified active window: '{win_name}')."
 
-                # Fallback: if a web-capable app didn't open, try its website
-                _web_fallbacks = {
+                # Native app didn't open — fall back to browser if a web URL exists
+                websites = get_setting("websites", {})
+                all_web = {**websites, **{
+                    "youtube": "https://www.youtube.com",
                     "netflix": "https://www.netflix.com/browse",
                     "spotify": "https://open.spotify.com",
                     "discord": "https://discord.com/app",
                     "whatsapp": "https://web.whatsapp.com",
-                }
-                if query in _web_fallbacks:
+                    "telegram": "https://web.telegram.org",
+                    "reddit": "https://www.reddit.com",
+                    "twitter": "https://twitter.com",
+                    "x": "https://x.com",
+                    "instagram": "https://www.instagram.com",
+                    "facebook": "https://www.facebook.com",
+                    "linkedin": "https://www.linkedin.com",
+                    "chatgpt": "https://chatgpt.com",
+                    "github": "https://github.com",
+                    "gmail": "https://mail.google.com",
+                    "twitch": "https://www.twitch.tv",
+                    "prime video": "https://www.primevideo.com",
+                    "amazon": "https://www.amazon.com",
+                }}
+                if query in all_web:
                     speak(f"{display_name} app not found, opening in browser.")
-                    webbrowser.open(_web_fallbacks[query])
+                    webbrowser.open(all_web[query])
                     return f"Opened {display_name} in browser."
 
                 return f"Action sent for {display_name}; effect unconfirmed."
