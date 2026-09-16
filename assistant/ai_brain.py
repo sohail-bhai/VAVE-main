@@ -2408,14 +2408,31 @@ def _describe_performed(performed, limit=12):
 def _remaining_work(request, performed, model_name=None):
     """What is left of `request` after `performed`, or None when it is done.
 
-    The check is a separate turn with no tools, so it costs one short call and
-    cannot itself set anything running. It is only worth making when the
-    request asked for more than one action.
+    Deterministic step-tracking first — no LLM call when the mapping is clear.
+    Falls back to an LLM verdict only when tool calls don't obviously map to
+    steps, so the common case is fast and the edge case is still correct.
     """
     steps = split_steps(request)
     if len(steps) < 2:
         return None
 
+    # Count non-inspection tool calls as completed steps (sequential mapping:
+    # first tool call = step 1, second = step 2, etc.). Inspection-only calls
+    # (browser_elements, list_windows, read_screen) don't count because they
+    # don't advance the task — they just gather info.
+    acting_calls = sum(1 for name, _ in performed if name not in INSPECTION_TOOLS)
+
+    if acting_calls >= len(steps):
+        return None
+
+    remaining_steps = steps[acting_calls:]
+    if remaining_steps:
+        next_step = remaining_steps[0]
+        if len(remaining_steps) > 1:
+            return f"{next_step} (then {len(remaining_steps) - 1} more)"
+        return next_step
+
+    # Ambiguous: fall back to LLM verdict
     verdict = query_local_llm_chat(
         [
             {"role": "system", "content": (
@@ -2441,8 +2458,6 @@ def _remaining_work(request, performed, model_name=None):
 
     _, _, rest = answer.partition(":")
     remaining = (rest or answer).strip()
-    # A model that answers with the whole request again is not telling us
-    # anything; treat that as finished rather than looping on it.
     if not remaining or remaining.lower() == str(request).strip().lower():
         return None
     return remaining[:200]
