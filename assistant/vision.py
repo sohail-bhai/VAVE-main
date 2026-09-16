@@ -97,6 +97,18 @@ def read_screen_text():
         current_pid = os.getpid()
         candidates = []
 
+        # Chromium does not publish its page to automation until a client asks.
+        # Without this nudge a browser reads back as empty however much is on it.
+        try:
+            from assistant.system_tasks import _is_chromium_window, _nudge_accessibility
+            import time as _t
+            fg_win = auto.GetForegroundControl()
+            if fg_win is not None and _is_chromium_window(fg_win):
+                _nudge_accessibility(fg_win)
+                _t.sleep(0.4)
+        except Exception:
+            pass
+
         # Priority 1: Check known document/editor windows directly (Notepad, etc.)
         for target_class in ("Notepad", "Notepad_Desktop_Old"):
             np = auto.WindowControl(searchDepth=1, ClassName=target_class)

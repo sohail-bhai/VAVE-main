@@ -1473,6 +1473,9 @@ def get_clickable_elements(window_title=None):
             if not active_window:
                 active_window = auto.GetRootControl()
 
+        # Chromium keeps its page hidden until asked; flip it on first.
+        _prepare_window_for_scan(active_window)
+
         elements = []
         # Walk deep enough to reach real controls. Modern apps (Chrome, Electron,
         # WinUI) bury their buttons well below depth 4, which is why shallow
@@ -1615,6 +1618,10 @@ def click_element(name, window_title=None):
             activate_window(window.NativeWindowHandle)
             import time
             time.sleep(0.15)
+
+        # Same Chromium caveat as the scan: the page's controls only exist
+        # once the window has agreed to publish them.
+        _prepare_window_for_scan(window)
 
         lowered = wanted.lower()
         alt_words = {
@@ -1825,6 +1832,49 @@ _CONSOLE_ALIASES = ("cmd", "terminal", "command prompt", "powershell", "console"
 def _is_console_window(window):
     cls = str(getattr(window, "ClassName", "") or "").lower()
     return any(c in cls for c in _CONSOLE_WINDOW_CLASSES)
+
+
+def _is_chromium_window(window):
+    """True for Edge/Chrome/Electron and PWAs built on them."""
+    cls = str(getattr(window, "ClassName", "") or "").lower()
+    return "chrome_widgetwin" in cls or "chromium" in cls
+
+
+def _nudge_accessibility(window):
+    """Ask a Chromium window to switch its accessibility tree on.
+
+    Chromium keeps the renderer's accessibility engine off until a client
+    asks for it, so UI automation only ever saw the browser chrome - a
+    Netflix window exposed Edge's own toolbar "Profile 1" button and nothing
+    from the page. A single WM_GETOBJECT with OBJID_CLIENT flips the engine
+    on, after which the page and every control on it are visible.
+    """
+    try:
+        hwnd = getattr(window, "NativeWindowHandle", None)
+        if not hwnd:
+            return
+        import ctypes
+        user32 = ctypes.windll.user32
+        result = ctypes.c_ssize_t(0)
+        user32.SendMessageTimeoutW(
+            ctypes.c_void_p(hwnd),
+            0x003D,                 # WM_GETOBJECT
+            0,
+            ctypes.c_ssize_t(-4),   # OBJID_CLIENT
+            0x0002,                 # SMTO_ABORTIFHUNG
+            1500,
+            ctypes.byref(result),
+        )
+    except Exception as e:
+        logger.debug(f"[Vision] Accessibility nudge note: {e}")
+
+
+def _prepare_window_for_scan(window):
+    """Make a window's contents visible to UI automation before walking it."""
+    if window is not None and _is_chromium_window(window):
+        _nudge_accessibility(window)
+        import time
+        time.sleep(0.4)   # let the renderer build the tree
 
 
 def _find_window(title):
