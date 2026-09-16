@@ -1813,6 +1813,20 @@ def list_windows():
         return f"Failed to list windows: {e}"
 
 
+_CONSOLE_WINDOW_CLASSES = (
+    "cascadia_hosting_window_class", "consolewindowclass", "mintty",
+)
+
+# Words that legitimately mean "the terminal", so the console exclusion below
+# does not block them.
+_CONSOLE_ALIASES = ("cmd", "terminal", "command prompt", "powershell", "console")
+
+
+def _is_console_window(window):
+    cls = str(getattr(window, "ClassName", "") or "").lower()
+    return any(c in cls for c in _CONSOLE_WINDOW_CLASSES)
+
+
 def _find_window(title):
     """Best-effort lookup of a top-level window by (partial) title or app alias."""
     _ensure_com()
@@ -1825,15 +1839,21 @@ def _find_window(title):
         if w.ControlType == auto.ControlType.WindowControl and w.ProcessId != current_pid:
             windows.append(w)
 
+    # A terminal's title is its command line, which can contain any word - a
+    # probe run as `python probe.py Netflix` made `_find_window("Netflix")`
+    # match the console itself. Terminals only answer to terminal names.
+    def eligible(w):
+        return wanted in _CONSOLE_ALIASES or not _is_console_window(w)
+
     # 1. Exact title match
     for w in windows:
-        if (w.Name or "").strip().lower() == wanted:
+        if (w.Name or "").strip().lower() == wanted and eligible(w):
             return w
 
     # 2. Substring title match
     for w in windows:
         name_lower = (w.Name or "").strip().lower()
-        if name_lower and wanted in name_lower:
+        if name_lower and wanted in name_lower and eligible(w):
             return w
 
     # 3. Known app aliases (terminal/cmd, notepad, calc, etc.)
