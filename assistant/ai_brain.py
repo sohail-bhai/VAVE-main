@@ -2238,22 +2238,24 @@ def select_model(instruction=""):
     text = str(instruction or "").lower()
 
     # --- Deep tier: project-level, coding, complex analysis ---
-    if deep and not _is_unserviceable(deep) and _can_run_deep():
-        if _is_installed(deep):
-            deep_score = sum(1 for hint in _DEEP_HINTS if hint in text)
-            word_count = len(text.split())
-            # Multi-step compound tasks escalate to deep
-            multi_step = ("and then" in text or "after that" in text
-                          or "step by step" in text or text.count(" and ") >= 2)
-            if deep_score >= 2 or (deep_score >= 1 and word_count >= 20) or multi_step:
-                return deep
-        elif not _is_installed(deep):
-            _write_off_model(deep, f"{deep} is not installed")
+    text = str(instruction or "").lower()
+    deep_score = sum(1 for hint in _DEEP_HINTS if hint in text)
+    word_count = len(text.split())
+    multi_step = ("and then" in text or "after that" in text
+                  or "step by step" in text or text.count(" and ") >= 2)
+    wants_deep = deep_score >= 1 or multi_step
+
+    if deep and not _is_unserviceable(deep) and _is_installed(deep) and _can_run_deep():
+        if wants_deep:
+            return deep
+    elif not deep or _is_unserviceable(deep) or not _can_run_deep():
+        # Deep not available — escalate deep-level tasks to smart instead
+        pass  # fall through to smart check below
 
     # --- Smart tier: moderate reasoning, conversational ---
     if smart and not _is_unserviceable(smart):
         if _is_installed(smart) and get_setting("model_escalation_enabled", True):
-            if any(hint in text for hint in _ESCALATION_HINTS):
+            if any(hint in text for hint in _ESCALATION_HINTS) or wants_deep:
                 return smart
             # Long reasoning prompts (> 30 words) escalate if not interactive
             interactive_keywords = (
