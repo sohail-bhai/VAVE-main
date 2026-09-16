@@ -1152,6 +1152,10 @@ problem — it could not see the screen.** Details below.
 | `5d9ea80` | force Chromium accessibility (`WM_GETOBJECT`) | D8 |
 | `e14abd4` | robust nudge: all process HWNDs + foreground | D8 |
 | `a1e254a` | screenshot-OCR click route via RapidOCR | D9 |
+| `990d71c` | OCR page entries in scans, chrome exclusion from scans, chrome-guard,
+  profile trigger, prompt rule, OCR hint in stall redirect, OCR rank 4,
+  `take_screenshot(analyze=…)`, both regression files (D4+D8), eager vision
+  imports (sys.modules wipe trap) | D8, D4, O4 |
 
 ### 15.2 Defects
 

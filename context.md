@@ -262,17 +262,16 @@ Driven by `plan.md`. Completed:
 - Or set `"llm_model_deep": "phi4"` when ready, `""` = disabled
 
 ### TODO (Next Session)
-1. ✅ Full test suite passed (756 tests) — 4 commits total
-2. ✅ Safety guard for destructive natural-language requests
-3. ✅ Vision pipeline: auto-analyze screenshots with moondream VLM
-4. ✅ Speed up chaining: deterministic step tracking (no LLM calls)
-5. ✅ Edge cases tested (15/15)
-6. Live voice test with `python main.py` (YOU need to run this)
-7. Test phi4 when RAM is freed up (currently 5GB free, needs ~8GB)
+1. ✅ Section 15 defects resolved with solutions (commit `990d71c`)
+2. ✅ Regression files: `tests/test_destructive_requests.py` (7),
+   `tests/test_chromium_click_path.py` (19) — suite **796 green**
+3. ✅ D8 closed: OCR page entries + chrome exclusion, live-proven, Sohail active
+4. ✅ O4 done: `take_screenshot(analyze=…)`; O1 still blocked (5.1GB free)
+5. Live voice test with `python main.py` (YOU need to run this)
+6. Next builds when requested: S3 dry-run, S5 `vave doctor` (plan §14)
 
 ### Git State
 - Branch: `sohail`, remote: `https://github.com/sohail-bhai/VAVE-main.git`
-- Last commit: OCR click route via RapidOCR (option A, 768 tests green)
-- Stack: 3-tier routing, safety guard (direct + hypothetical), vision
-  auto-analyze, deterministic chaining, Store-app launcher, Chromium
-  a11y nudge, console-safe window matching, physical clicks for web
+- Last commit: `990d71c` (close D8 end-to-end, both regression files)
+- Note: `config.json` left uncommitted (user runtime state); `test_scaffold.py`
+  restored after an over-broad temp cleanup deleted it
