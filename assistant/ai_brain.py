@@ -1573,7 +1573,7 @@ LLM_TOOLS = WEB_TOOLS + [
         "type": "function",
         "function": {
             "name": "take_screenshot",
-            "description": "Captures a screenshot of the user's primary display and saves it.",
+            "description": "Captures a screenshot and returns both the file path and a Vision AI analysis of what is on screen (windows, text, UI elements).",
             "parameters": {
                 "type": "object",
                 "properties": {}

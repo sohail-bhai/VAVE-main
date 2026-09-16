@@ -650,6 +650,20 @@ def take_screenshot():
 
         speak("Screenshot saved successfully.")
         logger.info(f"Saved at: {screenshot_path}")
+
+        # Auto-analyze with VLM if available so the model can "see" the screen
+        try:
+            from assistant.vision import analyze_screen as _vs_analyze
+            analysis = _vs_analyze(
+                "Briefly describe what is on this screenshot. "
+                "List visible windows, key text, and UI elements.",
+                image_path=str(screenshot_path)
+            )
+            if analysis and not analysis.startswith("Error"):
+                return f"{screenshot_path}\n\nScreen analysis:\n{analysis}"
+        except Exception:
+            pass
+
         return str(screenshot_path)
 
     except Exception as error:
