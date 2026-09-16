@@ -2163,6 +2163,45 @@ _ESCALATION_HINTS = (
     "and then", "after that", "step by step",
 )
 
+# --- Deep-tier hints: tasks that need serious reasoning, coding, or project work.
+# These route to phi4:14b when available.  Speed is not critical here;
+# quality is.
+_DEEP_HINTS = (
+    "implement", "build", "create a project", "scaffold", "full stack",
+    "backend", "frontend", "database", "schema", "api design", "architecture",
+    "algorithm", "data structure", "optimize", "performance", "profiling",
+    "refactor the", "rewrite the", "migration", "test suite", "unit test",
+    "integration test", "deploy", "ci/cd", "docker", "kubernetes",
+    "machine learning", "neural network", "train", "dataset", "pipeline",
+    "write a script", "write a module", "write a function", "write a class",
+    "write a cli", "write an api", "write a web app", "write a tool",
+    "design pattern", "code review", "pull request", "merge request",
+    "gitlab", "github", "repository", "branch", "commit",
+    "long document", "complex analysis", "multi-step", "detailed plan",
+    "comprehensive", "in-depth", "thorough", "exhaustive",
+    "compare and contrast", "pros and cons", "trade-off", "tradeoff",
+    "write a detailed", "write a comprehensive", "write an essay",
+    "write a report", "write documentation", "write a blog",
+    "research paper", "literature review", "technical specification",
+)
+
+
+def _available_ram_gb():
+    """Return free system RAM in GB, or 0 if we cannot tell."""
+    try:
+        import psutil
+        return psutil.virtual_memory().available / (1024 ** 3)
+    except Exception:
+        return 0
+
+
+def _can_run_deep():
+    """True when there is enough free RAM to load the deep model safely."""
+    free = _available_ram_gb()
+    if free <= 0:
+        return True  # unknown = assume yes, let Ollama fail naturally
+    return free >= 6.0  # phi4 at Q4 needs ~8GB; 6GB free + Ollama overhead
+
 
 def _pinned_model():
     """The model the user asked for by name, or None if they never said.
@@ -2184,46 +2223,62 @@ def _is_unserviceable(model):
 def select_model(instruction=""):
     """The model to use for this request.
 
-    Small and quick by default; the larger one when the request calls for
-    reasoning rather than a keystroke. A model already known to be unloadable
-    is never chosen, so escalation cannot strand a task.
+    Three tiers: fast (3B, GPU, instant) → smart (4B, partial GPU) →
+    deep (14B, CPU, slow but strong).  A model already known to be
+    unloadable is never chosen, so escalation cannot strand a task.
     """
     fast = str(get_setting("llm_model_fast", "qwen2.5:3b") or "qwen2.5:3b")
     smart = str(get_setting("llm_model_smart", "") or "")
+    deep = str(get_setting("llm_model_deep", "") or "")
 
     pinned = _pinned_model()
     if pinned:
         return fast if _is_unserviceable(pinned) else pinned
 
-    if (not smart or _is_unserviceable(smart)
-            or not get_setting("model_escalation_enabled", True)):
-        return fast
-
-    if not _is_installed(smart):
-        # Not installed is settled, unlike a blank answer under memory pressure,
-        # so it goes straight past the tolerance instead of being counted.
-        _write_off_model(smart, f"{smart} is not installed")
-        return fast
-
     text = str(instruction or "").lower()
-    if any(hint in text for hint in _ESCALATION_HINTS):
-        return smart
-    # Long reasoning prompts (> 30 words) escalate ONLY if not an interactive automation task
-    interactive_keywords = ("open ", "click ", "type ", "press ", "browse ", "play ", "close ", "run ", "launch ")
-    if len(text.split()) >= 30 and not any(kw in text for kw in interactive_keywords):
-        return smart
+
+    # --- Deep tier: project-level, coding, complex analysis ---
+    if deep and not _is_unserviceable(deep) and _can_run_deep():
+        if _is_installed(deep):
+            deep_score = sum(1 for hint in _DEEP_HINTS if hint in text)
+            word_count = len(text.split())
+            # Multi-step compound tasks escalate to deep
+            multi_step = ("and then" in text or "after that" in text
+                          or "step by step" in text or text.count(" and ") >= 2)
+            if deep_score >= 2 or (deep_score >= 1 and word_count >= 20) or multi_step:
+                return deep
+        elif not _is_installed(deep):
+            _write_off_model(deep, f"{deep} is not installed")
+
+    # --- Smart tier: moderate reasoning, conversational ---
+    if smart and not _is_unserviceable(smart):
+        if _is_installed(smart) and get_setting("model_escalation_enabled", True):
+            if any(hint in text for hint in _ESCALATION_HINTS):
+                return smart
+            # Long reasoning prompts (> 30 words) escalate if not interactive
+            interactive_keywords = (
+                "open ", "click ", "type ", "press ", "browse ",
+                "play ", "close ", "run ", "launch ",
+            )
+            if len(text.split()) >= 30 and not any(kw in text for kw in interactive_keywords):
+                return smart
+        elif not _is_installed(smart):
+            _write_off_model(smart, f"{smart} is not installed")
+
+    # --- Fast tier: default for simple/desktop/conversational ---
     return fast
 
 
 def chat_with_fallback(messages, model=None, tools=None, instruction=""):
-    """Ask `model`, dropping to the fast model if it cannot answer at all.
+    """Ask `model`, escalating through tiers if a model fails.
 
-    A large model that will not fit in memory returns nothing, and without this
-    the task simply dies. If fast model returns nothing, try smart model as backup.
+    Flow: chosen → if no reply, try next tier → if still nothing, try the
+    tier after that.  A model already known not to load is skipped entirely.
     """
     chosen = model or select_model(instruction)
     fast = str(get_setting("llm_model_fast", "qwen2.5:3b") or "qwen2.5:3b")
     smart = str(get_setting("llm_model_smart", "") or "")
+    deep = str(get_setting("llm_model_deep", "") or "")
 
     # Already known not to load. Asking again costs a full timeout per step.
     if _is_unserviceable(chosen):
@@ -2231,23 +2286,29 @@ def chat_with_fallback(messages, model=None, tools=None, instruction=""):
 
     reply = query_local_llm_chat(messages, model=chosen, tools=tools)
     if reply:
+        # Only clear strikes for the model that actually answered —
+        # not for fallbacks that succeeded with a different model.
         _unavailable_models.pop(chosen, None)
         return reply
 
-    # If fast model returned nothing or failed, try escalating to smart model if available
-    if chosen == fast and smart and smart != fast:
-        if (not _is_unserviceable(smart) and _is_installed(smart)
-                and get_setting("model_escalation_enabled", True)):
-            logger.info(f"[VAVE] {fast} produced no reply; trying smart model {smart}...")
-            smart_reply = query_local_llm_chat(messages, model=smart, tools=tools)
-            if smart_reply:
-                return smart_reply
-        return reply
-
-    # If smart model timed out or failed, fall back to fast model
+    # The chosen model failed — record a strike even if a fallback succeeds,
+    # so a persistently broken model gets skipped sooner.
     if not _is_unserviceable(chosen):
-        misses = _unavailable_models.get(chosen, 0) + 1
-        _unavailable_models[chosen] = misses
+        _unavailable_models[chosen] = _unavailable_models.get(chosen, 0) + 1
+
+    # --- Escalation chain: fast → smart → deep ---
+    for next_model in [fast, smart, deep]:
+        if (next_model
+                and next_model != chosen
+                and not _is_unserviceable(next_model)
+                and _is_installed(next_model)
+                and get_setting("model_escalation_enabled", True)):
+            logger.info(f"[VAVE] {chosen} produced no reply; trying {next_model}...")
+            fallback_reply = query_local_llm_chat(messages, model=next_model, tools=tools)
+            if fallback_reply:
+                return fallback_reply
+
+    # All tiers failed — return whatever the fast model says as last resort
     return query_local_llm_chat(messages, model=fast, tools=tools)
 
 
@@ -2609,6 +2670,24 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
 
         if not message:
             return None
+
+        # Guard against the model leaking its own system prompt as the response.
+        # Small models sometimes echo instructions instead of answering.
+        _msg_content = str(message.get("content", ""))
+        if _msg_content and ("CRITICAL RULE" in _msg_content
+                             or "NEVER ask for permission" in _msg_content
+                             or "You are VAVE" in _msg_content):
+            logger.info("[VAVE] Model leaked system prompt; retrying with fresh context.")
+            conversation.append({
+                "role": "system",
+                "content": (
+                    "You leaked your own instructions as a reply. "
+                    "Stop doing that. Answer the user's question directly "
+                    "with a short, friendly sentence. No tool calls, no "
+                    "explanations about rules."
+                ),
+            })
+            continue
 
         # Append Assistant's response to history
         conversation.append(message)

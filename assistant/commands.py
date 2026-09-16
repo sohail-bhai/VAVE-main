@@ -112,25 +112,35 @@ def handle_model_switch_command(command):
     """
     Hardcoded model switcher to bypass the LLM.
     Example: 'switch to high performance', 'switch to normal mode', or 'switch model qwen2.5:3b'
+    Three tiers: fast (qwen2.5:3b), smart (qwen3:4b), deep (phi4).
     """
-    if "switch to high performance" in command:
-        update_setting("llm_model", "qwen3.5:9b")
-        speak("Hardcoded override successful. AI brain is now using high performance model (qwen3.5:9b).")
+    if "switch to high performance" in command or "switch to deep" in command:
+        update_setting("llm_model", "phi4")
+        speak("Switched to deep reasoning model (phi4).")
         return True
-        
-    if "switch to normal mode" in command:
+
+    if "switch to smart" in command:
+        update_setting("llm_model", "qwen3:4b")
+        speak("Switched to smart model (qwen3:4b).")
+        return True
+
+    if "switch to normal mode" in command or "switch to fast" in command:
         update_setting("llm_model", "qwen2.5:3b")
-        speak("Hardcoded override successful. AI brain is now using normal mode model (qwen2.5:3b).")
+        speak("Switched to fast model (qwen2.5:3b).")
+        return True
+
+    if "switch to auto" in command or "auto mode" in command:
+        update_setting("llm_model", "")
+        speak("Auto mode enabled. I will pick the right model for each task.")
         return True
 
     if "switch model" in command or "change model" in command:
-        # try to extract the model name
         command_parts = command.replace("change model to", "switch model").split("switch model")
         if len(command_parts) > 1:
             new_model = command_parts[1].strip()
             if new_model:
                 update_setting("llm_model", new_model)
-                speak(f"Hardcoded override successful. AI brain is now using model: {new_model}")
+                speak(f"Switched to model: {new_model}")
                 return True
     return False
 

@@ -25,7 +25,8 @@ DEFAULT_CONFIG = {
     # planning, research, code, anything with several moving parts. Escalation
     # is automatic, and falls back to the fast model if the big one won't load.
     "llm_model_fast": "qwen2.5:3b",
-    "llm_model_smart": "qwen3.5:9b",
+    "llm_model_smart": "qwen3:4b",
+    "llm_model_deep": "",
     "model_escalation_enabled": True,
     # Choosing a tool is not a creative act. Ollama's own default of 0.8 made
     # the same request pick a different action on each run.
