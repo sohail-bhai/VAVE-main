@@ -864,3 +864,522 @@ appear in the GUI status bar and on the phone via SSE.
 | 2026-09-15 | Phase 4 complete: `assistant/home.py` over the HA REST API (states, verified control), `home.read`/`home.control` capabilities, brain + guard registration, `GET /api/home/devices` + approval-held `POST /api/home/control`. 14 new tests. |
 | 2026-09-15 | Phase 5 complete: `pyproject.toml` (v1.3.0, `vave` console script), subcommands `gui/serve/once/smoke/pair`, clean-room `pip install .` + `vave smoke` 11/11 verified, README pip flow. 9 new tests. Temp venvs removed (C: critically low at ~5 GB free — user cleanup needed). |
 | 2026-09-15 | ALL PHASES 2-5 DONE. 756 tests green locally and on GitHub CI (`success` on `8a28828`). Commits: `92fe7fd` (PWA), `a3042aa` (sweep/backup/journal), `3c6deb1` (Home Assistant), `8a28828` (packaging). |
+| 2026-09-16 | Reliability sprint after live-testing: 3-tier model routing, safety guard (direct + hypothetical destructive requests), vision auto-analyze, deterministic step tracking, Store/UWP launcher, Chromium accessibility nudge, console-safe window matching, physical clicks for web surfaces, screenshot-OCR click route (RapidOCR). 768 green. |
+| 2026-09-16 | Section 14 added: DeepSeek suggestions for leveling VAVE into a true system (brainstorm only, no code). |
+| 2026-09-16 | Section 15 added: live-test defect register with root causes, fixes, commits, and verification steps for the next agent. |
+
+---
+
+## 14. DeepSeek Suggestions — Leveling VAVE Into a True System
+
+> Brainstorm only. No code is written from this section until the user picks an
+> item. It exists so the next agent can propose and scope work without
+> re-deriving the reasoning.
+
+### 14.0 Guiding principles
+
+1. **The hard part is grounding, not intelligence.** The 2026-09-16 live tests
+   proved it: the 3B model picked the right tool and the right action, then
+   failed because it could not *see* the page. A bigger model calling the same
+   `click_element` on an invisible window fails identically. Every headline
+   suggestion below is about giving the model a truthful world to act on.
+2. **Actions must be verifiable, or they are guesses.** "Clicked X" is not a
+   result; "clicked X and the scene changed / did not change" is.
+3. **A control plane is judged by its worst day, not its demo.** Dry runs,
+   tamper-evident audit, degraded-mode honesty, interrupt-safe tasks.
+4. **Fit the hardware.** RTX 3050 4GB + 16GB RAM is the target. Nothing here
+   may assume a frontier model.
+
+---
+
+### TIER S — Highest leverage, builds directly on what just shipped
+
+#### S1. One grounded World Model: `perceive()` instead of tool roulette
+**What.** A new `assistant/grounding.py` exposing `perceive(window=None) ->
+Scene` and `act(element_id, action)`. `Scene` merges the three senses VAVE
+already has but never combines: the UIAutomation tree, screenshot OCR lines
+(`vision.ocr_screen`), and an optional VLM caption (`vision.analyze_screen`).
+It returns one ranked list of interactive elements, each with a **stable id**
+(`w3.e7`), label, kind, bounding box, and source tag (`uia` / `ocr` / `vlm`).
+
+**Why it stands out.** This is the single biggest differentiator. Today
+`click_element`, `click_at`, `find_and_click_text`, `read_screen` and
+`get_clickable_elements` each guess independently, so the model sees four
+inconsistent views of one screen. The "Edge toolbar button named `Profile 1
+Profile`" bug is a *class* of failure that only a fused view removes. Stable
+ids also kill label collisions: the model acts on `w3.e7`, not on a name that
+might match three controls.
+
+**Lands in.** New `assistant/grounding.py`; `system_tasks` click/read tools
+become thin wrappers over `perceive`/`act`; `ai_brain` tool schemas collapse
+toward `perceive_window`, `act`, `read_scene`.
+
+**Effort/risk.** Large (2-3 sessions). Risk: tree walks and OCR are slow, so
+the Scene must cache per window handle + revision, and only re-scan on act.
+
+#### S2. Scene-diff after every action (make "nothing happened" machine-readable)
+**What.** Hash the Scene before and after each acting tool. Return a uniform
+result envelope: `{ok, changed: bool, delta, detail}`. "The screen is
+identical after your click" becomes a first-class signal the loop can react to
+instead of the current prose hint (`acted_since_look`).
+
+**Why it stands out.** Loop detection today is text-based inference. A real
+diff is exact: it ends the click-eight-times dead-end at the source, and feeds
+the retire-the-model-attempt logic in `_agent_loop` a trustworthy input.
+
+**Lands in.** `assistant/grounding.py` + the `performed` bookkeeping in
+`ai_brain._agent_loop`.
+
+**Effort/risk.** Medium, and it depends on S1.
+
+#### S3. Dry-run / rehearsal mode
+**What.** A global `dry_run` flag (config + CLI + a voice phrase "rehearse
+that"). In dry run the planner and agent loop execute normally, but every tool
+in `guard`'s `destructive` tier and every tool in `REACHES_OUTWARD` returns a
+**simulated** result ("WOULD delete files under C:\\Users\\...", "WOULD send
+email to alex@..."), and the run ends with a plan summary.
+
+**Why it stands out.** This is the direct answer to the user's live problem:
+"it is still very risky to use it for anything related to deleting files — I
+can't even safely test it." Dry run makes the *entire* automation stack
+testable against real commands with zero consequence, and it doubles as a
+trust feature ("show me what you'd do first").
+
+**Lands in.** `assistant/guard.py` (a `_dry_run` gate before `func(**kwargs)`),
+`bootstrap.py` config plumbing, `commands.py` phrase, `ai_brain` summary.
+
+**Effort/risk.** Small-to-medium, high value. Risk: some tools' *returns* are
+what later steps depend on, so simulated results must stay structurally real.
+
+#### S4. Episodic tool memory (procedural memory, not just facts)
+**What.** When a multi-step goal completes, store the successful tool sequence
+keyed by an embedding of the goal ("sign into netflix profile" -> `browse ->
+perceive -> act(profile tile) -> ...`). On a similar future goal, retrieve the
+top-k traces and inject them as few-shot exemplars / a suggested plan.
+
+**Why it stands out.** `memory.py` today stores *facts*. A 3B model with a
+concrete successful exemplar behaves far better than a 4B model starting cold
+— and it is the cheapest quality win available on 4GB VRAM. It also makes VAVE
+measurably improve with use, which is what "true system" means.
+
+**Lands in.** `assistant/memory.py` (new collection `task_traces`),
+`ai_brain._agent_loop` (retrieval + injection), `task_journal` (source of
+successful traces).
+
+**Effort/risk.** Medium. Risk: storing traces must reuse `audit.redact` so no
+secret or argument leaks into the vector store.
+
+#### S5. `vave doctor`
+**What.** One command that checks every subsystem and prints a pass/fail
+report with a fix hint per failure: Ollama reachable + which models present,
+fast/smart/deep tier readiness, mic + TTS availability, PyAudio, Playwright +
+Chromium, Tesseract/RapidOCR, uiautomation, `data/` writability, `secret.key`
+present, disk free, API port free, config schema version.
+
+**Why it stands out.** Support and first-run experience are what separate a
+project from a product. Today every failure mode ("Ollama is not running",
+"model not installed") is discovered mid-task by the user.
+
+**Lands in.** New `assistant/doctor.py`, `main.py` subcommand `vave doctor`.
+
+**Effort/risk.** Small. Pure reads; no side effects.
+
+#### S6. Tamper-evident audit ledger (hash chain)
+**What.** Each entry in `logs/audit.jsonl` stores `prev_hash` and
+`entry_hash = H(prev_hash || canonical(entry))`. Add `vave audit verify` (or
+`python -m assistant.audit verify`) that walks the chain and reports the first
+broken link.
+
+**Why it stands out.** VAVE already markets itself as a zero-trust control
+plane whose ledger is its memory of what it did. A ledger that cannot prove it
+was not edited is the missing half of that claim. Cheap to add, hard to fake.
+
+**Lands in.** `assistant/audit.py` (append path + verifier), `task_journal`
+readers that must tolerate legacy unhashed lines.
+
+**Effort/risk.** Small. Risk: must not break existing tail-read parsers
+(`recent_entries`, `get_weekly_failure_summary`).
+
+---
+
+### TIER A — Strong differentiators
+
+#### A1. Capability leases (kill approval fatigue)
+Per-call approvals are correct but exhausting, and exhaustion trains users to
+approve without reading. Add time-boxed / task-scoped grants: "allow
+`home.control` for this task" or "for 10 minutes", shown as a visible countdown
+in the GUI and on the phone, revoked by the stop switch. `policy.py` already
+has the allow/ask/deny shape; this adds a lease table + expiry.
+
+#### A2. Routine mining (observe, then offer)
+The control plane records every task in the ledger. Add a periodic pass that
+detects repeated manual sequences (open VS Code -> open terminal -> open docs,
+most weekday mornings) and *offers* to turn them into a routine or shortcut.
+Routines and shortcuts already exist — this is the missing "notice" step that
+makes proactivity concrete instead of generic.
+
+#### A3. Global command palette hotkey
+A tiny always-on-top intent box on a hotkey (e.g. `Ctrl+Space`), separate from
+the heavy GUI. Type or paste a goal; watch steps inline. This is the fastest
+human input channel and the one power users actually adopt. Keep it plain
+CustomTkinter per the repo rules — **no** web/Electron.
+
+#### A4. `vave trace` + task replay
+A human-readable timeline per task: step, tool, redacted args, duration,
+outcome, and the Scene-diff verdict from S2. Then `vave replay <task_id>` to
+re-run it in dry-run mode. Turns the audit ledger from a compliance artifact
+into a debugging tool.
+
+#### A5. Degraded-mode honesty
+At startup and on demand, detect which senses/brains are missing and *say so*:
+"No local brain — running the fixed command router only." "OCR unavailable —
+browsers may be read-only." Never let the user discover a missing subsystem by
+watching a task fail three steps in. Pairs with `vave doctor`.
+
+#### A6. Notification actions everywhere (not just approvals)
+The phone PWA can already approve/deny. Extend actionable notifications:
+**Retry**, **Cancel**, **Open on desktop**, **Snooze** — all over the existing
+`/api/notifications` + SSE. A control plane you cannot act on from your pocket
+is only half a control plane.
+
+#### A7. Low-confidence destructive-verb confirmation
+When ASR confidence is low on a destructive word (delete, format, shut down,
+wipe), ask before routing — even if the phrase is otherwise valid. Cheap use of
+the confidence data SpeechRecognition already returns; directly reduces the
+scariest failure mode.
+
+---
+
+### TIER B — Polish that reads as maturity
+
+- **B1. Model warm-keeping.** A light keep-alive ping on the active tier so the
+  first command after idle is not a cold load. Also set Ollama `keep_alive`
+  sensibly per tier.
+- **B2. Batch read-only tools.** One `perceive`/`read_scene` call instead of
+  five sequential inspections — fewer turns, less latency on a small model.
+- **B3. Idempotency keys for outward actions.** A retried `send_email` /
+  `control_device` must not double-fire. Store a short-lived key per logical
+  action in `control/store.py`.
+- **B4. Per-tool metrics.** Extend the control plane with a `/api/metrics`
+  text endpoint: call counts, error rate, p50/p95 latency per tool. Makes
+  "which tool is flaky" a data question.
+- **B5. Crash supervisor.** If the API or GUI dies, relaunch and report the
+  crash with the last 20 log lines. The system should not just stop.
+- **B6. Barge-in first-class.** The `interrupter` exists; make "user started
+  talking" always stop TTS mid-sentence, not only on a hotkey.
+- **B7. Follow-up listening window.** After a command, keep the mic open a few
+  seconds for "and also ...". Natural multi-part requests without re-waking.
+- **B8. Brief vs detailed reply mode.** A per-session verbosity setting, so a
+  "true system" can be terse on request.
+
+---
+
+### TIER C — Research / only with explicit sign-off
+
+- **C1. Fake-desktop CI harness.** A deterministic fake window tree + fake OCR
+  so the whole grounding/click stack is testable in CI without a display. Would
+  have caught the Chromium-blindness bug in unit tests.
+- **C2. VLM grounding calibration.** Teach `analyze_screen` to return
+  normalized coordinates ("the profile tile is at 0.37, 0.44") and calibrate
+  against known screens; a fallback sense when UIA and OCR both fail (icons,
+  images, canvas).
+- **C3. Durable swarm workers.** `swarm.py` sub-agents are in-process; persist
+  long-running helpers as control-plane agents that survive restarts.
+- **C4. Signed releases + `vave update --check`.** Release signing and an
+  in-app update check; PyInstaller remains explicitly out of scope.
+- **C5. Prompt-injection hardening at the planner.** Today taint is handled at
+  the guard. Also mark untrusted content at the planner so a plan is never
+  *derived* from page text, only from the user.
+
+---
+
+### Recommended sequence for the next session
+
+1. **S3 dry-run** — smallest change, directly unblocks safe live testing.
+2. **S5 `vave doctor`** — smallest change, biggest first-run/quality-of-life
+   win; also tells us the machine's real capability envelope.
+3. **S1 `perceive()` + S2 scene-diff** — the foundational grounding work; do it
+   as one phase with S1's tests.
+4. **S6 audit hash chain** — cheap, and it hardens the artifact everything else
+   is judged by.
+5. **S4 episodic memory** — after grounding is stable, so traces are worth
+   replaying.
+
+### Explicit non-goals (don't drift here)
+
+- No web/Electron/Node UI layers (repo rule); the palette is CustomTkinter.
+- No frontier-model or cloud-LLM dependency; the target is 3B-4B local.
+- No restructuring of `mobile/` (another developer's tree).
+- No weakening of `guard`/`confirm`/`audit`/`overwatch`; every item above must
+  route through them, not around them.
+
+---
+
+## 15. Live-Test Defect Register & Handoff (2026-09-16)
+
+> This is the handoff for the next coding agent. Section 14 is *ideas*; this
+> section is *what actually broke, why, what was done, and how to prove it*.
+> Every entry has a symptom the user saw, the real root cause found by
+> instrumenting, the fix commit, and a verification step. Read this before
+> touching pointer/vision/launcher code.
+
+### 15.0 Ground truth: what the user experienced
+
+The user ran the desktop GUI and hit, in order: a destructive "what would you
+do if I said delete my files" that went hunting through File Explorer; an
+"open netflix" that opened the Microsoft Store / a browser instead of the app;
+and "open netflix and open sohail profile" that looped forever clicking a
+button and never opened the profile. The net finding: **the model was not the
+problem — it could not see the screen.** Details below.
+
+### 15.1 Commit map (this session)
+
+| Commit | What it fixes | Defect |
+| --- | --- | --- |
+| `9d8ee72` | weather / list_windows / notes routing fast-paths | routing |
+| `174d2b9` | no tool calls for conversational input; `num_gpu` config | D2 |
+| `22d8849` | 3-tier model routing (fast/smart/deep) | D3 |
+| `11370fc` | 3-tier edge cases (thresholds, disabled tiers, strikes) | D3 |
+| `6f4845b` | block destructive natural-language requests | D4 |
+| `81cfff0` | screenshots auto-analyzed by the VLM | D5 |
+| `88b4853` | deterministic step tracking (no per-step LLM call) | D1 |
+| `4119dd4` | hypothetical destructive phrasing + Netflix browser fallback | D4, D6 |
+| `96baa44` | generic browser fallback when native app is missing | D6 |
+| `09bcd80` | Store/UWP apps launched via PowerShell | D6 |
+| `12e3fa9` | resolve the real Store AppID at runtime | D6 |
+| `3a5ff5e` | terminals excluded from window-title matching | D7 |
+| `bdd0697` | real mouse click for Chromium; stall nudge every repeat | D8 |
+| `5d9ea80` | force Chromium accessibility (`WM_GETOBJECT`) | D8 |
+| `e14abd4` | robust nudge: all process HWNDs + foreground | D8 |
+| `a1e254a` | screenshot-OCR click route via RapidOCR | D9 |
+
+### 15.2 Defects
+
+#### D1 — Multi-step tasks took 40-50s
+- **Symptom.** "Open netflix and pick a profile" took ~45s even on the fast
+  model.
+- **Root cause.** `_remaining_work()` made a *separate* LLM call after every
+  step just to ask "is it done?". A 3-step request cost ~7 model calls.
+- **Fix.** `88b4853`: deterministic sequential mapping (each non-inspection
+  tool call completes one step); the LLM verdict is only used on ambiguity.
+- **Verify.** `venv\Scripts\python.exe -m unittest tests.test_chained_tasks`
+  (20 tests). Watch a 3-step task in the log: model calls should be ~3, not ~7.
+
+#### D2 — Conversational input triggered tools
+- **Symptom.** "hello" / "what is 2+2" caused tool calls (`tell_date`, random
+  tools) instead of a plain answer.
+- **Root cause.** `select_tools()` offered tools for every input; the model
+  then felt obliged to call one.
+- **Fix.** `174d2b9`: conversational suppression (greetings, math, jokes,
+  knowledge questions get an empty tool list) + a "WHEN NOT TO USE TOOLS"
+  block in `get_system_prompt()`.
+- **Verify.** `select_tools("hello there")` returns `[]`;
+  `select_tools("open notepad")` returns tools.
+
+#### D3 — Single model, GPU crash, no fallback
+- **Symptom.** The default model (`qwen3.5:9b`) crashed the 4GB GPU.
+- **Root cause.** No tiering; a 9B model cannot run on this laptop.
+- **Fix.** `22d8849`, `11370fc`: fast (`qwen2.5:3b`, GPU) / smart (`qwen3:4b`,
+  partial GPU) / deep (opt-in, RAM-gated); rule-based classifier; escalation
+  with strike tracking; "switch to fast/smart/deep/auto" voice commands.
+- **OPEN (see 15.3 O1).** The deep tier (`phi4`) cannot load — RAM, not code.
+
+#### D4 — Destructive natural-language requests were not blocked
+- **Symptom.** "delete all my files" (and the hypothetical "what would you do
+  if I said delete my files") was attempted; the user saw File Explorer
+  hunting through documents and killed the process.
+- **Root cause.** `guard._DESTRUCTIVE_COMMAND_REGEX` only matched *shell*
+  patterns (`rm -rf`, `del /f`, `diskpart`). Natural language never reached a
+  shell string, so nothing matched.
+- **Fix.** `6f4845b`: `guard.is_destructive_request(text)` — request-level
+  patterns, hooked into `ask_ai()` and `run_task_step()` *before* the model,
+  with a spoken refusal and an audit record. Safe overrides keep "delete this
+  note", "clear my notes", "shutdown" working. `4119dd4`: hypothetical/indirect
+  phrasing ("what would you do if I said…", "can you delete…", "help me wipe…")
+  also blocked.
+- **Verify.** Ad-hoc matrix (17 + 11 phrases) was run; for the handoff, add a
+  permanent `tests/test_destructive_requests.py` asserting the true/false set:
+  block "delete all my files" / "wipe my drive" / "what if I asked you to erase
+  everything"; allow "delete this note" / "shutdown" / "open notepad".
+- **NOTE.** The user's incident happened while testing; after `6f4845b` +
+  `4119dd4` the request-level guard rejects it. **Never remove that guard**, and
+  keep it *before* the model (a model can always be talked into trying).
+
+#### D5 — Screenshots were saved but the model could not see them
+- **Symptom.** `take_screenshot` returned a file path; the model had no image
+  input and so learned nothing.
+- **Root cause.** The tool returned a string, never an analysis.
+- **Fix.** `81cfff0`: `take_screenshot` now runs the local VLM
+  (`moondream:latest` via `vision.analyze_screen`) and returns the path **plus**
+  a description; a VLM failure falls back to path-only (never breaks capture).
+- **Verify.** With Ollama running, `take_screenshot` returns a "Screen
+  analysis:" block. Add ~2-5s to the call when the VLM loads.
+
+#### D6 — "open netflix" opened the Store / a browser instead of the app
+- **Symptom.** Netflix opened the Microsoft Store "app not found"; later, a
+  browser opened even though the app was installed.
+- **Root cause (three layers).**
+  1. `start netflix:` is a Store *protocol handler*, not the app launcher.
+  2. The hardcoded AppID `Microsoft.Netflix_8wekyb3d8bbwe!Netflix` was **wrong
+     for this machine**; the real one is
+     `4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App` (AppIDs vary by install
+     source/version). The PowerShell launch failed silently.
+  3. There was no browser fallback when the app genuinely did not open.
+- **Fix.** `96baa44` generic browser fallback for known web apps;
+  `09bcd80` Store/UWP apps launched via `Start-Process shell:AppsFolder\…`;
+  `12e3fa9` look the **real** AppID up from `Get-StartApps` at launch time
+  (hardcoded IDs are fallback only).
+- **Verify.** `probe_click.py <title>` lists windows; `Get-StartApps` should
+  show the app. Launch should return "Successfully opened …" and the window
+  should exist.
+
+#### D7 — `_find_window("Netflix")` matched the terminal
+- **Symptom.** The probe "clicked" a terminal tab instead of Netflix.
+- **Root cause.** `_find_window` does substring title matching, and a console's
+  title *is its command line* (`… python probe_click.py Netflix`), so the
+  console matched.
+- **Fix.** `3a5ff5e`: console window classes
+  (`CASCADIA_HOSTING_WINDOW_CLASS`, `ConsoleWindowClass`, `mintty`) are excluded
+  from title matching unless the query is itself a terminal alias.
+- **Verify.** With a console whose title contains "Netflix", `_find_window(
+  "Netflix")` must return the browser, not the console.
+
+#### D8 — THE BIG ONE: `click_element` silently no-ops on Chromium/PWA
+- **Symptom.** "open netflix and open sohail profile": Netflix opened, then the
+  model clicked something eight times and never opened the profile. The user
+  saw it "pressing the settings button".
+- **Evidence (keep this, it is the proof).**
+  - Log: `click_element({'name': 'Profile 1 Profile', 'window_title':
+    'Netflix'})` repeated ~8 times, alternating with
+    `get_clickable_elements`.
+  - `probe_click.py Netflix "Profile 1 Profile"` printed:
+    `'Profile 1 Profile' (Button) … click_at(x=1150, y=35)` — **(1150,35) is
+    the Edge toolbar**, and the element list contained only `Chrome Legacy
+    Window`, `view_1065`, `view_1062`, `Settings and more (Alt+F)`,
+    `netflix.com`. **No page content at all.**
+- **Root cause (three, all real).**
+  1. **Chromium hides its renderer's accessibility tree until a client asks.**
+     UI Automation therefore sees only browser chrome, never the page. The only
+     "Profile" the model could see was Edge's own toolbar avatar button.
+  2. `click_element` preferred `GetInvokePattern()`, which Chromium reports as
+     **successful while doing nothing** — so no physical click ever happened.
+  3. The stall redirect fired **once** and then stayed silent, so the model
+     repeated the dead click five more times.
+- **Fix.**
+  - `bdd0697`: web-backed controls (Chrome/Electron framework or
+    `Chrome_WidgetWin` class) get a **real `pyautogui` click** at the element
+    centre; native controls keep `InvokePattern`. Also the stall redirect now
+    fires on **every** repeat past `_REPEAT_LIMIT`.
+  - `5d9ea80`: `_nudge_accessibility()` sends `WM_GETOBJECT`/`OBJID_CLIENT` to
+    the Chromium window, which flips its accessibility engine on
+    (lab-proven: an example.com page went **39 → 58 named nodes** including
+    body text). Wired into `get_clickable_elements`, `click_element`,
+    `read_screen` via `_prepare_window_for_scan`.
+  - `e14abd4`: nudge **all** same-process Chromium HWNDs (top + render-widget
+    children) and foreground the window first, because a single top-HWND nudge
+    was measured leaving the tree off.
+- **Status: RESOLVED (mechanics) — read carefully.**
+  - The **diagnosis is proven** (probe output above).
+  - The **nudge is lab-proven** (39→58 nodes) but unreliable on real windows;
+    it stays as a best-effort first step, NOT the route.
+  - The **production route is OCR (D9) and it is live-proven**: the 2026-09-17
+    run used `find_and_click_text` twice, clicked real OCR coordinates
+    (`click_at` after a UIA miss), varied targets instead of looping one
+    button, and reported honestly when stuck. The identical-repeat loop is
+    gone.
+  - **End state: Sohail's profile is active.** Proof by elimination: the gate
+    screen earlier showed five profiles (Sohail, Basheer, Rehana, basherehan4,
+    Aftab); the profile menu now offers exactly the other four
+    (basherehan4/Basheer/Rehana/Aftab at (1109,171)/(1087,235)/(1084,301)/
+    (1074,364)) plus Manage/Transfer. Sohail is the missing fourth: it is the
+    active profile, so "open sohail profile" holds.
+  - What closed it, beyond D9: `get_clickable_elements` now appends OCR page
+    text with coordinates for Chromium windows; toolbar controls are excluded
+    from Chromium scans (matching stays unfiltered, so genuine toolbar clicks
+    still resolve); `find_and_click_text` is offered on click/profile
+    requests; the system prompt teaches the browser-window rule; the stall
+    redirect names the OCR route; OCR rank 4 matches "sohail profile" to a
+    "Sohail" tile.
+- **Verify (done 2026-09-17).** `probe_click.py` scan shows page text with
+  coordinates; `--text "open netflix and open sohail profile"` run used OCR
+  tools, no identical loop. `venv -m unittest`: 796 green.
+
+#### D9 — OCR fallback was dead (Tesseract not installed)
+- **Symptom.** `click_element`'s OCR fallback never fired; nothing to fall back
+  to.
+- **Root cause.** `vision.find_text_on_screen` required the Tesseract *binary*,
+  which is not installed on this machine.
+- **Fix.** `a1e254a`: added a RapidOCR tier (ONNX, CPU, **no binary**) between
+  Tesseract and UIA. `find_text_on_screen` now ranks matches (exact >
+  whole-word > prefix > substring) and accepts a `within=(l,t,r,b)` window
+  filter. `find_and_click_text(target_text, window_title=…)` scopes the search
+  to one window (focuses it; ignores matches outside).
+- **Dep.** `rapidocr-onnxruntime` added to `requirements.txt` (installed in the
+  venv; models cache on first use, ~4s/scan on CPU).
+- **Verify (proven).** Live on Calculator: OCR found `C` and `1`, clicked both,
+  screen read back `1`. `tests/test_ocr_click.py` (12 tests, mocked).
+- **Why this matters for D8.** This is the route the user asked for: *look at
+  the screen, then decide where to click.* It works regardless of who opened
+  the window and regardless of Chromium accessibility.
+
+### 15.3 Open items (not defects — unfinished verification / environment)
+
+- **O1 — phi4 (deep tier) cannot load.** It is downloaded (9.1GB) but needs
+  ~8GB free RAM; the machine has ~5GB free. **Not a code bug.** Free RAM (close
+  Chrome/Edge/apps), then set `"llm_model_deep": "phi4"` in `config.json`.
+  `""` = disabled. `_can_run_deep()` gates it automatically at >=6GB free.
+- **O2 — End-to-end Netflix/OCR task not confirmed.** Needs a clean GUI restart
+  and the 15.2 D8 verification. This is the single most important next check.
+- **O3 — Live voice (`python main.py`) never run.** Only `--text` / GUI text
+  input have been exercised. Do not run it in automation; hand it to the user
+  with a checklist: "what time is it", "take a screenshot", "delete all my
+  files" (must refuse), "open notepad and type hello".
+- **O4 — `take_screenshot` latency.** The VLM analysis adds load time on first
+  use. Acceptable, but if it becomes annoying, make analysis opt-in via a
+  `take_screenshot(analyze=False)` parameter.
+
+### 15.4 Traps the next agent will hit (learned the hard way)
+
+1. **A running GUI keeps old code.** Every retest must *quit* `vave_gui.py`
+   completely, not minimize it. Half the "same problem still happens" reports
+   were stale processes.
+2. **Use the venv**: `venv\Scripts\python.exe`. System Python has no deps.
+3. **PowerShell 5.1**: no `&&`, no `rg`, and `$_` gets mangled inside
+   `powershell -Command "…"` from this tool — prefer writing a script file, or
+   run logic through Python.
+4. **`uiautomation` sets process DPI awareness on import** (metrics jumped
+   1536x864 → 1920x1080 at 125% scaling). It imports before `pyautogui` clicks,
+   so coordinates agree — but do not reorder that without thinking.
+5. **Chromium is a special case everywhere.** Window titles lie (a console
+   contains "netflix"), page content is invisible until nudged, and
+   `InvokePattern` is a no-op. Prefer OCR for anything on a web page.
+6. **Never run `python main.py` bare** — it starts the mic loop and blocks.
+7. **`data/`, `logs/`, `config.json` are user state.** Tests must use
+   `VAVE_DATA_DIR` / `VaveTestCase`.
+8. **The destructive-request guard must stay in front of the model.**
+   `guard.is_destructive_request` in `ask_ai`/`run_task_step` is load-bearing;
+   removing it re-opens D4.
+9. **`mock.patch.dict(sys.modules, …)` deletes everything imported inside the
+   region on exit** (it restores a snapshot). If `assistant.vision`
+   (pytesseract → numpy) is first imported inside such a region, later
+   `from assistant.vision import …` re-executes the chain and numpy's C
+   extension dies with `ImportError: cannot load module more than once per
+   process` — swallowed by broad excepts, surfacing as phantom "click didn't
+   land" failures. Cost a full ghost-hunt on 2026-09-17. Rule: any test file
+   combining `patch.dict(sys.modules)` with mocks that lazily import heavy
+   modules must `import assistant.vision` eagerly at the top (see
+   `tests/test_chromium_click_path.py`, `tests/test_ocr_click.py`).
+
+### 15.5 Suggested continuation order
+
+1. ~~Confirm **D8/O2** with a clean restart + `probe_click.py`~~ — DONE
+   2026-09-17 (see D8 status; O2 end state verified by elimination).
+2. ~~Write the two missing regression files~~ — DONE 2026-09-17:
+   `tests/test_destructive_requests.py` (7 tests, D4 matrix + hooks) and
+   `tests/test_chromium_click_path.py` (19 tests: classification, nudge,
+   physical click, every-repeat stall, chrome-guard, triggers, scan entries).
+   Suite: **796 green**.
+3. Then build from section 14: **S3 dry-run** (safe testing) and **S5 `vave
+   doctor`** (capability report) are the smallest, highest-value next steps.
+4. O1 (phi4 RAM) is still blocked on free RAM (5.1GB free 2026-09-17, needs
+   ~8GB) — user action, no code. O4 done (`take_screenshot(analyze=…)`).

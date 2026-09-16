@@ -473,7 +473,7 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(screenshot|capture screen|snapshot)\b"), ("take_screenshot",)),
     (re.compile(r"\b(volume|mute|unmute|sound|louder|quieter)\b"), ("set_volume", "mute_volume")),
     (re.compile(r"\b(notepad|calculator|calc|paint|cmd|terminal|explorer|launch|open app)\b"), ("open_app", "close_app")),
-    (re.compile(r"\b(click|press button|tap|select)\b"), ("click_element", "click_at", "get_clickable_elements")),
+    (re.compile(r"\b(click|press button|tap|select)\b"), ("click_element", "find_and_click_text", "click_at", "get_clickable_elements")),
     (re.compile(r"\b(double click|double tap)\b"), ("double_click_at", "click_element")),
     (re.compile(r"\b(turn on the|turn off the|switch on the|switch off the)\s+"
                 r"(?:bedroom|bathroom|kitchen|living room|hall|porch|garage|office)\b"),
@@ -481,7 +481,7 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(right click|context menu)\b"), ("right_click_at",)),
     (re.compile(r"\b(scroll|scroll down|scroll up|page down|page up)\b"), ("scroll",)),
     (re.compile(r"\b(drag|drop|drag and drop)\b"), ("drag_and_drop",)),
-    (re.compile(r"\b(find and click|find text|click text)\b"), ("find_and_click_text", "click_element")),
+    (re.compile(r"\b(find and click|find text|click text|profile)\b"), ("find_and_click_text", "click_element")),
     (re.compile(r"\b(type|write|typing|press|key|enter|shortcut)\b"), ("type_text", "press_key")),
     (re.compile(r"\b(note|notes|remind|memo)\b"), ("add_note", "read_notes", "clear_notes")),
     (re.compile(r"\b(search|google for|look up online|find online)\b"), ("search_web", "browse")),
@@ -1577,7 +1577,9 @@ LLM_TOOLS = WEB_TOOLS + [
             "description": "Captures a screenshot and returns both the file path and a Vision AI analysis of what is on screen (windows, text, UI elements).",
             "parameters": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                    "analyze": {"type": "boolean", "description": "Also describe the shot with Vision AI (default true; pass false for a fast path-only capture)"}
+                }
             }
         }
     },
@@ -1866,6 +1868,9 @@ def get_system_prompt():
         "CRITICAL RULE: NEVER ask for permission to use tools. When the user asks you to do something, IMMEDIATELY output the JSON tool call to execute it! Do NOT ask 'shall I proceed?'. Just DO IT.\n\n"
         "NATIVE APPS (Notepad, File Explorer, VS Code, etc): Use `open_app`, `read_screen`, `type_text`, `press_key`, `scroll`, `run_terminal_command`. "
         "For clicking buttons inside native Windows apps, use `get_clickable_elements` then `click_element` with the button's label.\n\n"
+        "BROWSER WINDOWS AND WEB-BASED APPS (Edge, Chrome, Netflix, Spotify, PWAs): UI Automation only sees the browser toolbar and tabs, NEVER the page. "
+        "For any text on the page, use `find_and_click_text` with the visible text and window_title - it reads a screenshot like a person does. "
+        "Never click a toolbar button (profile avatar, Settings and more, View site information) when the user means page content.\n\n"
 
         "NO TOOL FOR IT? BUILD THE TASK OUT OF THE BASIC ONES. There is no such "
         "thing as a desktop task you cannot attempt. When nothing purpose-built "
@@ -2872,7 +2877,11 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                         "the same arguments and the goal is no closer. Stop "
                         "calling it. Look at what is actually on screen now "
                         "and either act on a different element or tell the "
-                        "user plainly what is blocking you."
+                        "user plainly what is blocking you. If the target is "
+                        "text inside a browser or a web-based app, UI "
+                        "Automation cannot see the page - use "
+                        "find_and_click_text with the visible text and "
+                        "window_title instead."
                     ),
                 })
                 stalled = None

@@ -694,7 +694,12 @@ def tell_battery():
         logger.info("Error: %s", error)
         return msg
 
-def take_screenshot():
+def take_screenshot(analyze=True):
+    """Captures the primary display to assets/screenshots/.
+
+    With analyze=True (default) the local VLM also describes the shot so the
+    model can "see" it; pass analyze=False for a fast path-only capture.
+    """
     try:
         # On Windows, attach thread to active desktop to prevent capture failures
         try:
@@ -728,17 +733,18 @@ def take_screenshot():
         logger.info(f"Saved at: {screenshot_path}")
 
         # Auto-analyze with VLM if available so the model can "see" the screen
-        try:
-            from assistant.vision import analyze_screen as _vs_analyze
-            analysis = _vs_analyze(
-                "Briefly describe what is on this screenshot. "
-                "List visible windows, key text, and UI elements.",
-                image_path=str(screenshot_path)
-            )
-            if analysis and not analysis.startswith("Error"):
-                return f"{screenshot_path}\n\nScreen analysis:\n{analysis}"
-        except Exception:
-            pass
+        if analyze:
+            try:
+                from assistant.vision import analyze_screen as _vs_analyze
+                analysis = _vs_analyze(
+                    "Briefly describe what is on this screenshot. "
+                    "List visible windows, key text, and UI elements.",
+                    image_path=str(screenshot_path)
+                )
+                if analysis and not analysis.startswith("Error"):
+                    return f"{screenshot_path}\n\nScreen analysis:\n{analysis}"
+            except Exception:
+                pass
 
         return str(screenshot_path)
 
@@ -1488,6 +1494,59 @@ def write_file(path, content):
     except Exception as e:
         return f"Failed to write file: {e}"
 
+def _append_ocr_page_entries(active_window, elements, found_names, limit=40):
+    """List a Chromium window's page text as clickable entries.
+
+    UI Automation only ever sees browser chrome, so without this the model is
+    offered toolbar buttons and tabs while the actual page (Netflix profiles,
+    article links, form labels) is missing entirely. Screenshot OCR reads what
+    a person sees; each line becomes an entry with real coordinates, which also
+    satisfies the never-invent-coordinates rule. UIA-listed names win: lines
+    already present are skipped.
+    """
+    try:
+        from assistant.vision import ocr_screen, _box_center
+    except Exception as e:
+        logger.debug("OCR page scan unavailable: %s", e)
+        return
+    try:
+        rect = active_window.BoundingRectangle
+        left, top, right, bottom = rect.left, rect.top, rect.right, rect.bottom
+        if right - left <= 0 or bottom - top <= 0:
+            return
+        title = str(getattr(active_window, "Name", "") or "").replace("'", "")
+        added = 0
+        for text, box, score in ocr_screen():
+            if added >= limit:
+                break
+            try:
+                if float(score or 0) < 0.5:
+                    continue
+            except Exception:
+                continue
+            label = " ".join(str(text or "").split())
+            if not label or len(label) > 60:
+                continue
+            center = _box_center(box)
+            if center is None:
+                continue
+            cx, cy = int(center[0]), int(center[1])
+            if not (left <= cx <= right and top <= cy <= bottom):
+                continue
+            if label.strip().lower() in found_names:
+                continue
+            found_names.add(label.strip().lower())
+            safe = label.replace("'", "")
+            scope = f", window_title='{title}'" if title else ""
+            elements.append(
+                f"- '{label}' (page text): "
+                f"find_and_click_text(target_text='{safe}'{scope})  "
+                f"or click_at(x={cx}, y={cy})")
+            added += 1
+    except Exception as e:
+        logger.debug("OCR page scan note: %s", e)
+
+
 def get_clickable_elements(window_title=None):
     """
     Scans a window and returns a list of clickable elements with their text and (x, y) coordinates.
@@ -1524,6 +1583,7 @@ def get_clickable_elements(window_title=None):
         _prepare_window_for_scan(active_window)
 
         elements = []
+        found_names = set()
         # Walk deep enough to reach real controls. Modern apps (Chrome, Electron,
         # WinUI) bury their buttons well below depth 4, which is why shallow
         # scans only ever came back with window chrome.
@@ -1548,6 +1608,16 @@ def get_clickable_elements(window_title=None):
                         pass
                 if not name:
                     name = control.AutomationId or getattr(control, "HelpText", "") or getattr(control, "ItemStatus", "")
+                # Chromium scans hide page controls behind toolbar noise: the
+                # model word-matches "profile" to Edge's own toolbar avatar
+                # instead of the page. Browser chrome is therefore not offered
+                # here at all - the OCR page entries below carry the actionable
+                # text, and click_element by exact toolbar name still resolves
+                # (matching is unfiltered) for genuine toolbar intent. Only
+                # excludes on a definitive non-page verdict; unknown ancestry
+                # stays listed.
+                if name and _is_chromium_window(active_window) and _is_page_content(control, active_window) is False:
+                    continue
 
                 rect = control.BoundingRectangle
                 if name and rect.width() > 0 and rect.height() > 0:
@@ -1581,8 +1651,15 @@ def get_clickable_elements(window_title=None):
                              f"or click_at(x={center_x}, y={center_y})")
                     if label not in elements:
                         elements.append(label)
+                        found_names.add(name.strip().lower())
                 if len(elements) >= 120:
                     break
+
+        # A Chromium scan without page text is chrome-only: toolbar, tabs,
+        # views. Read the page itself through OCR so there is something true
+        # to act on (and so an empty scan still has a chance).
+        if _is_chromium_window(active_window):
+            _append_ocr_page_entries(active_window, elements, found_names)
 
         if not elements:
             return (f"Found no named controls in the window '{active_window.Name}'. "
@@ -1744,6 +1821,30 @@ def click_element(name, window_title=None):
                     f"coordinates from get_clickable_elements.")
 
         target = matches[0]
+
+        # Browser-chrome guard: in a Chromium window the page is usually
+        # invisible to UI Automation, so a match outside the page (toolbar
+        # button, tab, window chrome) is almost never what "click X on the
+        # page" means - live case: Edge's own toolbar button "Profile 1
+        # Profile" was clicked eight times instead of the Netflix profile.
+        # Look at the page through OCR first; only fall through to the chrome
+        # control when the page has no such text (genuine toolbar intent).
+        if _is_chromium_window(window) and _is_page_content(target, window) is False:
+            try:
+                from assistant.vision import find_text_on_screen
+                rect = window.BoundingRectangle
+                within = (rect.left, rect.top, rect.right, rect.bottom)
+                coords = find_text_on_screen(wanted, within=within)
+            except Exception as e:
+                logger.debug("Chrome-guard OCR note: %s", e)
+                coords = None
+            if coords:
+                cx, cy = coords
+                logger.info("UIAutomation matched browser chrome for '%s', but OCR "
+                            "found it on the page at (%d, %d). Clicking there...",
+                            wanted, cx, cy)
+                return click_at(cx, cy) + " (page text via screenshot OCR)"
+
         try:
             if not target.IsEnabled:
                 return (f"'{target.Name or wanted}' is greyed out and cannot be clicked "
@@ -1885,6 +1986,38 @@ def _is_chromium_window(window):
     """True for Edge/Chrome/Electron and PWAs built on them."""
     cls = str(getattr(window, "ClassName", "") or "").lower()
     return "chrome_widgetwin" in cls or "chromium" in cls
+
+
+def _is_page_content(control, top_window):
+    """True when a control lives inside the web page, not the browser chrome.
+
+    Walks up at most 8 parents looking for the render host ("Chrome Legacy
+    Window" or a *RenderWidgetHost* frame). Toolbar buttons, tabs and window
+    chrome are direct children of the top window, so they never pass through
+    it. Returns None when ancestry cannot be determined (treat as page).
+    """
+    try:
+        top_handle = getattr(top_window, "NativeWindowHandle", None)
+        node = control
+        for _ in range(8):
+            try:
+                node = node.GetParentControl()
+            except Exception:
+                return None
+            if node is None:
+                return None
+            try:
+                if top_handle and getattr(node, "NativeWindowHandle", None) == top_handle:
+                    return False
+                name = str(getattr(node, "Name", "") or "")
+                cls = str(getattr(node, "ClassName", "") or "").lower()
+            except Exception:
+                return None
+            if name == "Chrome Legacy Window" or "renderwidgethost" in cls:
+                return True
+        return False
+    except Exception:
+        return None
 
 
 _NUDGED_AT = {}

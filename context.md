@@ -232,3 +232,47 @@ Driven by `plan.md`. Completed:
 3. **Phase 8 — Control Plane Enhancements**: Network device discovery,
    proactive suggestions engine, continuous hands-free wake word mode,
    proactive notifications to phone.
+
+---
+
+## 6. Multi-Model Routing (Session 2026-09-15)
+
+### What Was Built
+- 3-tier model routing: fast (qwen2.5:3b) → smart (qwen3:4b) → deep (phi4)
+- Rule-based complexity classifier in `select_model()` (instant, no model call)
+- Conversational query suppression in `select_tools()` — no tool calls for
+  greetings, math, jokes, knowledge questions
+- System prompt leak detection + retry
+- Auto-escalation in `chat_with_fallback()` with strike tracking
+- RAM gating for phi4 (`_can_run_deep()` checks >=6GB free)
+- Voice commands: "switch to fast/smart/deep/auto"
+
+### Models on This Hardware (RTX 3050 4GB VRAM + 16GB RAM)
+| Model | Size | Where | Speed | Status |
+|---|---|---|---|---|
+| qwen2.5:3b | 1.9GB | GPU | 3-5s | Active, fast tier |
+| qwen3:4b | 2.5GB | Partial GPU | 13-67s | Active, smart tier |
+| phi4 | 9.1GB | CPU only | 20-60s | Pulled, CAN'T LOAD (5GB free, needs ~8GB) |
+| qwen3.5:9b | 6.6GB | Crashes GPU | 48s+ CPU | Unused |
+
+### phi4 RAM Issue
+- Model is downloaded (9.1GB) but fails to load with only 5GB free RAM
+- Needs ~8GB free for weights + KV cache
+- Fix: close apps to free RAM, then phi4 loads automatically
+- Or set `"llm_model_deep": "phi4"` when ready, `""` = disabled
+
+### TODO (Next Session)
+1. ✅ Full test suite passed (756 tests) — 4 commits total
+2. ✅ Safety guard for destructive natural-language requests
+3. ✅ Vision pipeline: auto-analyze screenshots with moondream VLM
+4. ✅ Speed up chaining: deterministic step tracking (no LLM calls)
+5. ✅ Edge cases tested (15/15)
+6. Live voice test with `python main.py` (YOU need to run this)
+7. Test phi4 when RAM is freed up (currently 5GB free, needs ~8GB)
+
+### Git State
+- Branch: `sohail`, remote: `https://github.com/sohail-bhai/VAVE-main.git`
+- Last commit: OCR click route via RapidOCR (option A, 768 tests green)
+- Stack: 3-tier routing, safety guard (direct + hypothetical), vision
+  auto-analyze, deterministic chaining, Store-app launcher, Chromium
+  a11y nudge, console-safe window matching, physical clicks for web

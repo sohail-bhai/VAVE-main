@@ -10,6 +10,12 @@ import sys
 import unittest
 from unittest import mock
 
+# Eager import, same reason as tests/test_chromium_click_path.py: anything
+# first imported inside a mock.patch.dict(sys.modules, ...) region is deleted
+# from sys.modules when the region exits, and numpy's C extension cannot
+# initialize twice. Pin the chain up front.
+import assistant.vision  # noqa: F401
+
 
 def _lines(*rows):
     # (text, 4-point box, score)
@@ -82,6 +88,23 @@ class FindTextOnScreenTests(unittest.TestCase):
         self.assertEqual(self.vision._box_center([[0, 0], [10, 0], [10, 20], [0, 20]]), (5.0, 10.0))
         self.assertEqual(self.vision._box_center([0, 0, 10, 20]), (5.0, 10.0))
         self.assertIsNone(self.vision._box_center("nope"))
+
+    @mock.patch("assistant.vision._find_tesseract", return_value=None)
+    @mock.patch("assistant.vision.ocr_screen", return_value=_lines(
+        ("Sohail", [[300, 200], [420, 200], [420, 240], [300, 240]], 0.85),
+        ("Manage Profiles", [[300, 300], [520, 300], [520, 330], [300, 330]], 0.87),
+    ))
+    def test_multiword_target_matches_significant_word(self, _ocr, _tess):
+        # "sohail profile" must find the "Sohail" tile, not miss entirely.
+        self.assertEqual(self.vision.find_text_on_screen("sohail profile"), (360, 220))
+
+    @mock.patch("assistant.vision._find_tesseract", return_value=None)
+    @mock.patch("assistant.vision.ocr_screen", return_value=_lines(
+        ("Manage Profiles", [[300, 300], [520, 300], [520, 330], [300, 330]], 0.87),
+    ))
+    def test_short_words_do_not_match_everything(self, _ocr, _tess):
+        with mock.patch.dict(sys.modules, {"uiautomation": _uia_empty()}):
+            self.assertIsNone(self.vision.find_text_on_screen("the a"))
 
 
 class FindAndClickTextTests(unittest.TestCase):

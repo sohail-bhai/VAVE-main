@@ -129,12 +129,19 @@ def find_text_on_screen(target_text, within=None):
             return None
         if cand == target:
             return 0
-        if target in cand.split():
+        cand_words = cand.split()
+        if target in cand_words:
             return 1
         if cand.startswith(target):
             return 2
         if target in cand:
             return 3
+        # Last resort: a significant target word equals a candidate word, so
+        # "sohail profile" still finds a "Sohail" tile. Short words are
+        # ignored ("the", "a") to avoid matching everything on screen.
+        target_words = [w for w in target.split() if len(w) > 3]
+        if target_words and any(w in cand_words for w in target_words):
+            return 4
         return None
 
     tess = _find_tesseract()
