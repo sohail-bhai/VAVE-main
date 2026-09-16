@@ -114,6 +114,40 @@ def _get_windows_start_apps():
     _STARTAPPS_CACHE_TIME = now
     return apps
 
+
+def _launch_store_app(aumid):
+    """Launch a Store/UWP app via PowerShell, with no flashing console window."""
+    try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+             "-Command", f"Start-Process 'shell:AppsFolder\\{aumid}'"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+        return True
+    except Exception as e:
+        logger.info(f"[Launcher] Store app launch failed for {aumid}: {e}")
+        return False
+
+
+def _find_store_app_aumid(name):
+    """Look up the real AppUserModelID for an installed Store app by name."""
+    wanted = str(name or "").lower().strip()
+    if not wanted:
+        return None
+    try:
+        for item in _get_windows_start_apps():
+            app_name = str(item.get("Name") or "")
+            low = app_name.lower()
+            bare = low.replace(" ", "").replace("-", "").replace(".", "").replace("_", "")
+            if (low == wanted or bare == wanted.replace(" ", "").replace("-", "")
+                    or wanted in low.split()):
+                return item.get("AppID")
+    except Exception as e:
+        logger.debug(f"[Launcher] Store app lookup note: {e}")
+    return None
+
 COMMON_APP_STOPWORDS = frozenset({
     "open", "close", "play", "stop", "start", "search", "browse", "for", "and",
     "the", "with", "from", "into", "onto", "that", "this", "then", "also",
@@ -292,12 +326,14 @@ def open_app(app_name):
                 "excel": "start excel",
                 "powerpoint": "start powerpnt",
             }
-            # Store/UWP apps — need PowerShell Start-Process with AppUserModelID
+            # Store/UWP apps — need PowerShell Start-Process with AppUserModelID.
+            # These are only fallbacks; the real AppID is looked up at launch
+            # time because it varies by install source and version.
             store_apps = {
-                "netflix": "Microsoft.Netflix_8wekyb3d8bbwe!Netflix",
+                "netflix": "4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App",
                 "spotify": "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify",
                 "whatsapp": "5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App",
-                "discord": "DiscordInc.Discord_8wekyb3d8bbwe!Discord",
+                "discord": "com.squirrel.Discord.Discord",
             }
             if query in win32_apps or query in store_apps:
                 # If window is already open, activate it instead of launching a duplicate blank window
@@ -314,18 +350,21 @@ def open_app(app_name):
 
                 speak(f"Opening {display_name}")
                 if query in store_apps:
-                    # Launch Store/UWP app via PowerShell
-                    aumid = store_apps[query]
-                    os.system(f'powershell -Command "Start-Process \'shell:AppsFolder\\{aumid}\'"')
+                    # Resolve the real AppID from the Start menu (AUMIDs vary
+                    # by version); fall back to the known one.
+                    aumid = _find_store_app_aumid(display_name) or _find_store_app_aumid(query) or store_apps[query]
+                    _launch_store_app(aumid)
+                    wait_loops = 120  # UWP apps take longer to show a window
                 else:
                     cmd = win32_apps[query]
                     if not cmd.startswith("start "):
                         cmd = f"start {cmd}"
                     os.system(cmd)
+                    wait_loops = 50
 
                 # Wait for the launched window to be ready and activated
                 verified_win = None
-                for _ in range(25):  # up to 2.5 seconds total, exits immediately when ready
+                for _ in range(wait_loops):
                     time.sleep(0.1)
                     try:
                         new_win = _find_window(display_name) or _find_window(query)
