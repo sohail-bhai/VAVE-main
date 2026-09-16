@@ -9,6 +9,7 @@ import urllib.error
 import traceback
 from assistant import call_context
 from assistant import guard
+from assistant import audit
 from assistant.speech import speak
 from assistant.config import get_setting, update_setting
 import assistant.system_tasks as system_tasks
@@ -3048,6 +3049,14 @@ def ask_ai(command, auto_confirm=False):
     if not clean_command:
         return
 
+    # Request-level guard: block destructive natural-language requests
+    # before they reach the model.
+    dangerous, reason = guard.is_destructive_request(clean_command)
+    if dangerous:
+        speak(reason)
+        audit.append({"event": "destructive_request_blocked", "request": clean_command[:120]})
+        return None
+
     # A new request starts clean. Taint belongs to the task that read the
     # page, not to everything the user asks afterwards.
     call_context.clear_taint()
@@ -3116,6 +3125,12 @@ def run_task_step(instruction, context="", auto_confirm=True,
     """
     if not context:
         call_context.clear_taint()
+
+    # Request-level guard: block destructive natural-language requests
+    dangerous, reason = guard.is_destructive_request(instruction)
+    if dangerous:
+        audit.append({"event": "destructive_request_blocked", "request": instruction[:120]})
+        raise RuntimeError(reason)
 
     conversation = [
         {"role": "system", "content": get_system_prompt()},

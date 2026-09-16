@@ -273,3 +273,73 @@ def call(func: Callable, _tool_name: str = None, **kwargs) -> Any:
             "error": str(e)
         })
         raise
+
+# ---------------------------------------------------------------------------
+# Request-level guard: blocks destructive natural-language requests before
+# they reach the model.  Tool-level guards catch "rm -rf /"; this catches
+# "delete all my files on my computer".
+# ---------------------------------------------------------------------------
+
+_DESTRUCTIVE_REQUEST_PATTERNS = re.compile(
+    r"(?:delete|remove|erase|wipe|clean|clear|destroy|nuke|obliterate|format)"
+    r".*"
+    r"(?:all|every|entire|whole|my)\s+"
+    r"(?:files?|data|documents?|photos?|pictures?|videos?|music|downloads?"
+    r"|desktop|folders?|everything|system|os|drive|disk|partition|computer"
+    r"|hard\s*drive|hdd|ssd|laptop|pc|machine)"
+    r"|"
+    r"(?:delete|remove|erase|wipe|clean|clear|destroy|nuke|format)\s+"
+    r"(?:my\s+)?(?:computer|laptop|pc|hard\s*drive|hdd|ssd|disk|[cC]\s*drive|drive)"
+    r"|"
+    r"(?:wipe|clean|destroy|nuke|obliterate)\s+"
+    r"(?:my\s+)?(?:entire|whole|all)\s+"
+    r"(?:hard\s*drive|hdd|ssd|disk|drive|computer|laptop|pc)"
+    r"|"
+    r"(?:reformat|factory\s+reset|wipe\s+(?:my\s+)?(?:computer|laptop|pc|drive))"
+    r"|"
+    r"(?:delete|remove|clear)\s+(?:everything|all\s+my|all\s+the|my\s+entire)"
+    r"|"
+    r"(?:drop\s+(?:all|every|the|my)\s+(?:tables?|databases?|data))"
+    r"|"
+    r"(?:sudo\s+rm\s+-[a-zA-Z]*[rfRF])",
+    re.IGNORECASE,
+)
+
+# Legitimate system operations that mention destructive-sounding words
+# but are normal assistant functions.
+_SAFE_DESTRUCTIVE_OVERRIDES = re.compile(
+    r"(?:delete\s+(?:this|that|the\s+line|the\s+note|the\s+row|my\s+note)"
+    r"|remove\s+(?:this|that|the\s+note|the\s+line)"
+    r"|clear\s+(?:my\s+)?notes?"
+    r"|shutdown|restart|reboot|lock"
+    r"|close\s+(?:all\s+)?(?:windows?|tabs?|apps?)"
+    r"|empty\s+(?:the\s+)?(?:recycle\s+bin|trash)"
+    r"|delete\s+(?:the\s+)?(?:file|line|row|entry|item|note|reminder)"
+    r"|cancel\s+(?:the\s+)?(?:subscription|order|booking))",
+    re.IGNORECASE,
+)
+
+
+def is_destructive_request(text: str) -> tuple:
+    """Check if a user's natural-language request is destructively dangerous.
+
+    Returns (is_dangerous, reason) — reason is a user-facing explanation
+    when the request is blocked.
+    """
+    if not text:
+        return False, ""
+
+    clean = text.strip().lower()
+
+    # If it matches a safe override, let it through
+    if _SAFE_DESTRUCTIVE_OVERRIDES.search(clean):
+        return False, ""
+
+    if _DESTRUCTIVE_REQUEST_PATTERNS.search(clean):
+        return True, (
+            "This request could cause irreversible data loss. "
+            "I can't do that. If you really need to delete something specific, "
+            "tell me exactly which file or folder you mean."
+        )
+
+    return False, ""
