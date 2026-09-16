@@ -1,10 +1,83 @@
 import logging
 logger = logging.getLogger(__name__)
 
+import threading
 import pytesseract
 from PIL import Image, ImageGrab
 import pyautogui
 import os
+
+# Shared RapidOCR engine: model load is ~1s, so one warm instance serves all
+# calls. False means "tried and unavailable" - never retry a dead import.
+_rapid_ocr = None
+_rapid_lock = threading.Lock()
+
+
+def _rapid_engine():
+    """The shared RapidOCR engine, or None when it cannot be loaded."""
+    global _rapid_ocr
+    if _rapid_ocr is not None:
+        return _rapid_ocr or None
+    with _rapid_lock:
+        if _rapid_ocr is not None:
+            return _rapid_ocr or None
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            _rapid_ocr = RapidOCR()
+        except Exception as e:
+            logger.info(f"[Vision] RapidOCR unavailable: {e}")
+            _rapid_ocr = False
+    return _rapid_ocr or None
+
+
+def _box_center(box):
+    """Center of an OCR box, in 4-point or flat [x0,y0,x1,y1] form."""
+    try:
+        if hasattr(box, "tolist"):  # numpy boxes from the OCR engine
+            box = box.tolist()
+        pts = list(box)
+        if len(pts) == 4 and all(isinstance(p, (list, tuple)) for p in pts):
+            xs = [float(p[0]) for p in pts]
+            ys = [float(p[1]) for p in pts]
+            return ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+        if len(pts) == 4:
+            x0, y0, x1, y1 = (float(v) for v in pts)
+            return ((x0 + x1) / 2, (y0 + y1) / 2)
+    except Exception:
+        pass
+    return None
+
+
+def _inside(center, within):
+    """True when a point is inside an optional (left, top, right, bottom) box."""
+    if not within or not center:
+        return True
+    x, y = center
+    left, top, right, bottom = within
+    return left <= x <= right and top <= y <= bottom
+
+
+def ocr_screen():
+    """Full-screen OCR as [(text, box, score)]. [] when unavailable."""
+    engine = _rapid_engine()
+    if engine is None:
+        return []
+    try:
+        import numpy as np
+        shot = np.asarray(ImageGrab.grab())
+        result, _elapse = engine(shot)
+    except Exception as e:
+        logger.info(f"[Vision Error] RapidOCR read failed: {e}")
+        return []
+    lines = []
+    for row in (result or []):
+        try:
+            box, text, score = row[0], str(row[1] or ""), float(row[2])
+        except Exception:
+            continue
+        if text.strip():
+            lines.append((text, box, score))
+    return lines
 
 def _find_tesseract():
     """Detects tesseract binary via config, common drive locations (E:, D:, C:), or system PATH."""
@@ -35,39 +108,94 @@ _tess_cmd = _find_tesseract()
 if _tess_cmd:
     pytesseract.pytesseract.tesseract_cmd = _tess_cmd
 
-def find_text_on_screen(target_text):
+def find_text_on_screen(target_text, within=None):
     """
     Finds (x, y) center coordinates of target_text on screen.
-    Uses Tesseract OCR if available, falling back to UIAutomation control inspection.
+    Tier 1: Tesseract OCR when its binary exists.
+    Tier 2: RapidOCR screenshot lines - no binary needed, sees browsers,
+    canvas apps and images that UI Automation is blind to.
+    Tier 3: UIAutomation control inspection.
+    `within` is an optional (left, top, right, bottom) box; matches whose
+    center falls outside it are ignored, so a same-named control in another
+    window is never returned.
     """
+    target = str(target_text or "").strip().lower()
+    if not target:
+        return None
+
+    def rank(candidate):
+        cand = str(candidate or "").strip().lower()
+        if not cand:
+            return None
+        if cand == target:
+            return 0
+        if target in cand.split():
+            return 1
+        if cand.startswith(target):
+            return 2
+        if target in cand:
+            return 3
+        return None
+
     tess = _find_tesseract()
     if tess:
         try:
             pytesseract.pytesseract.tesseract_cmd = tess
             screenshot = ImageGrab.grab()
             data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
-            target_text_lower = target_text.lower()
-            for i in range(len(data['text'])):
-                detected_word = data['text'][i].strip().lower()
-                if target_text_lower in detected_word and detected_word != '':
-                    x = data['left'][i]
-                    y = data['top'][i]
-                    w = data['width'][i]
-                    h = data['height'][i]
-                    return (x + (w // 2), y + (h // 2))
+            best = None
+            confs = data.get("conf", [])
+            words = data.get("text", [])
+            for i, word in enumerate(words):
+                r = rank(word)
+                if r is None:
+                    continue
+                try:
+                    conf = float(confs[i]) if i < len(confs) else 0.0
+                except Exception:
+                    conf = 0.0
+                x = data["left"][i] + (data["width"][i] // 2)
+                y = data["top"][i] + (data["height"][i] // 2)
+                if not _inside((x, y), within):
+                    continue
+                key = (r, -conf)
+                if best is None or key < best[0]:
+                    best = (key, (x, y))
+            if best is not None:
+                return (int(best[1][0]), int(best[1][1]))
         except Exception as e:
             logger.info(f"[Vision Error] Tesseract OCR search failed: {e}")
 
-    # Fallback: UIAutomation element search
+    # Tier 2: RapidOCR screenshot lines
+    try:
+        best = None
+        for text, box, score in ocr_screen():
+            r = rank(text)
+            if r is None:
+                continue
+            center = _box_center(box)
+            if center is None or not _inside(center, within):
+                continue
+            key = (r, -float(score or 0.0))
+            if best is None or key < best[0]:
+                best = (key, center)
+        if best is not None:
+            return (int(best[1][0]), int(best[1][1]))
+    except Exception as e:
+        logger.info(f"[Vision Error] RapidOCR search failed: {e}")
+
+    # Tier 3: UIAutomation element search
     try:
         import uiautomation as auto
-        target_lower = target_text.lower()
         active = auto.GetForegroundControl() or auto.GetRootControl()
         for ctrl, depth in auto.WalkControl(active, maxDepth=6):
-            if ctrl.Name and target_lower in ctrl.Name.lower():
+            if ctrl.Name and target in ctrl.Name.lower():
                 rect = ctrl.BoundingRectangle
                 if rect.width() > 0 and rect.height() > 0:
-                    return (rect.left + (rect.width() // 2), rect.top + (rect.height() // 2))
+                    cx = rect.left + (rect.width() // 2)
+                    cy = rect.top + (rect.height() // 2)
+                    if _inside((cx, cy), within):
+                        return (cx, cy)
     except Exception as e:
         logger.info(f"[Vision Error] UIAutomation text search failed: {e}")
 

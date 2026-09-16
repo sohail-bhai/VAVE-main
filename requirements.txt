@@ -29,6 +29,10 @@ piper-tts
 
 # Screen awareness / OCR
 pytesseract
+# Screenshot text search with no Tesseract binary needed (ONNX, CPU).
+# Powers find_text_on_screen / find_and_click_text inside browsers and
+# canvas apps that UI Automation cannot see.
+rapidocr-onnxruntime
 
 # Web + knowledge lookup
 wikipedia

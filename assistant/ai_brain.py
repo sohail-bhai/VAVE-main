@@ -1499,11 +1499,12 @@ LLM_TOOLS = WEB_TOOLS + [
         "type": "function",
         "function": {
             "name": "find_and_click_text",
-            "description": "Finds a button or text on screen by search text and clicks it using UI Automation / OCR.",
+            "description": "Finds visible text on screen and clicks it. Uses UI Automation first, screenshot OCR second, so text inside browsers, canvas apps and images works too. Pass window_title to scope the search to one window.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "target_text": {"type": "string", "description": "The text label to search for and click"}
+                    "target_text": {"type": "string", "description": "The text label to search for and click"},
+                    "window_title": {"type": "string", "description": "Optional window to search inside (focused first; matches outside it are ignored)"}
                 },
                 "required": ["target_text"]
             }

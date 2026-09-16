@@ -1113,10 +1113,15 @@ def wait(seconds=1.0):
     time.sleep(duration)
     return f"Waited {duration:g} seconds."
 
-def find_and_click_text(target_text):
+def find_and_click_text(target_text, window_title=None):
     """
-    Uses UIAutomation to find a button/text on the screen and clicks it.
-    Returns True if found and clicked, False otherwise.
+    Finds visible text on screen and clicks it.
+    UI Automation first (fast, exact); screenshot OCR second, so text inside
+    browsers, canvas apps and images is clickable too. Returns True if found
+    and clicked, False otherwise.
+    With window_title the search is scoped to that window: it is focused
+    first and matches outside its bounds are ignored, so a same-named
+    control in another window is never clicked.
     """
     _ensure_com()
     try:
@@ -1124,21 +1129,63 @@ def find_and_click_text(target_text):
     except ImportError:
         speak("The UI Automation module is missing. Please run pip install uiautomation.")
         return False
-        
+
     import time
-    
+
+    window = None
+    within = None
+    if window_title:
+        window = _find_window(window_title)
+        if not window:
+            return (f"No open window matches '{window_title}'. "
+                    f"Use list_windows to see what is available.")
+        try:
+            if getattr(window, "NativeWindowHandle", None):
+                activate_window(window.NativeWindowHandle)
+                time.sleep(0.3)
+            rect = window.BoundingRectangle
+            within = (rect.left, rect.top, rect.right, rect.bottom)
+        except Exception:
+            within = None
+
     logger.info(f"[VAVE Vision] Searching entire desktop for '{target_text}'...")
-    
+
     try:
         # Search the entire desktop tree up to depth 7 for the exact name
         btn = auto.Control(Name=target_text, searchDepth=7)
         if btn.Exists(3, 1): # wait up to 3 seconds
-            btn.Click(simulateMove=False)
-            time.sleep(1)
-            return True
+            if within is not None:
+                try:
+                    br = btn.BoundingRectangle
+                    cx = br.left + (br.width() // 2)
+                    cy = br.top + (br.height() // 2)
+                except Exception:
+                    cx = cy = None
+                if cx is None or not (within[0] <= cx <= within[2] and within[1] <= cy <= within[3]):
+                    logger.info(f"[VAVE Vision] UIA match for '{target_text}' is outside '{window_title}'; trying OCR inside it.")
+                else:
+                    btn.Click(simulateMove=False)
+                    time.sleep(1)
+                    return True
+            else:
+                btn.Click(simulateMove=False)
+                time.sleep(1)
+                return True
     except Exception as e:
         logger.info(f"[VAVE Vision Error] {e}")
-        
+
+    # OCR route: see the screen like a person does.
+    try:
+        from assistant.vision import find_text_on_screen
+        coords = find_text_on_screen(target_text, within=within)
+    except Exception as e:
+        logger.info(f"[VAVE Vision Error] OCR search failed: {e}")
+        coords = None
+    if coords:
+        cx, cy = coords
+        logger.info(f"UIAutomation missed '{target_text}', but OCR found coordinates ({cx}, {cy}). Clicking...")
+        return click_at(cx, cy)
+
     speak(f"I could not find the text {target_text} on the screen.")
     return False
 
