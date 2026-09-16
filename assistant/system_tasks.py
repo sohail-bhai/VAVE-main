@@ -1840,41 +1840,117 @@ def _is_chromium_window(window):
     return "chrome_widgetwin" in cls or "chromium" in cls
 
 
+_NUDGED_AT = {}
+
+
 def _nudge_accessibility(window):
     """Ask a Chromium window to switch its accessibility tree on.
 
     Chromium keeps the renderer's accessibility engine off until a client
     asks for it, so UI automation only ever saw the browser chrome - a
     Netflix window exposed Edge's own toolbar "Profile 1" button and nothing
-    from the page. A single WM_GETOBJECT with OBJID_CLIENT flips the engine
-    on, after which the page and every control on it are visible.
+    from the page. A WM_GETOBJECT with OBJID_CLIENT flips the engine on,
+    after which the page and every control on it are visible.
+
+    Proven shape: nudge the top window plus every same-process Chromium
+    window and render-widget child, because nudging only the top handle was
+    measured leaving the tree off.
     """
     try:
-        hwnd = getattr(window, "NativeWindowHandle", None)
-        if not hwnd:
-            return
+        hwnd = int(getattr(window, "NativeWindowHandle", 0) or 0)
+        pid = int(getattr(window, "ProcessId", 0) or 0)
+    except Exception:
+        return
+    if not hwnd:
+        return
+    try:
         import ctypes
         user32 = ctypes.windll.user32
-        result = ctypes.c_ssize_t(0)
-        user32.SendMessageTimeoutW(
-            ctypes.c_void_p(hwnd),
-            0x003D,                 # WM_GETOBJECT
-            0,
-            ctypes.c_ssize_t(-4),   # OBJID_CLIENT
-            0x0002,                 # SMTO_ABORTIFHUNG
-            1500,
-            ctypes.byref(result),
-        )
+        targets = [hwnd]
+        try:
+            ENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+            def _collect_top(h, _lp):
+                try:
+                    h = int(h or 0)
+                    if not h:
+                        return True
+                    want = ctypes.c_ulong()
+                    user32.GetWindowThreadProcessId(ctypes.c_void_p(h), ctypes.byref(want))
+                    if pid and want.value == pid:
+                        buf = ctypes.create_unicode_buffer(256)
+                        user32.GetClassNameW(ctypes.c_void_p(h), buf, 256)
+                        if "chrome" in (buf.value or "").lower():
+                            targets.append(h)
+                except Exception:
+                    pass
+                return True
+
+            def _collect_child(h, _lp):
+                try:
+                    h = int(h or 0)
+                    if not h:
+                        return True
+                    buf = ctypes.create_unicode_buffer(256)
+                    user32.GetClassNameW(ctypes.c_void_p(h), buf, 256)
+                    cls = (buf.value or "").lower()
+                    if "chrome" in cls and "widget" in cls:
+                        targets.append(h)
+                except Exception:
+                    pass
+                return True
+
+            top_cb = ENUMPROC(_collect_top)
+            child_cb = ENUMPROC(_collect_child)
+            user32.EnumWindows(top_cb, 0)
+            try:
+                user32.EnumChildWindows(ctypes.c_void_p(hwnd), child_cb, 0)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug(f"[Vision] Accessibility enum note: {e}")
+
+        for h in dict.fromkeys(targets):
+            try:
+                result = ctypes.c_ssize_t(0)
+                user32.SendMessageTimeoutW(
+                    ctypes.c_void_p(h),
+                    0x003D,                 # WM_GETOBJECT
+                    0,
+                    ctypes.c_ssize_t(-4),   # OBJID_CLIENT
+                    0x0002,                 # SMTO_ABORTIFHUNG
+                    1200,
+                    ctypes.byref(result),
+                )
+            except Exception:
+                continue
     except Exception as e:
         logger.debug(f"[Vision] Accessibility nudge note: {e}")
 
 
 def _prepare_window_for_scan(window):
     """Make a window's contents visible to UI automation before walking it."""
-    if window is not None and _is_chromium_window(window):
-        _nudge_accessibility(window)
-        import time
-        time.sleep(0.4)   # let the renderer build the tree
+    import time
+    try:
+        if window is None or not _is_chromium_window(window):
+            return
+    except Exception:
+        return
+    try:
+        hwnd = int(getattr(window, "NativeWindowHandle", 0) or 0)
+    except Exception:
+        hwnd = 0
+    # Chromium suspends the tree for background windows, so look at it first.
+    if hwnd:
+        activate_window(hwnd)
+    _nudge_accessibility(window)
+    # The renderer needs a moment to build the tree. Repeat scans inside one
+    # task skip the wait - the message itself is cheap and idempotent.
+    now = time.monotonic()
+    wait = 0.9 if (now - _NUDGED_AT.get(hwnd, 0)) > 30 else 0.15
+    if hwnd:
+        _NUDGED_AT[hwnd] = now
+    time.sleep(wait)
 
 
 def _find_window(title):
