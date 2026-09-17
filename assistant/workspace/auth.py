@@ -13,6 +13,7 @@ Two rules shape this module:
 """
 
 import os
+import json
 import logging
 import threading
 from typing import Any, Dict, Optional
@@ -32,6 +33,11 @@ SCOPES = [
 NOT_CONFIGURED = "not_configured"      # no OAuth client downloaded yet
 NEEDS_AUTHORIZATION = "needs_authorization"  # client present, no usable token
 LIVE = "live"                          # a token that Google will accept
+
+# Refresh tokens live encrypted in the control plane vault, never as
+# plaintext JSON next to the code. Files remain as a migration source.
+OAUTH_SECRET_NAME = "google_workspace_oauth"
+OAUTH_SECRET_SCOPES = "google.*"
 
 _services_cache: Dict[str, Any] = {}
 _lock = threading.Lock()
@@ -80,10 +86,50 @@ def google_libraries_available() -> bool:
         return False
 
 
+def _get_secret_store():
+    """The shared encrypted vault. Patch point for tests."""
+    from assistant.control.secrets import _shared_secret_store
+    return _shared_secret_store()
+
+
+def _save_token_secret(token_json: str) -> bool:
+    """Persist the OAuth token encrypted. Never raises; files stay fallback."""
+    try:
+        store = _get_secret_store()
+        store.put(OAUTH_SECRET_NAME, token_json,
+                  description="Google Workspace OAuth token (auto refresh).",
+                  allowed_capabilities=OAUTH_SECRET_SCOPES)
+        return True
+    except Exception as error:
+        logger.debug("Could not store Google token in vault: %s", error)
+        return False
+
+
+def _load_token_secret() -> Optional[str]:
+    """The vaulted OAuth token JSON, or None."""
+    try:
+        store = _get_secret_store()
+        if not store.has(OAUTH_SECRET_NAME):
+            return None
+        return store.reveal(OAUTH_SECRET_NAME, capability="*")
+    except Exception as error:
+        logger.debug("Could not read Google token from vault: %s", error)
+        return None
+
+
+def _delete_token_secret() -> None:
+    try:
+        _get_secret_store().delete(OAUTH_SECRET_NAME)
+    except Exception as error:
+        logger.debug("Could not delete Google token from vault: %s", error)
+
+
 def load_saved_credentials(refresh: bool = True):
     """Load the stored token. Never prompts, never opens a browser.
 
-    Returns valid credentials, or None when the user still has to authorize.
+    The encrypted vault is home now; legacy token files are a one-time
+    migration source. Returns valid credentials, or None when the user
+    still has to authorize.
     """
     try:
         from google.oauth2.credentials import Credentials
@@ -92,29 +138,66 @@ def load_saved_credentials(refresh: bool = True):
         logger.warning("Google auth libraries not available.")
         return None
 
+    creds = _creds_from_json(_load_token_secret())
+    if creds is not None and creds.valid:
+        return creds
+    if refresh and creds is not None and creds.expired \
+            and creds.refresh_token:
+        refreshed = _try_refresh(creds, Request())
+        if refreshed is not None:
+            return refreshed
+
+    # Legacy path: plaintext token files from before the vault.
     token_path = get_token_path()
     if not os.path.exists(token_path):
         return None
 
     try:
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+        with open(token_path, "r", encoding="utf-8") as handle:
+            file_json = handle.read()
+        creds = _creds_from_json(file_json)
     except Exception as error:
         logger.warning("Stored Google token is unreadable: %s", error)
         return None
 
-    if creds and creds.valid:
+    if creds is not None and creds.valid:
+        _save_token_secret(file_json)
         return creds
 
-    if refresh and creds and creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-            _write_token(creds)
-            return creds
-        except Exception as error:
-            logger.warning("Could not refresh Google credentials: %s", error)
-            return None
+    if refresh and creds is not None and creds.expired \
+            and creds.refresh_token:
+        refreshed = _try_refresh(creds, Request())
+        if refreshed is not None:
+            return refreshed
 
     return None
+
+
+def _creds_from_json(token_json):
+    """Credentials from stored JSON, or None when there is nothing usable."""
+    if not token_json:
+        return None
+    try:
+        from google.oauth2.credentials import Credentials
+        return Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+    except Exception as error:
+        logger.warning("Stored Google token is unreadable: %s", error)
+        return None
+
+
+def _try_refresh(creds, request):
+    """Refresh in place, persisting to vault and file. None on failure."""
+    try:
+        creds.refresh(request)
+    except Exception as error:
+        logger.warning("Could not refresh Google credentials: %s", error)
+        return None
+    try:
+        _save_token_secret(creds.to_json())
+    except Exception as error:
+        logger.debug("Could not vault refreshed Google token: %s", error)
+    _write_token(creds)
+    return creds
 
 
 def _write_token(creds) -> None:
@@ -191,11 +274,15 @@ def authorize(open_browser: bool = True) -> Dict[str, str]:
 
     try:
         flow = InstalledAppFlow.from_client_secrets_file(get_credentials_path(), SCOPES)
-        if open_browser:
-            creds = flow.run_local_server(port=0)
-        else:
-            creds = flow.run_local_server(port=0, open_browser=False)
+        # access_type=offline + prompt=consent is what guarantees a refresh
+        # token: without it Google may hand back an access token only, and the
+        # connection silently dies an hour later. (The loopback exchange
+        # itself uses PKCE inside google-auth-oauthlib.)
+        creds = flow.run_local_server(
+            port=0, open_browser=open_browser,
+            access_type="offline", prompt="consent")
         _write_token(creds)
+        _save_token_secret(creds.to_json())
     except Exception as error:
         logger.error("Google authorization failed: %s", error)
         return {"state": NEEDS_AUTHORIZATION, "detail": f"Sign-in failed: {error}"}
@@ -207,6 +294,7 @@ def authorize(open_browser: bool = True) -> Dict[str, str]:
 
 def disconnect() -> Dict[str, str]:
     """Forget the token on this machine. The Google account is untouched."""
+    _delete_token_secret()
     for path in get_token_paths():
         try:
             os.remove(path)

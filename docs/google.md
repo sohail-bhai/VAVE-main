@@ -62,8 +62,11 @@ reaches the repository. Do not paste its contents into a chat or an issue.
 - from a shell: `python -c "from assistant.workspace import auth; print(auth.authorize())"`
 
 A browser opens, you sign in, and Google shows the access being requested.
-Approve it once. VAVE writes `token_workspace.json` next to
-`credentials.json` and refreshes it on its own after that.
+Approve it once. VAVE stores the token **encrypted** in its secret vault
+(`secret://google_workspace_oauth`) and keeps `token_workspace.json` as a
+fallback; an old plaintext token is imported into the vault automatically on
+first use. Sign-in requests offline access, so the token refreshes on its own
+after that — you sign in once, not every hour.
 
 > Google will warn that the app is not verified. That is expected for an app
 > you made for yourself. Choose **Advanced → Go to (your app name)**.

@@ -25,7 +25,21 @@ SCOPES = ["https://www.googleapis.com/auth/calendar"]
 def get_calendar_service():
     """Shows basic usage of the Google Calendar API."""
     creds = None
-    
+
+    # Prefer the shared Workspace credentials (encrypted vault, auto refresh)
+    # over this module's legacy token.json.
+    try:
+        from assistant.workspace import auth as workspace_auth
+        creds = workspace_auth.load_saved_credentials()
+    except Exception:
+        creds = None
+
+    if creds is not None:
+        try:
+            return build("calendar", "v3", credentials=creds)
+        except Exception:
+            creds = None
+
     # Paths for credentials and tokens
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     token_path = os.path.join(project_root, "token.json")
