@@ -148,6 +148,8 @@ AVAILABLE_FUNCTIONS = {
     "get_clickable_elements": system_tasks.get_clickable_elements,
     "spawn_parallel_agents": __import__('assistant.swarm', fromlist=['']).spawn_parallel_agents,
     "run_actor_critic_research": __import__('assistant.swarm', fromlist=['']).run_actor_critic_research,
+    "run_swarm_dag": __import__('assistant.swarm', fromlist=['']).run_swarm_dag,
+    "run_actor_critic": __import__('assistant.swarm', fromlist=['']).run_actor_critic,
     "disable_voice_input": system_tasks.disable_voice_input,
     "enable_voice_input": system_tasks.enable_voice_input,
     "disable_speech_output": system_tasks.disable_speech_output,
@@ -462,6 +464,14 @@ TOOL_GROUPS = {
          "upload", "send me", "where did i put", "shared", "phone"),
         ("shared_folders", "list_shared_files", "find_shared_file", "read_file",
          "write_file", "list_directory"),
+    ),
+    "swarm": (
+        ("swarm", "sub-agent", "sub agent", "parallel agents", "delegate",
+         "actor critic", "actor-critic", "multi-stage", "multi stage",
+         "research deeply", "deep research", "verify the result",
+         "step by step plan"),
+        ("spawn_parallel_agents", "run_swarm_dag", "run_actor_critic",
+         "run_actor_critic_research"),
     ),
 }
 
@@ -1123,6 +1133,37 @@ LLM_TOOLS = WEB_TOOLS + [
                     "topic": {"type": "string", "description": "The complex topic to research deeply."}
                 },
                 "required": ["topic"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_swarm_dag",
+            "description": "Runs a multi-stage goal as a dependency graph of sub-agent roles (Researcher, Planner, Coder, Verifier). Each node runs after its dependencies finish and sees their outputs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nodes": {"type": "string", "description": "JSON list of node dicts. Example: \"[ {'id': 'fetch', 'role': 'Researcher', 'task': 'gather facts', 'needs': []}, {'id': 'write', 'role': 'Coder', 'task': 'write it', 'needs': ['fetch']} ]\""}
+                },
+                "required": ["nodes"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_actor_critic",
+            "description": "A generator role drafts an answer and a critic role judges it against the goal and safety rules, refining until approval or the cap.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "The goal to achieve."},
+                    "actor_role": {"type": "string", "description": "Generator role (default Coder)."},
+                    "critic_role": {"type": "string", "description": "Judge role (default Verifier)."},
+                    "max_iterations": {"type": "integer", "description": "Critic rounds before giving up (default 3)."}
+                },
+                "required": ["goal"]
             }
         }
     },
@@ -3242,7 +3283,8 @@ DESTRUCTIVE_TOOLS = [
 SENSITIVE_TOOLS = [
     "update_setting", "take_screenshot", "read_file", "send_email",
     "git_auto_commit_and_push", "spawn_parallel_agents",
-    "run_actor_critic_research", "send_telegram_update",
+    "run_actor_critic_research", "run_swarm_dag", "run_actor_critic",
+    "send_telegram_update",
     "upload_google_drive_file", "export_to_google_drive", "draft_gmail_message",
     "create_google_calendar_event", "create_google_doc",
     "create_google_slides", "enable_voice_input", "enable_speech_output",

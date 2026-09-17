@@ -188,6 +188,8 @@ TOOL_CAPABILITIES = {
     "scrape_project_ideas": "web.search",
     "spawn_parallel_agents": "web.search",
     "run_actor_critic_research": "web.search",
+    "run_swarm_dag": "web.search",
+    "run_actor_critic": "web.search",
 
     # Desktop lifecycle and input. Reads and trivial queries ride LOW
     # capabilities so everyday requests keep working; anything that kills,
