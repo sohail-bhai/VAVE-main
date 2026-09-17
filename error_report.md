@@ -1,8 +1,8 @@
-# VAVE Desktop Assistant & Control Plane: Comprehensive Error & Audit Report
+# VAVE Desktop Assistant & Control Plane: Current Error & Audit Report
 
 **Date**: 2026-09-17  
 **Scope**: `assistant/`, `gui/`, `config.json`, Core Architecture & Protocols  
-**Total Findings**: 19 across 5 distinct review domains (Security, Reliability, Performance, Architecture, Edge-Case)
+**Status**: Fresh Deep Audit of Current Clean Codebase (16 Unresolved Findings across 5 Distinct Domains)
 
 ---
 
@@ -10,391 +10,433 @@
 
 | ID | Domain | Severity | Confidence | Location | Summary |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **SEC-01** | Security | **Critical** (CVSS 9.8) | 100% | [`assistant/api/app.py:L269-L312`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L269-L312) | Wildcard CORS + localhost trust enables cross-origin token minting & computer takeover |
-| **SEC-02** | Security | **High** (CVSS 8.6) | 100% | [`assistant/web_api.py:L64-L165`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/web_api.py#L64-L165) | SSRF check bypass via HTTP 30x redirects & TOCTOU DNS rebinding |
-| **SEC-03** | Security | **High** (CVSS 7.5) | 100% | [`assistant/files.py:L61-L246`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L61-L246) | Sliced `_is_hidden()` check exposes subfolder dotfiles & `.git` secrets |
-| **SEC-04** | Security | **Medium** (CVSS 6.5) | 95% | [`assistant/guard.py:L121-L136`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/guard.py#L121-L136) | Read tools bypass mutation guard, exposing `secret.key` and private keys |
-| **REL-01** | Reliability | **Critical** | 100% | [`assistant/control/executor.py:L365-L384`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L365-L384) | Task steps mark finished immediately when capability approval requested |
-| **REL-02** | Reliability | **High** | 100% | [`assistant/browser/session.py:L55-L119`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/browser/session.py#L55-L119) | Playwright synchronous thread affinity crash across thread pool workers |
-| **REL-03** | Reliability | **High** | 95% | [`assistant/control/secrets.py:L239-L259`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/secrets.py#L239-L259) | Unclosed `ControlStore` instances cause SQLite database lock collisions on Windows |
-| **REL-04** | Reliability | **Medium** | 100% | [`assistant/notes.py:L8-L26`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/notes.py#L8-L26) | Unhandled `FileNotFoundError` when `data/` directory does not exist |
-| **PERF-01** | Performance | **High** | 100% | [`assistant/speech.py:L248-L258`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/speech.py#L248-L258) | Synchronous Telegram network request inside `speak()` stalls voice/UI loop |
-| **PERF-02** | Performance | **High** | 100% | [`assistant/control/secrets.py:L249-L258`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/secrets.py#L249-L258) | 19 migration checks re-run on every single secret setting lookup |
-| **PERF-03** | Performance | **Medium** | 95% | [`assistant/files.py:L209-L224`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L209-L224) | Unindexed 20,000-file recursive directory traversal blocks event loop |
-| **PERF-04** | Performance | **Medium** | 90% | [`assistant/ai_brain.py:L3177-L3184`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/ai_brain.py#L3177-L3184) | Massive tool schema payload re-evaluated every turn on small local model |
-| **ARCH-01** | Architecture | **High** | 95% | [`assistant/control/executor.py:L357-L384`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L357-L384) | Split-brain authorization: Control plane grants conflict with guard tiers |
-| **ARCH-02** | Architecture | **High** | 95% | [`assistant/call_context.py:L16-L60`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/call_context.py#L16-L60) | Reused thread pool workers leak ContextVar taint state across steps |
-| **ARCH-03** | Architecture | **Medium** | 95% | [`assistant/config.py:L268-L280`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/config.py#L268-L280) | Mutating config cache in-place purges in-memory secrets and lacks atomic save |
-| **EDGE-01** | Edge-Case | **High** | 100% | [`assistant/commands.py:L55-L66`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/commands.py#L55-L66) | Substring `"my name is"` in question overwrites user name in config |
-| **EDGE-02** | Edge-Case | **Medium** | 95% | [`assistant/files.py:L260-L271`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L260-L271) | `..` in destination filename moves file outside shared root |
-| **EDGE-03** | Edge-Case | **Medium** | 90% | [`assistant/notes.py:L30-L42`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/notes.py#L30-L42) | TOCTOU double-read race condition in `read_notes` |
-| **EDGE-04** | Edge-Case | **Low** | 95% | [`assistant/system_tasks.py:L1479-L1485`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/system_tasks.py#L1479-L1485) | Windows CMD non-UTF8 code page crashes on Unicode command output |
+| **SEC-01** | Security | **Critical** (CVSS 9.6) | 100% | [`assistant/api/app.py:L298-L317`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L298-L317) | Global CSRF / Origin validation missing on state-changing API endpoints enables remote computer takeover |
+| **SEC-02** | Security | **High** (CVSS 8.2) | 100% | [`assistant/api/app.py:L1307-L1425`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L1307-L1425) | Cross-Site WebSocket Hijacking (CSWSH) on event, notification, and activity streams exfiltrates live data |
+| **SEC-03** | Security | **High** (CVSS 8.1) | 100% | [`assistant/control/capabilities.py:L80-L165`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/capabilities.py#L80-L165) | 16 tools missing from capability catalog auto-grant permission, bypassing policy and approval gates |
+| **SEC-04** | Security | **High** (CVSS 7.8) | 95% | [`assistant/guard.py:L120-L170`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/guard.py#L120-L170) | Hard-invariant gap permits overwriting `control.db` and reading root `.env` credential files |
+| **REL-01** | Reliability | **Critical** | 100% | [`assistant/system_tasks.py:L542-L580`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/system_tasks.py#L542-L580) | Empty or short process name in `close_app` triggers mass termination of all Windows OS processes |
+| **REL-02** | Reliability | **High** | 100% | [`assistant/control/service.py:L759-L764`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/service.py#L759-L764) | Resolving one approval prematurely marks multi-approval tasks as running while remaining approvals pending |
+| **REL-03** | Reliability | **Medium** | 95% | [`assistant/api/auth.py:L59, L88-L97`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/auth.py#L59) | Unbounded memory growth in rate limiter in-memory token bucket without TTL pruning |
+| **REL-04** | Reliability | **Medium** | 100% | [`assistant/files.py:L236-L255`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L236-L255) | Windows reserved device names (`CON`, `NUL`, `AUX`) and second-precision collisions in `save_upload` |
+| **PERF-01** | Performance | **High** | 100% | [`assistant/control/notifier.py:L82-L97`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/notifier.py#L82-L97) | Synchronous outbound Telegram HTTP requests block control plane event subscriber pipeline |
+| **PERF-02** | Performance | **Medium** | 95% | [`assistant/control/secrets.py:L179-L197`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/secrets.py#L179-L197) | Redundant SQLite queries and Fernet decryptions on every single timeline event and log line |
+| **PERF-03** | Performance | **Medium** | 90% | [`assistant/browser/session.py:L86-L93`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/browser/session.py#L86-L93) | Indefinite future wait on browser thread worker causes unrecoverable task hang on Playwright stall |
+| **ARCH-01** | Architecture | **Medium** | 95% | [`assistant/api/app.py:L435-L451`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L435-L451) | Missing client device attribution stamps all remote tasks as originating from local computer |
+| **ARCH-02** | Architecture | **Medium** | 90% | [`assistant/site_memory.py:L53-L59`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/site_memory.py#L53-L59) | Non-atomic write in `SiteMemory` risks file truncation and data loss during process crash |
+| **EDGE-01** | Edge-Case | **High** | 100% | [`assistant/commands.py:L165-L187`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/commands.py#L165-L187) | Overly greedy substring match in `handle_volume_command` intercepts general math/science questions |
+| **EDGE-02** | Edge-Case | **Medium** | 100% | [`assistant/commands.py:L74-L91`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/commands.py#L74-L91) | Unanchored phrase match in `change_assistant_name` renames assistant during natural conversation |
+| **EDGE-03** | Edge-Case | **Low** | 95% | [`assistant/system_tasks.py:L1490-L1505`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/system_tasks.py#L1490-L1505) | Subprocess execution lacks `stdin=subprocess.DEVNULL`, causing 15s hang on interactive CLI commands |
 
 ---
 
 ## 1. Security Review
 
-### SEC-01: Cross-Origin Localhost Authentication Bypass & CSRF Token Minting
-* **Severity**: Critical (CVSS 9.8 - AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:H)
+### SEC-01: Global CSRF & Origin Validation Gap Across State-Changing API Endpoints
+* **Severity**: Critical (CVSS 9.6 - `AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:H`)
 * **Confidence**: High (100%)
-* **Location**: [`assistant/api/app.py:L269-L312`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L269-L312), [`assistant/api/auth.py:L219-L251`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/auth.py#L219-L251)
+* **Location**: [`assistant/api/app.py:L298-L317`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L298-L317)
 * **Description**:
-  The API binds with `CORSMiddleware` configured to `allow_origins=["*"]`. Simultaneously, `config.json` sets `api_trust_localhost: true` by default. In `assistant/api/auth.py`, `authenticate()` permits unauthenticated access if the client connects from loopback (`127.0.0.1`, `localhost`, `::1`). When a user visits any malicious website in Chrome or Edge, attacker JavaScript can make a cross-origin `POST http://127.0.0.1:8765/api/pair/code`. The browser connects from `127.0.0.1`, bypassing authentication. Because wildcard CORS is active, the browser does not block the response and exposes the generated 6-digit code to the attacker's script. The script immediately posts to `/api/pair` to obtain a permanent authenticated device token, gaining full remote command execution and local machine takeover.
+  In `authenticate_and_limit` middleware, `guard.check_same_origin(request)` is strictly applied to pairing routes (`/api/pair` and `/api/pair/code`). All other mutation endpoints—including `/api/tasks` (task creation & execution), `/api/approvals/{id}/resolve`, `/api/files/upload`, `/api/home/control`, `/api/permissions`, and `/api/secrets`—completely omit origin checks.
+  Because `config.json` specifies `api_trust_localhost: true` by default, requests originating from the loopback interface (`127.0.0.1`) are treated as authenticated. When a user navigates to any third-party malicious website in Chrome or Edge, attacker JavaScript can trigger cross-origin POST requests directly to `http://127.0.0.1:8765/api/tasks`. Because `Origin` is not validated, the loopback trust grants access, creating and executing arbitrary autonomous tasks that run terminal commands and take over the user's desktop.
 * **Fix**:
-  1. Remove `allow_origins=["*"]` on sensitive endpoints; restrict CORS to trusted origin domains.
-  2. Validate the `Origin` and `Sec-Fetch-Site` headers for loopback requests. Reject `/api/pair/code` and administrative endpoints if `Origin` is present and untrusted.
-  3. Require an explicit local file secret or pairing trigger rather than trusting raw client IP addresses.
+  Apply `guard.check_same_origin(request)` universally to all state-changing HTTP verbs (`POST`, `PUT`, `PATCH`, `DELETE`) for unauthenticated loopback requests:
+  ```python
+  if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+      if not bearer_token(request.headers.get("authorization")):
+          guard.check_same_origin(request)
+  ```
 * **Reproduction Steps**:
   1. Start the API server: `python -m assistant.api`.
-  2. Open any browser to an external website (e.g., `https://example.com`).
+  2. Open an external site (or local HTML file `file:///...` or `http://attacker-site.com`).
   3. Open DevTools Console and execute:
      ```javascript
-     fetch("http://127.0.0.1:8765/api/pair/code", { method: "POST" })
-       .then(r => r.json())
-       .then(data => console.log("Extracted code:", data.code));
+     fetch("http://127.0.0.1:8765/api/tasks", {
+       method: "POST",
+       headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({goal: "open calc", autoplan: true, run: true})
+     });
      ```
-  4. Observe that the browser receives and prints the pairing code due to `Access-Control-Allow-Origin: *`.
+  4. Notice the task is accepted and runs without authentication.
 
 ---
 
-### SEC-02: SSRF Filter Bypass via HTTP 30x Redirects & TOCTOU DNS Rebinding
-* **Severity**: High (CVSS 8.6 - AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N)
+### SEC-02: Cross-Site WebSocket Hijacking (CSWSH) on Live Event & Notification Streams
+* **Severity**: High (CVSS 8.2 - `AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:N/A:N`)
 * **Confidence**: High (100%)
-* **Location**: [`assistant/web_api.py:L64-L98`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/web_api.py#L64-L98), [`assistant/web_api.py:L157-L165`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/web_api.py#L157-L165)
+* **Location**: [`assistant/api/app.py:L1307-L1425`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L1307-L1425)
 * **Description**:
-  `check_address(url)` performs initial hostname resolution to detect private/loopback IP ranges. However, `urllib.request.urlopen(request)` is executed without a custom redirect handler. Python's default handler follows HTTP 301/302 redirects automatically without re-checking the destination IP. An attacker-controlled web service can respond with `302 Found` pointing to internal endpoints (`http://127.0.0.1:8765/api/status` or `http://169.254.169.254/latest/meta-data/`). Additionally, performing DNS lookup in `check_address` separate from the connection in `urlopen` creates a Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding vulnerability.
+  The WebSocket endpoints (`/ws/events`, `/ws/notifications`, `/ws/activity`, and `_stream`) authenticate connections via `guard.authenticate(token, websocket.client.host)`. When connecting from a local browser, `token` is empty and `client.host` is `127.0.0.1`, so `authenticate` allows the connection through loopback trust.
+  Crucially, none of the WebSocket handlers inspect or validate the incoming `Origin` HTTP header. Browsers automatically transmit `Origin: https://evil.com` upon initiating WebSocket connections. Attacker JavaScript on any website can open a WebSocket to `ws://127.0.0.1:8765/ws/events`, bypass authentication via localhost trust, and stream real-time task outputs, OCR text, notification payloads, and credentials in transit.
 * **Fix**:
-  1. Subclass `urllib.request.HTTPRedirectHandler` and override `redirect_request`: validate every redirect destination through `check_address(new_url)` before following.
-  2. Strip Authorization and custom secret headers if the redirect target has a different host or scheme.
-* **Reproduction Steps**:
-  1. Start a local server on port 8765.
-  2. Run an external public HTTP mock server that redirects:
-     `Location: http://127.0.0.1:8765/api/status`.
-  3. Execute `assistant.web_api.call("GET", "http://external-mock.com/redirect")`.
-  4. Observe that the internal status response is returned to the caller.
-
----
-
-### SEC-03: Sliced `_is_hidden()` Check Exposes Subfolder Dotfiles & `.git` Secrets
-* **Severity**: High (CVSS 7.5 - AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N)
-* **Confidence**: High (100%)
-* **Location**: [`assistant/files.py:L61-L66`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L61-L66), [`assistant/files.py:L227-L246`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L227-L246)
-* **Description**:
-  In `assistant/files.py`, `_is_hidden(path)` checks only the final segment:
+  Extract and validate the `Origin` header before calling `await websocket.accept()`. If `Origin` is present and does not match the server host, require an explicit valid device Bearer token:
   ```python
-  return any(part.startswith(".") and part not in (".", "..") for part in path.parts[-1:])
+  origin = websocket.headers.get("origin", "")
+  if origin and not token:
+      try:
+          from urllib.parse import urlparse
+          origin_host = (urlparse(origin).hostname or "").lower()
+          server_host = (websocket.url.hostname or "").lower()
+          if origin_host != server_host:
+              await websocket.close(code=1008)
+              return
+      except Exception:
+          await websocket.close(code=1008)
+          return
   ```
-  If a path is `share_name/.git/config` or `share_name/.secrets/db.json`, `path.parts[-1:]` is `("config",)` or `("db.json",)`. Because `"config"` does not start with `.`, `_is_hidden` returns `False`. Clients can download any hidden file located inside a subdirectory. Furthermore, `save_upload` does not call `_is_hidden(safe_name)`, allowing clients to overwrite `.env` or `control.db` inside shared folders.
-* **Fix**:
-  1. Check all segments in `_is_hidden`:
-     ```python
-     def _is_hidden(path):
-         parts = set(path.parts)
-         if any(name in parts for name in HIDDEN_NAMES):
-             return True
-         return any(part.startswith(".") and part not in (".", "..") for part in path.parts)
-     ```
-  2. Enforce `_is_hidden(safe_name)` in `save_upload()`.
 * **Reproduction Steps**:
-  1. In a shared folder, create a directory `.git` containing a file `config`.
-  2. Call `assistant.files.open_for_download("share_name/.git/config")`.
-  3. Observe that the file is resolved and downloaded without a `FileAccessError`.
+  1. Start the API server: `python -m assistant.api`.
+  2. Open Chrome to `https://example.com` and open DevTools Console.
+  3. Run:
+     ```javascript
+     const ws = new WebSocket("ws://127.0.0.1:8765/ws/events");
+     ws.onmessage = (e) => console.log("Leaked Event:", e.data);
+     ```
+  4. The WebSocket connects immediately (code 101 Switching Protocols) and streams internal system activity events to the external domain.
 
 ---
 
-### SEC-04: Credential and Private Key Exposure via Unbounded File Reading
-* **Severity**: Medium (CVSS 6.5 - AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N)
-* **Confidence**: High (95%)
-* **Location**: [`assistant/guard.py:L121-L136`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/guard.py#L121-L136), [`assistant/system_tasks.py:L1500-L1510`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/system_tasks.py#L1500-L1510)
+### SEC-03: Unmapped Tools in Capability Engine Auto-Grant Administrative Access
+* **Severity**: High (CVSS 8.1 - `AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`)
+* **Confidence**: High (100%)
+* **Location**: [`assistant/control/capabilities.py:L80-L165`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/capabilities.py#L80-L165), [`assistant/control/executor.py:L372-L375`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L372-L375)
 * **Description**:
-  `_is_hard_denied()` in `guard.py` only protects files against mutation tools (`write_file`, `delete_file`, etc.). Reading files via `read_file(path)` has no workspace path containment checks. An LLM agent or caller can execute `read_file("C:/Users/<user>/.ssh/id_rsa")` or `read_file("data/control.db")`. In addition, `run_terminal_command("type data\\secret.key")` is not blocked by `_DESTRUCTIVE_COMMAND_REGEX` (which only checks deletion keywords), allowing secret keys to be exfiltrated.
+  In `assistant/control/capabilities.py`, `TOOL_CAPABILITIES` maps registered tool functions to control plane capability strings. Currently, 16 tools defined in `assistant/ai_brain.py:AVAILABLE_FUNCTIONS` are missing from `TOOL_CAPABILITIES`:
+  `open_app`, `close_app`, `close_window`, `focus_window`, `press_hotkey`, `write_to_screen_line`, `create_google_slides`, `set_volume`, `mute_volume`, `list_windows`, `tell_time`, `tell_date`, `tell_battery`, `get_weather`, `wait`, `propose_new_feature`.
+  In `TaskExecutor._authorizer(task_id, agent, token)`:
+  ```python
+  def authorize(tool_name):
+      capability = capability_for_tool(tool_name)
+      if not capability:
+          return True, ""  # AUTO-GRANTED!
+  ```
+  Because `capability_for_tool` returns `""` for unmapped tools, tools capable of killing processes (`close_app`), launching arbitrary system commands (`open_app`), or sending global keystrokes (`press_hotkey`) are automatically granted without policy evaluation or human approval.
 * **Fix**:
-  1. Constrain `read_file` to paths within project directories or configured shares.
-  2. Add an explicit check in `_is_hard_denied` preventing read access to `secret.key`, `control.db`, and user `.ssh`/`.aws` files.
+  1. Map every registered tool in `TOOL_CAPABILITIES` to its respective capability:
+     - `open_app`: `system.action`
+     - `close_app`: `system.power`
+     - `close_window`, `focus_window`, `list_windows`: `system.window.manage`
+     - `press_hotkey`, `write_to_screen_line`: `system.input.control`
+     - `create_google_slides`: `google.drive.write`
+     - `set_volume`, `mute_volume`: `system.action`
+  2. Modify `_authorizer` in `executor.py` so that unmapped tools are denied or default to high-risk approval rather than being silently allowed.
 * **Reproduction Steps**:
-  1. Call `assistant.system_tasks.read_file(str(Path.home() / ".ssh" / "id_rsa"))`.
-  2. The call succeeds and returns the private key contents directly.
+  1. In a task step, issue an instruction that triggers `close_app` or `press_hotkey`.
+  2. Inspect the authorization flow in `TaskExecutor._authorizer`.
+  3. The authorizer immediately returns `(True, "")` without asking the policy engine or creating an approval request.
+
+---
+
+### SEC-04: Hard-Invariant Gap Permits Overwriting `control.db` and Reading `.env`
+* **Severity**: High (CVSS 7.8 - `AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N`)
+* **Confidence**: Medium-High (95%)
+* **Location**: [`assistant/guard.py:L120-L170`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/guard.py#L120-L170)
+* **Description**:
+  In `assistant/guard.py`, `_is_hard_denied` protects against mutating `assistant/*`, `gui/*`, `logs/*`, `config.json`, and `secret.key`. However, `control.db` (the SQLite database holding tokens, permissions, policies, and audit logs) and root `.env` (holding environment secrets) are omitted from the mutation blacklist.
+  An autonomous agent calling `write_file(filename="data/control.db", content="...")` or `write_file(filename=".env", content="...")` bypasses the invariant.
+  Additionally, `is_protected_read_path` only checks `_PROTECTED_READ_NAMES = ("secret.key", "control.db", "id_rsa", "id_ed25519")`, leaving `.env` completely readable by `read_file`.
+* **Fix**:
+  Add `.env`, `control.db`, `control.db-wal`, `control.db-shm` to `_PROTECTED_READ_NAMES`, and add `.env` and `control.db` to the hard-denied mutation rules.
+* **Reproduction Steps**:
+  1. Call `guard.guard_call("write_file", {"filename": "data/control.db", "content": "corrupted"})`.
+  2. The guard check returns without raising `ToolDenied`.
 
 ---
 
 ## 2. Reliability Review
 
-### REL-01: Premature Step Completion and Drop of Pending Capability Approvals
+### REL-01: Empty or Short Process Name in `close_app` Triggers Mass System Termination
 * **Severity**: Critical
 * **Confidence**: High (100%)
-* **Location**: [`assistant/control/executor.py:L365-L384`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L365-L384), [`assistant/ai_brain.py:L2763-L2773`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/ai_brain.py#L2763-L2773), [`assistant/control/service.py:L732-L736`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/service.py#L732-L736)
+* **Location**: [`assistant/system_tasks.py:L542-L580`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/system_tasks.py#L542-L580)
 * **Description**:
-  When a step attempts to execute a tool requiring approval, `_authorizer()` calls `plane.request_capability()`, which transitions the task to `TaskStatus.WAITING_APPROVAL`. However, `_authorizer()` returns `(False, "needs your approval first...")` to `_agent_loop`. The model receives the tool refusal, outputs a message ("I need your approval to run this"), and ends its turn. `_call_runner()` returns the output text to `_run_step()`, which calls `plane.finish_step(task_id, step.position, detail=result.output)`. The step is marked `finished` in SQLite. When the user approves the pending approval in the GUI or mobile app, the step has already terminated without executing the tool.
+  `close_app(app_name)` computes:
+  ```python
+  clean_name = str(app_name).lower().strip().replace("close ", "").replace("kill ", "")
+  ```
+  And matches processes via:
+  ```python
+  if p_name in target_exes or clean_name in p_name:
+      proc.terminate()
+  ```
+  If `app_name` is `"close"` or `"kill"`, `clean_name` becomes the empty string `""`. Because `"" in p_name` evaluates to `True` for every running process, it iterates through all system processes on the computer and terminates them.
+  Furthermore, if `clean_name` is short (e.g. `"s"`, `"win"`, `"host"`), it matches and terminates core Windows services (`svchost.exe`, `explorer.exe`, `sihost.exe`), causing Windows to crash or force-restart.
 * **Fix**:
-  1. In `_authorizer()`, if capability status is `"waiting"`, do not return refusal to the model loop. Block on an approval resolution condition variable or event until resolved or timed out.
-  2. Alternatively, raise a dedicated `StepWaitingApproval` exception in `_run_step()` to pause the step and leave it in `running`/`waiting_approval` status until explicitly resumed.
+  Require `clean_name` to be at least 3 characters and not a generic substring. Reject empty strings immediately. Only allow substring matching on exact known process basenames.
 * **Reproduction Steps**:
-  1. Create a task whose first step runs a command requiring approval (e.g. `run_terminal_command`).
-  2. The step initiates, requests approval, and returns.
-  3. Inspect SQLite database `task_steps`: the step status is already `finished`.
-  4. Approving the request via `POST /api/approvals/{id}/resolve` has no effect.
+  1. In a Python session, execute `close_app("close")` or `close_app("s")`.
+  2. Notice the termination loop kills running background processes and desktop applications indiscriminately.
 
 ---
 
-### REL-02: Playwright Thread Affinity Violation in Concurrent Step Executor
+### REL-02: Multi-Approval Premature Task Resumption in Control Plane Service
 * **Severity**: High
 * **Confidence**: High (100%)
-* **Location**: [`assistant/browser/session.py:L55-L119`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/browser/session.py#L55-L119), [`assistant/control/executor.py:L203-L225`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L203-L225)
+* **Location**: [`assistant/control/service.py:L759-L764`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/service.py#L759-L764)
 * **Description**:
-  `BrowserSession` initializes Playwright's synchronous API (`sync_playwright().start()`) on the thread that first calls `start()`. Playwright's sync API strictly mandates that all calls originate from the thread where it was instantiated. `TaskExecutor._run_graph()` dispatches task steps concurrently via `ThreadPoolExecutor(max_workers=3)`. If Step 1 opens the browser on thread worker A, and Step 2 calls `browse` or `browser_click` on thread worker B, Playwright raises `Error: Playwright Sync API must be called from the thread it was created on`.
-* **Fix**:
-  1. Run all Playwright browser interactions on a dedicated single-threaded event loop or queue worker thread.
-  2. Relay browser actions across threads via a thread-safe request/response queue.
-* **Reproduction Steps**:
-  1. Start the browser in a worker thread:
-     ```python
-     import threading
-     from assistant.browser.session import get_session
-     session = get_session()
-     t = threading.Thread(target=session.start)
-     t.start()
-     t.join()
-     ```
-  2. From the main thread, execute `session.goto("https://example.com")`.
-  3. Playwright immediately crashes with a thread affinity violation error.
-
----
-
-### REL-03: Concurrent SQLite Connection Spawning and Database Locking on Windows
-* **Severity**: High
-* **Confidence**: High (95%)
-* **Location**: [`assistant/control/secrets.py:L239-L259`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/secrets.py#L239-L259), [`assistant/control/store.py:L279-L297`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/store.py#L279-L297)
-* **Description**:
-  `assistant/control/secrets.py:resolve_setting(value)` instantiates a new `ControlStore()` on every lookup without closing it:
+  In `ControlPlane.resolve_approval(approval_id, approved)`:
   ```python
-  store = SecretStore(ControlStore(), key=load_key())
-  return store.resolve_setting(value, default=default)
+  if approval.task_id:
+      task = self.store.get_task(approval.task_id)
+      if task is not None and task.status == TaskStatus.WAITING_APPROVAL:
+          self._set_task_status(
+              task, TaskStatus.RUNNING if approved else TaskStatus.CANCELLED)
   ```
-  `resolve_setting()` is invoked during speech output, notifications, telegram sync, and system tasks. Each call opens a SQLite connection and executes schema migrations. On Windows, unclosed file handles and active WAL locks cause `sqlite3.OperationalError: database is locked`.
+  If a task produces multiple approval requests (e.g. two sensitive capabilities requested during parallel plan execution), approving the first one immediately sets `task.status = TaskStatus.RUNNING`.
+  In `TaskExecutor._wait_for_approvals()`:
+  ```python
+  if task.status != TaskStatus.WAITING_APPROVAL:
+      return True
+  ```
+  Because the status was switched to `RUNNING` by the first approval resolution, `_wait_for_approvals()` unblocks and resumes execution even though the second approval remains pending in SQLite.
 * **Fix**:
-  1. Reuse the existing singleton `ControlStore` instance from `get_control_plane().store`.
-  2. Implement proper context management (`with ControlStore() as store:`) if independent instances are ever required.
+  Before switching task status back to `RUNNING`, verify whether any other approvals for the same `task_id` remain pending:
+  ```python
+  remaining = [a for a in self.store.list_approvals(pending_only=True)
+               if a.task_id == approval.task_id and a.id != approval.id]
+  if not remaining:
+      self._set_task_status(task, TaskStatus.RUNNING)
+  ```
 * **Reproduction Steps**:
-  1. Spawn 20 concurrent threads calling `resolve_setting("secret://telegram_bot_token")`.
-  2. On Windows, observe file handle exhaustion and intermittent `sqlite3.OperationalError: database is locked`.
+  1. Create a task with two pending approvals.
+  2. Resolve the first approval.
+  3. Inspect `task.status`: it transitions to `RUNNING` while approval #2 is still unresolved.
 
 ---
 
-### REL-04: Unhandled FileNotFoundError in Notes Storage Initialization
+### REL-03: Unbounded Memory Growth in Rate Limiter In-Memory Token Bucket
+* **Severity**: Medium
+* **Confidence**: Medium-High (95%)
+* **Location**: [`assistant/api/auth.py:L59, L88-L97`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/auth.py#L59)
+* **Description**:
+  In `TokenBucket`, when `self.store` is `None` or for transient caller identities, state is maintained in `self._tokens = {}`.
+  Each new caller identity stores a tuple `(tokens, last_updated)`. There is no maximum dictionary capacity, LRU eviction, or TTL pruning. In long-running assistant sessions or under randomized client IPs/identifiers, `_tokens` expands indefinitely, leaking memory.
+* **Fix**:
+  Implement periodic TTL cleanup or cap `_tokens` with an `OrderedDict` LRU eviction strategy (e.g. max 1,000 active entries).
+* **Reproduction Steps**:
+  1. Run `limiter.take(str(uuid.uuid4()))` 100,000 times in a test.
+  2. Observe `len(limiter._tokens)` reaches 100,000 and retains all stale entries indefinitely.
+
+---
+
+### REL-04: Windows Reserved Device Names and Second-Level Timestamp Collisions in `save_upload`
 * **Severity**: Medium
 * **Confidence**: High (100%)
-* **Location**: [`assistant/notes.py:L8-L26`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/notes.py#L8-L26)
+* **Location**: [`assistant/files.py:L236-L255`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L236-L255)
 * **Description**:
-  `NOTES_FILE = PROJECT_ROOT / "data" / "notes.txt"`. In `add_note()`, the file is appended via `open(NOTES_FILE, "a", encoding="utf-8")`. If `data/` does not already exist on a fresh clone or test run, `open()` raises `FileNotFoundError`.
+  1. `save_upload` strips directory traversal via `Path(filename).name`, but does not sanitize Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-COM9`, `LPT1-LPT9`). On Windows NTFS, writing to `CON` redirects to the console, while writing to `COM1` or `AUX` can hang or crash the I/O thread.
+  2. When `overwrite=False` and a file exists, collision avoidance appends `int(time.time())`:
+     ```python
+     destination = target_dir / f"{stem}-{int(time.time())}{suffix}"
+     ```
+     If multiple files are uploaded within the same second (e.g. batch mobile upload), the timestamp suffix is identical, causing silent overwrite or collision.
 * **Fix**:
-  Ensure parent directory existence:
-  ```python
-  NOTES_FILE.parent.mkdir(parents=True, exist_ok=True)
-  ```
+  Reject or rename reserved device names (`CON`, `NUL`, etc.) and NTFS alternate data streams (`:`). Use `uuid.uuid4().hex[:8]` or microsecond timestamps for collision suffixes.
 * **Reproduction Steps**:
-  1. Delete the `data/` directory.
-  2. Invoke `assistant.notes.add_note()`.
-  3. Observe unhandled `FileNotFoundError: [Errno 2] No such file or directory: '.../data/notes.txt'`.
+  1. Upload two files with the same name within 1 second with `overwrite=False`.
+  2. The second upload collides with the first upload's generated name.
 
 ---
 
 ## 3. Performance Review
 
-### PERF-01: Blocking Outbound HTTP Request in Synchronous Speech Engine
+### PERF-01: Synchronous Outbound Telegram HTTP Requests Block Control Plane Timeline
 * **Severity**: High
 * **Confidence**: High (100%)
-* **Location**: [`assistant/speech.py:L248-L258`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/speech.py#L248-L258), [`assistant/telegram_sync.py:L174-L200`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/telegram_sync.py#L174-L200)
+* **Location**: [`assistant/control/notifier.py:L82-L97, L165-L172`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/notifier.py#L82-L97)
 * **Description**:
-  In `assistant/speech.py`, when `call_context.get_origin() == "telegram"`, `speak(text)` synchronously invokes `send_telegram_message(tok, cid, text)`. This issues a blocking HTTPS request via `urllib.request.urlopen` with a 15-second timeout on the caller's thread. If the Telegram API is slow or offline, the entire UI dashboard or voice loop freezes.
+  The `Notifier` subscribes to control plane events via `plane.subscribe(self._on_event)`. In `ControlPlane.record()`, every subscriber callback is invoked synchronously on the thread that recorded the event (e.g. task execution worker, API request handler, approval resolver).
+  In `TelegramChannel.deliver()`, it calls `send_telegram_message()`, which makes a blocking HTTP request using `urllib.request.urlopen` with a 15-second timeout.
+  When Telegram has high latency or network connectivity drops, every single notified event freezes the calling thread for up to 15 seconds.
 * **Fix**:
-  Dispatch Telegram forwarding to a background worker thread or queue:
+  Decouple notification delivery from the event subscriber by pushing notifications to an internal queue serviced by a dedicated background worker thread.
+* **Reproduction Steps**:
+  1. Set a valid Telegram bot token and simulate a slow/unreachable network connection.
+  2. Call `plane.record("Test event")`.
+  3. The `plane.record()` invocation blocks synchronously for 15 seconds before returning.
+
+---
+
+### PERF-02: Redundant SQLite Queries and Decryption on Every Timeline Event and Log Line
+* **Severity**: Medium
+* **Confidence**: Medium-High (95%)
+* **Location**: [`assistant/control/secrets.py:L179-L197`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/secrets.py#L179-L197)
+* **Description**:
+  `SecretStore.redact(text)` is invoked on every event logged in the control plane to scrub credentials.
+  In `redact()`:
   ```python
-  threading.Thread(target=send_telegram_message, args=(tok, cid, text), daemon=True).start()
+  for name in self.names():
+      value = self.reveal(name, capability="*")
   ```
-* **Reproduction Steps**:
-  1. Set `call_context.set_origin("telegram")`.
-  2. Simulate network latency to `api.telegram.org`.
-  3. Call `speak("Done")`. Observe caller thread blocking for the duration of the network request.
-
----
-
-### PERF-02: Repeated Migration Execution and Database Reopening During Secret Lookups
-* **Severity**: High
-* **Confidence**: High (100%)
-* **Location**: [`assistant/control/secrets.py:L249-L258`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/secrets.py#L249-L258), [`assistant/control/store.py:L288-L320`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/store.py#L288-L320)
-* **Description**:
-  Every call to `resolve_setting()` instantiates `ControlStore()`. In `ControlStore.__init__`, SQLite opens, sets PRAGMA statements, and runs `_migrate()`. `_migrate()` evaluates 19 migrations, performing multiple queries against `sqlite_master` on every single secret lookup.
+  `self.names()` executes `SELECT name FROM secrets`. Then for each secret name, `self.reveal()` executes another SQLite query (`SELECT * FROM secrets WHERE name = ?`) and performs Fernet symmetric decryption.
+  If there are 10 secrets in the vault, writing one timeline event executes 11 SQL queries and 10 Fernet decryptions. Under typical multi-step execution, this generates hundreds of redundant SQL queries per minute.
 * **Fix**:
-  Cache the `SecretStore` instance globally and execute migrations only once at application bootstrap.
+  Cache plaintext secret values in an in-memory dictionary behind `self._lock`, invalidating the cache only when secrets are saved (`put()`) or deleted.
 * **Reproduction Steps**:
-  1. Time the execution of `[resolve_setting("plain_text") for _ in range(50)]`.
-  2. Observe several seconds consumed purely by SQLite connection handshakes and table existence queries.
+  1. Insert 10 secrets into `SecretStore`.
+  2. Log 50 activity events.
+  3. Observe over 550 SQL queries and 500 Fernet decryptions executed solely for redaction.
 
 ---
 
-### PERF-03: Blocking Recursive Disk Crawl in File Search API
+### PERF-03: Indefinite Future Wait on Browser Thread Worker Causes Unrecoverable Task Hang
 * **Severity**: Medium
-* **Confidence**: High (95%)
-* **Location**: [`assistant/files.py:L209-L224`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L209-L224)
+* **Confidence**: Medium (90%)
+* **Location**: [`assistant/browser/session.py:L86-L93`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/browser/session.py#L86-L93)
 * **Description**:
-  `search(query, path="", limit=200)` executes a synchronous `os.walk()` traversing up to `SEARCH_MAX_VISITED = 20_000` entries, calling `path.stat()` on every match. In directories containing `node_modules` or `.git`, this blocks the FastAPI event loop for several seconds.
+  In `_BrowserThread.call(func, *args, **kwargs)`:
+  ```python
+  future = concurrent.futures.Future()
+  self._queue.put((func, args, kwargs, future))
+  return future.result()
+  ```
+  `future.result()` is called without a timeout parameter. If a Playwright call hangs inside the dedicated browser worker (e.g. unresponsive modal dialog, network deadlock, or unhandled browser crash), `future.result()` blocks the task execution thread indefinitely with no way to timeout or recover.
 * **Fix**:
-  1. Filter out ignored directories (`node_modules`, `.git`, `venv`, `__pycache__`) during `os.walk`.
-  2. Run the search inside an asynchronous thread executor (`await asyncio.to_thread(...)`).
+  Pass a timeout to `future.result(timeout=self.timeout_seconds)` and raise a descriptive `TimeoutError` or `BrowserUnavailable` exception if the worker does not respond.
 * **Reproduction Steps**:
-  1. Add a directory with a large `node_modules` folder to `file_shares`.
-  2. Call `GET /api/files/search?query=index`.
-  3. Observe the API worker freezing while scanning 20,000 files.
-
----
-
-### PERF-04: Full Registry Schema Transmission on Every Local LLM Turn
-* **Severity**: Medium
-* **Confidence**: High (90%)
-* **Location**: [`assistant/ai_brain.py:L3177-L3184`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/ai_brain.py#L3177-L3184), [`assistant/ai_brain.py:L80-L100`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/ai_brain.py#L80-L100)
-* **Description**:
-  `select_tools()` matches tools using broad regular expressions over all 57 registered functions. A large JSON schema payload (often exceeding 4,000 tokens) is transmitted to Ollama on every conversation turn. On 3B/4B local models, evaluating this prompt context introduces significant inference latency.
-* **Fix**:
-  Tighten tool selection criteria to cap tool schemas at 8-10 relevant tools per step.
-* **Reproduction Steps**:
-  1. Send a multi-word prompt to `run_task_step`.
-  2. Check Ollama API logs: prompt evaluation tokens exceed 4,000 tokens before user instruction text begins.
+  1. Enqueue a task on `_BrowserThread` that waits on an unresolvable condition.
+  2. Call `session.goto(...)`.
+  3. The task worker thread remains blocked forever.
 
 ---
 
 ## 4. Architecture Review
 
-### ARCH-01: Dual Split-Brain Authorization Between Control Plane and Guard
-* **Severity**: High
-* **Confidence**: High (95%)
-* **Location**: [`assistant/control/executor.py:L357-L384`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L357-L384), [`assistant/guard.py:L145-L201`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/guard.py#L145-L201), [`assistant/control/policy.py:L1-L80`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/policy.py#L1-L80)
-* **Description**:
-  Two distinct authorization engines operate concurrently without synchronization:
-  1. `ControlPlane.policy`: database-backed, managing fine-grained capabilities (`system.command`, `file.read`).
-  2. `assistant.guard`: configuration-backed, managing coarse risk tiers (`safe`, `sensitive`, `destructive`) per origin.
-  During execution, `executor.py` checks capabilities and grants access. When `_agent_loop` calls `guard.call()`, `guard.py` independently evaluates `config.json`. If `config.json` denies destructive tools, `guard.call()` raises `ToolDenied` even though the control plane explicitly granted permission.
-* **Fix**:
-  Unify access control: make `guard.py` delegate permission checks to `ControlPlane.policy`, maintaining a single source of truth.
-* **Reproduction Steps**:
-  1. Grant capability `system.command` in the control plane.
-  2. Set `config.json` `safety.voice.allow_destructive: false`.
-  3. Execute task: control plane authorizes execution, but `guard.call()` aborts with `ToolDenied`.
-
----
-
-### ARCH-02: ContextVar Pollution Across ThreadPoolExecutor Workers
-* **Severity**: High
-* **Confidence**: High (95%)
-* **Location**: [`assistant/call_context.py:L16-L60`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/call_context.py#L16-L60), [`assistant/control/executor.py:L103-L108`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L103-L108), [`assistant/control/executor.py:L203-L225`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/executor.py#L203-L225)
-* **Issue**:
-  `call_context` relies on `contextvars.ContextVar` (`_call_origin`, `_untrusted_source`). `TaskExecutor` executes steps on pooled worker threads from `ThreadPoolExecutor`. In Python, thread pool workers persist across tasks. When Step 1 marks a worker thread as tainted (`mark_tainted`), that worker thread retains the taint. Subsequent clean steps scheduled on that same worker run with `is_tainted() == True`, prompting unnecessary confirmations for safe actions.
-* **Fix**:
-  Wrap step execution in `contextvars.copy_context().run` and ensure `clear_taint()` is executed in a `finally` block on each step.
-* **Reproduction Steps**:
-  1. Run a step on a thread pool worker that triggers `mark_tainted("web")`.
-  2. Run a clean local step that executes on the same worker.
-  3. `is_tainted()` returns `True`, incorrectly triggering taint confirmation.
-
----
-
-### ARCH-03: In-Memory Cache Mutation and Non-Atomic Config Persistence
+### ARCH-01: Missing Client Device Attribution Stamps All Remote Tasks as Originating Locally
 * **Severity**: Medium
-* **Confidence**: High (95%)
-* **Location**: [`assistant/config.py:L268-L280`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/config.py#L268-L280)
-* **Issue**:
-  In `update_setting(key, value)`:
+* **Confidence**: Medium-High (95%)
+* **Location**: [`assistant/api/app.py:L435-L451`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/api/app.py#L435-L451), [`assistant/control/service.py:L349-L356`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/control/service.py#L349-L356)
+* **Description**:
+  In `assistant/control/service.py`:
   ```python
-  config = load_config()
-  config[key] = value
-  for secret in SECRET_KEYS:
-      config.pop(secret, None)
-  save_config(config)
+  def create_task(self, goal, steps=None, capability=None):
+      task = Task(goal=goal, status=TaskStatus.PENDING,
+                  device_id=self.local_device.id)
   ```
-  `load_config()` returns the global `_config_cache` dictionary. Mutating `config` mutates `_config_cache` directly. Popping `SECRET_KEYS` destroys cached secrets in memory. Additionally, `save_config` writes directly to `config.json` without file locks or atomic rename (`tempfile` + `os.replace`), risking file corruption during concurrent writes.
+  The API endpoint `POST /api/tasks` in `assistant/api/app.py` does not pass the calling authenticated device ID (`request.state.device.id`) to `plane.create_task()`.
+  Consequently, all tasks created remotely via mobile clients, paired laptops, or external agents are attributed to `self.local_device.id`. This corrupts audit trails and prevents device-scoped policy rules from enforcing per-device security boundaries.
 * **Fix**:
-  1. Deep-copy the config before modifying.
-  2. Save via atomic file replacement (`tempfile` + `os.replace`).
-  3. Protect configuration reads and writes with a `threading.Lock`.
+  Update `create_task()` to accept an optional `device_id` parameter (defaulting to `self.local_device.id`), and pass `device.id` from `request.state.device` in `app.py`.
 * **Reproduction Steps**:
-  1. Store credentials in `config.local.json`.
-  2. Call `update_setting("user_name", "Test")`.
-  3. Inspect `_config_cache`: all `SECRET_KEYS` are missing from memory.
+  1. Pair a remote device and obtain a token.
+  2. Call `POST /api/tasks` with the Bearer token.
+  3. Query `task.device_id` from the database. It reports the local host ID instead of the paired device ID.
+
+---
+
+### ARCH-02: Non-Atomic Persistence in `SiteMemory` JSON Storage Risks Data Corruption
+* **Severity**: Medium
+* **Confidence**: Medium (90%)
+* **Location**: [`assistant/site_memory.py:L53-L59`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/site_memory.py#L53-L59)
+* **Description**:
+  In `SiteMemory._save(data)`:
+  ```python
+  self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+  ```
+  `self.path.write_text()` opens the file directly in write mode, truncating it before writing the new JSON payload. If the application is terminated, loses power, or crashes mid-write, `data/site_notes.json` is corrupted and emptied.
+  Other persistence modules (such as `assistant/config.py`) correctly utilize atomic write patterns with temporary files and `os.replace()`.
+* **Fix**:
+  Write new JSON to a temporary file (`site_notes.json.tmp`) in the same directory and atomically replace the destination file using `os.replace()`.
+* **Reproduction Steps**:
+  1. Simulate process termination or write failure during `SiteMemory.remember()`.
+  2. Inspect `site_notes.json`: the file contains partial JSON or is 0 bytes.
 
 ---
 
 ## 5. Edge-Case Review
 
-### EDGE-01: Voice Name Mutation Triggered by Substring in General Questions
+### EDGE-01: Overly Greedy Substring Match in `handle_volume_command` Intercepts Math & Science Questions
 * **Severity**: High
 * **Confidence**: High (100%)
-* **Location**: [`assistant/commands.py:L55-L66`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/commands.py#L55-L66)
-* **Issue**:
-  `change_user_name()` checks `if phrase in command:` with phrase `"my name is"`. If a user asks "Why is my name is on this invoice?" or "Do you know what my name is?", the parser splits on `"my name is"`:
+* **Location**: [`assistant/commands.py:L165-L187`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/commands.py#L165-L187)
+* **Description**:
+  In `assistant/commands.py`:
   ```python
-  new_name = command.split("my name is", 1)[1].strip().title()
+  if "volume" not in command and "mute" not in command:
+      return False
+  ...
+  amount = extract_number(command)
+  ...
+  if amount is not None:
+      set_volume(amount)
+      return True
   ```
-  `user_name` in `config.json` is overwritten with `"On This Invoice"`, and the assistant announces "Okay, I will call you On This Invoice."
+  If a user asks a general knowledge or math question containing the word "volume" and any number (e.g. "what is the volume of a sphere with radius 5?", "calculate volume of 50 boxes"), the command router extracts the number, changes the system volume to 5% or 50%, and terminates command routing with `True`. The question is never routed to the AI brain.
 * **Fix**:
-  Anchor the pattern to the beginning of the command:
-  ```python
-  match = re.match(r"^(?:change\s+my\s+name\s+to|set\s+my\s+name\s+to|my\s+name\s+is)\s+(.+)$", command)
-  ```
+  Replace loose substring checks with targeted regex patterns (e.g. `r"^(?:set\s+)?volume\s+(?:to\s+)?(\d+)$"` or `r"^volume\s+(?:up|down)"`) so general language questions are not hijacked.
 * **Reproduction Steps**:
-  1. Execute `assistant.commands.execute_command("explain why my name is alex")`.
-  2. The parser updates `user_name` to `"Alex"` and halts command execution.
+  1. Run `python main.py --text "what is the volume of a sphere of radius 10" --no-speech`.
+  2. The assistant sets the speaker volume to 10% instead of providing the mathematical answer.
 
 ---
 
-### EDGE-02: Directory Traversal via Dot-Dot Segment in File Relocation
+### EDGE-02: Unanchored Phrase Match in `change_assistant_name` Renames Assistant During Natural Conversation
 * **Severity**: Medium
-* **Confidence**: High (95%)
-* **Location**: [`assistant/files.py:L260-L271`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/files.py#L260-L271)
-* **Issue**:
-  In `move(source, destination)`:
+* **Confidence**: High (100%)
+* **Location**: [`assistant/commands.py:L74-L91`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/commands.py#L74-L91)
+* **Description**:
+  `change_assistant_name(command)` uses substring containment:
   ```python
-  from_path = resolve(source)
-  to_parent = resolve(str(Path(destination).parent))
-  to_path = to_parent / Path(str(destination)).name
+  phrases = ["change assistant name to", "set assistant name to", "change your name to", "set your name to"]
+  for phrase in phrases:
+      if phrase in command:
+          new_name = command.split(phrase, 1)[1].strip().title()
   ```
-  If `destination` is `"folder/.."`, `Path("folder/..").name` evaluates to `..`. `to_path` resolves to `to_parent / ".."`. `shutil.move` moves `from_path` into the parent of `to_parent`. If `to_parent` is the share root, the file escapes the share boundaries.
+  If a user asks a conversational question like "Can I change your name to Jarvis tomorrow?", the substring matches, extracts `"Jarvis Tomorrow?"`, and renames the assistant in `config.json`.
 * **Fix**:
-  Validate that `Path(str(destination)).name not in (".", "..")` and verify `to_path.resolve()` remains inside the shared root.
+  Use an anchored regex matching command intent at the beginning of the sentence:
+  ```python
+  _NAME_CHANGE_PATTERN = re.compile(
+      r"^(?:please\s+)?(?:change|set)\s+(?:assistant\s+name|your\s+name)\s+to\s+(.+)$",
+      re.IGNORECASE,
+  )
+  ```
 * **Reproduction Steps**:
-  1. Place `test.txt` in a shared folder.
-  2. Call `assistant.files.move("test.txt", "subfolder/..")`.
-  3. Observe the file moving outside the intended destination directory.
+  1. Run `python main.py --text "can i change your name to friday later" --no-speech`.
+  2. Inspect `config.json`: `assistant_name` is modified to `"Friday Later"`.
 
 ---
 
-### EDGE-03: TOCTOU Race Condition and Double-Read in Notes Reader
-* **Severity**: Medium
-* **Confidence**: High (90%)
-* **Location**: [`assistant/notes.py:L30-L42`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/notes.py#L30-L42)
-* **Issue**:
-  `read_notes()` calls `NOTES_FILE.read_text()` to check if the file is empty, then opens it again with `open(NOTES_FILE, "r")`. If another thread deletes or clears the file between checks, `open()` raises `FileNotFoundError`.
-* **Fix**:
-  Open the file once and handle errors cleanly:
-  ```python
-  try:
-      with open(NOTES_FILE, "r", encoding="utf-8") as file:
-          notes = [line.strip() for line in file if line.strip()]
-  except FileNotFoundError:
-      notes = []
-  ```
-* **Reproduction Steps**:
-  1. Call `read_notes()` concurrently with `clear_notes()`.
-  2. Observe intermittent `FileNotFoundError` exceptions.
-
----
-
-### EDGE-04: Encoding Crash on Windows Console Output in Command Runner
+### EDGE-03: Subprocess Execution Lacks Stdin Disconnect, Causing 15s Hang on Interactive Commands
 * **Severity**: Low
-* **Confidence**: High (95%)
-* **Location**: [`assistant/system_tasks.py:L1479-L1485`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/system_tasks.py#L1479-L1485)
-* **Issue**:
-  In `run_terminal_command`, `subprocess.run(command, text=True, ...)` relies on the Windows system code page (cp1252/cp437). When a command outputs non-ASCII or UTF-8 characters (e.g., git commits with emojis), `subprocess.run` raises `UnicodeDecodeError`.
+* **Confidence**: Medium-High (95%)
+* **Location**: [`assistant/system_tasks.py:L1490-L1505`](file:///f:/sohail/jarvis/JarvisAssistant_V1_2_Config/assistant/system_tasks.py#L1490-L1505)
+* **Description**:
+  In `run_terminal_command(command)`:
+  ```python
+  result = subprocess.run(command, shell=True, capture_output=True, timeout=15)
+  ```
+  `stdin` is not redirected to `subprocess.DEVNULL`. On Windows, commands that trigger console input prompts (such as `pause`, batch scripts prompting for confirmation `[Y/N]`, or git asking for credentials) wait on stdin until the 15-second timeout expires.
 * **Fix**:
-  Pass `encoding="utf-8", errors="replace"` explicitly to `subprocess.run()`.
+  Pass `stdin=subprocess.DEVNULL` to `subprocess.run()`.
 * **Reproduction Steps**:
-  1. Run `run_terminal_command("python -c \"import sys; sys.stdout.buffer.write(b'\\xf0\\x9f\\x9a\\x80')\"")`.
-  2. Observe `UnicodeDecodeError` in Windows console environments.
+  1. Execute `run_terminal_command("pause")`.
+  2. Observe the command hangs for the full 15 seconds before timing out.
+
+---
+
+## Foolproof Hardening Implementation Plan
+
+To ensure the system is completely resilient and foolproof before adding new subsystems, the following phased hardening plan is structured:
+
+1. **Phase 1: Critical Security Hardening (SEC-01 to SEC-04)**
+   - Add origin validation for all state-changing endpoints in `assistant/api/app.py`.
+   - Add origin check to all WebSocket connection handlers in `assistant/api/app.py`.
+   - Populate `TOOL_CAPABILITIES` with all 16 missing tool mappings and make `_authorizer` reject unknown tools.
+   - Update `assistant/guard.py` to block mutations and reads of `.env` and `control.db`.
+
+2. **Phase 2: Reliability & Process Safety Hardening (REL-01 to REL-04)**
+   - Harden `close_app` in `assistant/system_tasks.py` with minimum length checks and strict process name filtering.
+   - Fix `resolve_approval` in `assistant/control/service.py` to check for remaining pending approvals before resuming task.
+   - Add LRU pruning / TTL bounds to `TokenBucket._tokens` in `assistant/api/auth.py`.
+   - Sanitize Windows device reserved names and microsecond collision suffixes in `assistant/files.py`.
+
+3. **Phase 3: Performance & Resource Decoupling (PERF-01 to PERF-03)**
+   - Dispatch `TelegramChannel.deliver` asynchronously via background executor in `assistant/control/notifier.py`.
+   - Add in-memory plaintext cache for secrets in `assistant/control/secrets.py` to eliminate redundant SQL queries in `redact()`.
+   - Add explicit timeout parameter to `_BrowserThread.call()` in `assistant/browser/session.py`.
+
+4. **Phase 4: Architecture & Routing Edge Cases (ARCH-01, ARCH-02, EDGE-01 to EDGE-03)**
+   - Propagate `request.state.device.id` to `plane.create_task()` in `assistant/api/app.py`.
+   - Implement atomic temp-file replace in `assistant/site_memory.py`.
+   - Replace greedy substring checks in `handle_volume_command` and `change_assistant_name` with strict regexes in `assistant/commands.py`.
+   - Add `stdin=subprocess.DEVNULL` to `run_terminal_command` in `assistant/system_tasks.py`.
