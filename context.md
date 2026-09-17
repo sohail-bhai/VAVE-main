@@ -297,18 +297,18 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 | phi4 | 9.1GB | CPU only | 20-60s | Pulled, CAN'T LOAD (5GB free, needs ~8GB) |
 | qwen3.5:9b | 6.6GB | Crashes GPU | 48s+ CPU | Unused |
 
-### phi4 RAM Issue
+### phi4 RAM Issue — ON HOLD (locked as future implementation, 2026-09-17)
 - Model is downloaded (9.1GB) but fails to load with only 5GB free RAM
-- Needs ~8GB free for weights + KV cache
-- Fix: close apps to free RAM, then phi4 loads automatically
-- Or set `"llm_model_deep": "phi4"` when ready, `""` = disabled
+- Needs ~8GB free for weights + KV cache; the RAM situation is not changing
+- Do not revisit until hardware changes. When it does: free RAM, then set
+  `"llm_model_deep": "phi4"` (`""` = disabled); `_can_run_deep()` gates it
 
 ### TODO (Next Session)
 1. ✅ Section 15 defects resolved with solutions
 2. ✅ Regression files: `tests/test_destructive_requests.py` (7),
    `tests/test_chromium_click_path.py` (19) — suite was 796 green
 3. ✅ D8 closed: OCR page entries + chrome exclusion, live-proven, Sohail active
-4. ✅ O4 done: `take_screenshot(analyze=…)`; O1 still blocked (5.1GB free)
+4. ✅ O4 done: `take_screenshot(analyze=…)`; O1 phi4 locked as future work
 5. ✅ Phase 6 remainders implemented + tested
    (`tests/test_phase6_remainders.py`, 9 tests) — suite **806 green**
 6. Live voice test with `python main.py` (YOU need to run this)

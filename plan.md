@@ -16,10 +16,11 @@ execute a phase alone. Read sections 1-3 fully before touching code.
   compileall + unittest + smoke on every push.
 - `context.md` holds history and the agent-trap list; `AGENTS.md` holds repo
   rules. This file holds the forward plan only.
-- Remaining, in order: **Phase 6 remainders -> 7 (Service Integrations) ->
-  8 (Control Plane Enhancements)**. Stretch items are unscheduled.
-- Open environment items (need the user, not code): phi4 needs ~8GB free RAM
-  (5.1GB available); live voice (`python main.py`) still unverified.
+- Remaining, in order: **7 (Service Integrations) -> 8 (Control Plane
+  Enhancements)**. Stretch items are unscheduled.
+- Open environment items: live voice (`python main.py`) still unverified
+  (needs the user, not code). phi4 deep tier is ON HOLD — locked as future
+  implementation (see O1).
 
 ## 2. Environment Facts (READ FIRST — these bite)
 
@@ -738,7 +739,7 @@ section keeps only the map and the still-open environment items:
 | --- | --- |
 | D1 slow chaining | deterministic step tracking (`88b4853`) |
 | D2 conversational tool calls | suppression + prompt rule (`174d2b9`) |
-| D3 single model / GPU crash | 3-tier routing (`22d8849`, `11370fc`); phi4 still RAM-blocked (O1) |
+| D3 single model / GPU crash | 3-tier routing (`22d8849`, `11370fc`); phi4 ON HOLD (O1) |
 | D4 destructive NL requests | request-level guard + hypothetical phrasing (`6f4845b`, `4119dd4`); `tests/test_destructive_requests.py` |
 | D5 blind screenshots | VLM auto-analysis + `analyze=` flag (`81cfff0`) |
 | D6 Store/app launching | real AppID lookup, hidden PowerShell, browser fallback (`96baa44`, `09bcd80`, `12e3fa9`) |
@@ -750,10 +751,12 @@ section keeps only the map and the still-open environment items:
 
 ### 15.3 Open items (need the user, not code)
 
-- **O1 — phi4 (deep tier) cannot load.** It is downloaded (9.1GB) but needs
-  ~8GB free RAM; the machine has ~5GB free. **Not a code bug.** Free RAM (close
-  Chrome/Edge/apps), then set `"llm_model_deep": "phi4"` in `config.json`.
-  `""` = disabled. `_can_run_deep()` gates it automatically at >=6GB free.
+- **O1 — phi4 deep tier: ON HOLD (locked as future implementation).**
+  Downloaded (9.1GB) but needs ~8GB free RAM; the machine has ~5GB free, and
+  the RAM situation is not changing. **Not a code bug — do not revisit until
+  hardware changes.** When it does: free RAM, set `"llm_model_deep": "phi4"`
+  in `config.json` (`""` = disabled); `_can_run_deep()` gates it
+  automatically at >=6GB free.
 - **O2 — DONE 2026-09-17.** Sohail verified active by elimination (see table).
 - **O3 — Live voice (`python main.py`) never run.** Only `--text` / GUI text
   input have been exercised. Do not run it in automation; hand it to the user
@@ -767,5 +770,5 @@ section keeps only the map and the still-open environment items:
 ### 15.5 Continuation — DONE except building §14 items
 
 Items 1, 2 and 4 finished 2026-09-17 (D8/O2 verified, both regression files
-in the suite at 796 green, O1 still user-blocked, O4 implemented). Item 3
-stands: build **S3 dry-run** then **S5 `vave doctor`** from section 14.
+in the suite at 796 green, O4 implemented). Item 3 stands: build **S3 dry-run**
+then **S5 `vave doctor`** from section 14. O1 is ON HOLD, not active work.
