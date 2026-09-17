@@ -234,6 +234,19 @@ def interrupt_speech():
     
     logger.info("\n[VAVE] Audio Interrupted!\n")
 
+def _forward_to_telegram(text):
+    """Send one reply to the phone. Runs on its own thread (see speak)."""
+    try:
+        from assistant.telegram_sync import send_telegram_message
+        from assistant.control.secrets import resolve_setting
+        tok = resolve_setting(get_setting("telegram_bot_token", ""))
+        cid = get_setting("telegram_chat_id", "")
+        if tok and cid:
+            send_telegram_message(tok, cid, text)
+    except Exception as e:
+        logger.debug(f"Telegram speech forward note: {e}")
+
+
 def speak(text):
     assistant_name = get_setting("assistant_name", "VAVE")
     try:
@@ -244,16 +257,14 @@ def speak(text):
         logger.info(f"{assistant_name.upper()}: {safe_text}")
     _notify(_assistant_response_callback, text)
 
-    # Automatically send response back to Telegram if command originated from Telegram
+    # Automatically send response back to Telegram if command originated from Telegram.
+    # This must never stall the caller: a slow api.telegram.org once froze the
+    # whole voice/UI loop for the full network timeout. Fire and forget.
     try:
         from assistant import call_context
         if call_context.get_origin() == "telegram":
-            from assistant.telegram_sync import send_telegram_message
-            from assistant.control.secrets import resolve_setting
-            tok = resolve_setting(get_setting("telegram_bot_token", ""))
-            cid = get_setting("telegram_chat_id", "")
-            if tok and cid:
-                send_telegram_message(tok, cid, text)
+            call_context.spawn_thread(_forward_to_telegram, args=(text,),
+                                      name="vave-telegram-forward")
     except Exception as e:
         logger.debug(f"Telegram speech forward note: {e}")
 

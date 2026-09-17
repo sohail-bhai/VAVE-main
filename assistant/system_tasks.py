@@ -1472,13 +1472,28 @@ def write_clipboard(text):
     except Exception as e:
         return f"Failed to write to clipboard: {e}"
 
+def _decode_subprocess_output(output):
+    """Decode console bytes without ever crashing.
+
+    UTF-8 first (Python subprocesses, git, modern tools), then the system
+    code page (classic Windows console output) as a fallback.
+    """
+    data = output or b""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        import locale
+        return data.decode(locale.getpreferredencoding(False) or "utf-8",
+                           errors="replace")
+
+
 def run_terminal_command(command):
     """Executes a background terminal command and returns the output."""
     import subprocess
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=15)
-        output = result.stdout.strip()
-        error = result.stderr.strip()
+        result = subprocess.run(command, shell=True, capture_output=True, timeout=15)
+        output = _decode_subprocess_output(result.stdout).strip()
+        error = _decode_subprocess_output(result.stderr).strip()
         if result.returncode == 0:
             return output if output else "Command executed successfully (no output)."
         else:
@@ -1500,6 +1515,13 @@ def list_directory(path="."):
 def read_file(path):
     """Reads the contents of a local file."""
     import os
+    try:
+        from assistant.guard import is_protected_read_path
+        reason = is_protected_read_path(path)
+        if reason:
+            return f"Refusing to read {reason}."
+    except Exception:
+        pass
     try:
         if not os.path.exists(path):
             return "File not found."

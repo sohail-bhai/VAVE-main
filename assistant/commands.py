@@ -46,24 +46,30 @@ def extract_number(command):
         return int(match.group())
     return None
 
+# A name change is an instruction, never a question that happens to contain
+# "my name is" ("do you know what my name is?" used to rename the user).
+_USER_NAME_CHANGE_PATTERN = re.compile(
+    r"^(?:please\s+)?(?:change\s+my\s+name\s+to|set\s+my\s+name\s+to|my\s+name\s+is)\s+(.+)$",
+    re.IGNORECASE,
+)
+
 def change_user_name(command):
     """
     Example:
     change my name to sohail
     set my name to sohail
     """
-    phrases = ["change my name to", "set my name to", "my name is"]
+    match = _USER_NAME_CHANGE_PATTERN.match(command.strip())
+    if not match:
+        return False
 
-    for phrase in phrases:
-        if phrase in command:
-            new_name = command.split(phrase, 1)[1].strip().title()
+    new_name = match.group(1).strip().title()
+    if not new_name:
+        return False
 
-            if new_name:
-                update_setting("user_name", new_name)
-                speak(f"Okay, I will call you {new_name}.")
-                return True
-
-    return False
+    update_setting("user_name", new_name)
+    speak(f"Okay, I will call you {new_name}.")
+    return True
 
 def change_assistant_name(command):
     """

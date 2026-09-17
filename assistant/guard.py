@@ -108,6 +108,40 @@ _DESTRUCTIVE_COMMAND_REGEX = re.compile(
     re.IGNORECASE
 )
 
+# Shell verbs that print a file, followed (before any chaining) by a
+# credential-looking name. `echo secret.key` does NOT match (echo is not a
+# read verb); `type data\secret.key` does.
+_READ_EXFIL_REGEX = re.compile(
+    r"\b(?:type|cat|more|less|get-content|gc)\b[^|&;\n]*"
+    r"(?:secret\.key|control\.db|id_rsa|id_ed25519|\.ssh|\.aws)",
+    re.IGNORECASE
+)
+
+_PROTECTED_READ_NAMES = ("secret.key", "control.db", "id_rsa", "id_ed25519")
+_PROTECTED_READ_DIRS = (".ssh", ".aws", ".gnupg")
+
+
+def is_protected_read_path(raw_path) -> str:
+    """Why a path must never be served to a read tool ("" when it is fine).
+
+    Lexical check, so it works before any file exists. Shared with
+    system_tasks.read_file so direct callers get the same refusal as tools.
+    """
+    text = os.path.expanduser(str(raw_path or "")).strip()
+    if not text:
+        return ""
+    norm = os.path.normpath(text).replace("\\", "/").lower()
+    parts = [p for p in norm.split("/") if p and p != "."]
+    if not parts:
+        return ""
+    base = parts[-1]
+    if base in _PROTECTED_READ_NAMES or base.endswith(".pem"):
+        return f"credential file '{base}'"
+    hit = next((p for p in parts if p in _PROTECTED_READ_DIRS), None)
+    if hit:
+        return f"the '{hit}' credential directory"
+    return ""
+
 def _is_hard_denied(tool_name: str, args: dict) -> tuple:
     """Hard invariants that unconditionally reject actions regardless of origin policy."""
     args = args or {}
@@ -139,6 +173,25 @@ def _is_hard_denied(tool_name: str, args: dict) -> tuple:
         cmd_str = str(args.get("command", "") or args.get("cmd", "") or "")
         if _DESTRUCTIVE_COMMAND_REGEX.search(cmd_str):
             return True, f"Destructive command pattern detected in '{cmd_str}'."
+
+    # 4. Invariant: Reads of credentials and private keys. Mutation tools are
+    # covered above; reads need their own rule or read_file walks straight
+    # past it into ~/.ssh and data/.
+    if tool_name in ("read_file",):
+        for k in ("path", "filename", "filepath", "target_file", "file"):
+            raw_val = args.get(k)
+            if not raw_val or not isinstance(raw_val, str):
+                continue
+            reason = is_protected_read_path(raw_val)
+            if reason:
+                return True, f"Reading {reason} is hard-denied."
+
+    # 5. Invariant: Shell commands that print protected files
+    if tool_name in ("run_terminal_command", "run_shell", "execute_command"):
+        cmd_str = str(args.get("command", "") or args.get("cmd", "") or "")
+        if _READ_EXFIL_REGEX.search(cmd_str):
+            return True, ("Reading protected files through the shell "
+                           "is hard-denied.")
 
     return False, ""
 
@@ -186,7 +239,13 @@ def _evaluate_policy(tool_name: str, args: dict, origin: str) -> bool:
         logger.warning(f"Hard-deny triggered for {tool_name}: {reason}")
         return False
 
-        
+    # A live control-plane grant outranks the static config tiers. Approving
+    # an action and then denying it again at the tool call stranded approved
+    # steps: the grant was released to nobody. Hard-deny above still wins,
+    # and with no plane running this changes nothing.
+    if _plane_grant_allows(tool_name):
+        return True
+
     if origin_policy.get(f"allow_{tier}", False):
         return True
         
@@ -198,6 +257,32 @@ def _evaluate_policy(tool_name: str, args: dict, origin: str) -> bool:
         return confirm.ask(msg, origin)
         
     return False
+
+def _plane_grant_allows(tool_name: str) -> bool:
+    """Whether the control plane currently grants this tool's capability.
+
+    Consulted, never depended upon (same pattern as health_sweep): any import
+    problem, no running plane, or an unknown tool means False, and the config
+    tiers decide exactly as before.
+    """
+    try:
+        from assistant.control import service as control_service
+        plane = control_service._control_plane
+    except Exception:
+        return False
+    if plane is None:
+        return False
+    try:
+        from assistant.control.capabilities import capability_for_tool
+        capability = capability_for_tool(tool_name)
+    except Exception:
+        return False
+    if not capability:
+        return False
+    try:
+        return bool(plane.has_capability(capability))
+    except Exception:
+        return False
 
 def coerce_args(func: Callable, kwargs: dict) -> dict:
     import inspect

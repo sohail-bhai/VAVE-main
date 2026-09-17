@@ -808,7 +808,10 @@ def select_tools(instruction, tools=None):
         if len(chosen) >= MAX_TOOLS_PER_CALL:
             break
 
-    return chosen or catalogue
+    # Never fall back to the whole catalogue: 116 tools is ~10k tokens of
+    # prefill on every turn of a 3B model. No tools means a plain answer,
+    # which the loop already handles.
+    return chosen
 
 
 # The JSON schema describing our tools to the LLM

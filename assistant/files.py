@@ -32,6 +32,12 @@ MAX_ENTRIES = 500
 SEARCH_LIMIT = 200
 SEARCH_MAX_VISITED = 20_000
 
+# Dependency and tooling folders dwarf everything else in a walk; searching
+# them wastes seconds and never finds a file the user means.
+SEARCH_IGNORED_DIRS = frozenset({
+    "node_modules", ".git", "venv", ".venv", "__pycache__", "dist", "build",
+})
+
 
 class FileAccessError(Exception):
     """The path is outside what is shared, or does not exist."""
@@ -62,7 +68,8 @@ def _is_hidden(path):
     parts = set(path.parts)
     if any(name in parts for name in HIDDEN_NAMES):
         return True
-    return any(part.startswith(".") and part not in (".", "..") for part in path.parts[-1:])
+    return any(part.startswith(".") and part not in (".", "..")
+               for part in path.parts)
 
 
 def resolve(path):
@@ -209,7 +216,9 @@ def search(query, path="", limit=SEARCH_LIMIT):
     found, visited = [], 0
     for root in roots:
         for folder, directories, files in os.walk(root):
-            directories[:] = [name for name in directories if not name.startswith(".")]
+            directories[:] = [name for name in directories
+                              if not name.startswith(".")
+                              and name not in SEARCH_IGNORED_DIRS]
             for name in files:
                 visited += 1
                 if visited > SEARCH_MAX_VISITED:
@@ -233,6 +242,8 @@ def save_upload(folder, filename, stream, overwrite=False):
     safe_name = Path(str(filename or "upload")).name
     if not safe_name or safe_name in (".", ".."):
         raise FileAccessError("That file needs a name.")
+    if _is_hidden(Path(safe_name)):
+        raise FileAccessError("That one is not shared.")
 
     destination = target_dir / safe_name
     if destination.exists() and not overwrite:
@@ -260,8 +271,15 @@ def make_folder(path):
 def move(source, destination):
     """Rename or move, both ends inside what is shared."""
     from_path = resolve(source)
+    leaf = Path(str(destination)).name
+    if not leaf or leaf in (".", ".."):
+        raise FileAccessError("That destination needs a real name.")
     to_parent = resolve(str(Path(destination).parent))
-    to_path = to_parent / Path(str(destination)).name
+    to_path = (to_parent / leaf).resolve()
+    roots = shares()
+    if not any(to_path == root or root in to_path.parents
+               for root in roots):
+        raise FileAccessError("That path is outside the folders you shared.")
 
     if to_path.exists():
         raise FileAccessError("Something is already called that.")
