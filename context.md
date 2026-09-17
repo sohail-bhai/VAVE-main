@@ -253,10 +253,11 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 > **CURRENT STATUS: STAGES 12-14 (UPGRADE PLAN PHASES 0-5) COMPLETED**
 
 - **Verification Status**:
-  - **806 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
+  - **917 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
 - **Audit hardening (2026-09-17)**: all 19 findings in `report.md` fixed with
   per-domain regression tests (`test_report_security/reliability/performance/
-  architecture/edgecases`, `test_notes`); suite **870 green**, smoke 11/11.
+  architecture/edgecases`, `test_notes`); second audit round (16 findings)
+  fixed the same way; suite **917 green**, smoke 11/11.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -314,10 +315,12 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 4. ✅ O4 done: `take_screenshot(analyze=…)`; O1 phi4 locked as future work
 5. ✅ Phase 6 remainders implemented + tested
    (`tests/test_phase6_remainders.py`, 9 tests) — suite was 806 green
-6. ✅ Audit reports resolved (19 findings, per-domain regression tests) —
-   suite **870 green**
-7. Live voice test with `python main.py` (YOU need to run this)
-7. Next builds when requested: S3 dry-run, S5 `vave doctor` (plan §14)
+6. ✅ Audit reports resolved (19 findings, per-domain regression tests)
+7. ✅ Second audit round resolved (16 findings: CSRF/WS origin, capability
+   coverage, approval resume, notifier/browser async, device attribution,
+   volume/name anchoring, + more) — suite **917 green**
+8. Live voice test with `python main.py` (YOU need to run this)
+9. Next builds when requested: S3 dry-run, S5 `vave doctor` (plan §14)
 
 ### Git State
 - Branch: `sohail`, remote: `https://github.com/sohail-bhai/VAVE-main.git`
