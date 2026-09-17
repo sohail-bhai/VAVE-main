@@ -64,6 +64,26 @@ def is_bootstrapped() -> bool:
     return _bootstrapped
 
 
+def resume_interrupted_tasks() -> int:
+    """Resume work left running by a previous process. Returns the count.
+
+    Long-lived entry points (voice loop, GUI dashboard) call this at startup;
+    one-shot modes (--text, --once, --smoke-test) must not, since a resumed
+    background task would outlive them pointlessly. Never raises: a resume
+    failure must not block startup.
+    """
+    try:
+        from assistant.control.executor import get_executor
+        resumed = get_executor().resume_interrupted()
+    except Exception as error:
+        import logging
+        logging.getLogger(__name__).info("Task auto-resume skipped: %s", error)
+        return 0
+    if resumed:
+        print(f"Resuming {len(resumed)} interrupted task(s).")
+    return len(resumed)
+
+
 def reset_bootstrap() -> None:
     """Resets bootstrap state for testing."""
     global _bootstrapped

@@ -66,6 +66,24 @@ class TestVaveGUI(unittest.TestCase):
         # Clean up window
         app.destroy()
 
+    def test_dashboard_kicks_off_resume_in_background(self):
+        import threading
+        import time
+        from unittest import mock
+
+        with mock.patch("assistant.bootstrap.resume_interrupted_tasks",
+                        return_value=1) as mock_resume:
+            app = VaveDashboardApp()
+            try:
+                deadline = time.monotonic() + 10
+                while mock_resume.call_count == 0 \
+                        and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue(mock_resume.called,
+                                "dashboard never kicked off task resume")
+            finally:
+                app.destroy()
+
     def test_approval_resolution_and_events(self):
         import threading
         from assistant import confirm

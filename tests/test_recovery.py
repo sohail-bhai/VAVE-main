@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from assistant.control.adapters import AdapterRegistry, HttpAdapter, NativeAdapter
 from assistant.control.executor import TaskExecutor
@@ -213,6 +214,43 @@ class ResumeTests(RecoveryTestCase):
         self.assertEqual(StepStatus.DONE, steps[0].status)
         self.assertEqual("Already done.", steps[0].detail)
         self.assertEqual(1, len(plane.interrupted_tasks()))
+
+
+    def test_waiting_approval_tasks_are_picked_back_up(self):
+        # A restart must not strand work that was waiting on the user.
+        task = self.plane.create_task("Needs a yes", steps=["First"])
+        self.plane.request_approval(action="Do it", question="May I?",
+                                    task_id=task.id)
+
+        ids = [item.id for item in self.plane.interrupted_tasks()]
+        self.assertIn(task.id, ids)
+
+        executor = self.executor()
+        with mock.patch.object(executor, "submit",
+                               return_value=task) as mock_submit:
+            resumed = executor.resume_interrupted()
+        self.assertEqual([task.id], [item.id for item in resumed])
+        mock_submit.assert_called_once_with(task.id)
+
+    def test_later_steps_see_checkpointed_outputs(self):
+        task = self.interrupted_task()
+        self.plane.save_checkpoint(task.id, {
+            "completed": [0],
+            "outcomes": [{"step": "First", "outcome": "Already done."}],
+        })
+
+        seen = []
+
+        def run(instruction, context):
+            seen.append((instruction, context))
+            return "Done."
+
+        self.executor(run).run(task.id)
+
+        self.assertEqual(1, len(seen))
+        instruction, context = seen[0]
+        self.assertEqual("Second", instruction)
+        self.assertIn("Already done.", context)
 
 
 class DelegationTests(RecoveryTestCase):

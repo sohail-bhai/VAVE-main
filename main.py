@@ -139,6 +139,11 @@ def main(argv=None):
         controller.run_once()
         return 0
 
+    # Long-lived modes pick up where a previous process stopped. One-shots
+    # above return before this on purpose.
+    from assistant.bootstrap import resume_interrupted_tasks
+    resume_interrupted_tasks()
+
     controller.run_forever()
     return 0
 

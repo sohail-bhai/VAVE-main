@@ -556,10 +556,12 @@ class ControlPlane:
         """Tasks that were still running when the process last stopped.
 
         Nothing marks these as failed on the way down - the process may have
-        been killed - so they are found on the way back up instead.
+        been killed - so they are found on the way back up instead. Tasks
+        waiting on an approval count too: the user may answer it this time.
         """
         return [task for task in self.store.list_tasks(limit=500, active_only=True)
-                if task.status in (TaskStatus.RUNNING, TaskStatus.PENDING)]
+                if task.status in (TaskStatus.RUNNING, TaskStatus.PENDING,
+                                   TaskStatus.WAITING_APPROVAL)]
 
     def save_checkpoint(self, task_id, checkpoint):
         """Persist enough state to resume this task after an interruption."""

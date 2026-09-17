@@ -78,6 +78,13 @@ class VaveDashboardApp(ctk.CTk):
         # 2. Build Core Window Layout
         self._build_layout()
 
+        # 2b. Pick up work left running by a previous process, without
+        # freezing window creation while models and planners warm up.
+        resume_thread = threading.Thread(
+            target=self._resume_interrupted_tasks, daemon=True,
+            name="vave-resume-tasks")
+        resume_thread.start()
+
         # 3. Register Store Subscriptions
         store.subscribe(self._on_store_event)
 
@@ -90,6 +97,22 @@ class VaveDashboardApp(ctk.CTk):
 
         # 6. Event Bus Polling
         self.after(100, self._poll_events)
+
+    def _resume_interrupted_tasks(self):
+        """Background part of step 2b: resume, then note it in the log."""
+        try:
+            from assistant.bootstrap import resume_interrupted_tasks
+            count = resume_interrupted_tasks()
+        except Exception:
+            logger.exception("Task auto-resume failed")
+            return
+        if count:
+            try:
+                store.add_system_log(
+                    f"Resumed {count} interrupted task(s) from last session.",
+                    "running")
+            except Exception:
+                logger.exception("Could not log resumed tasks")
 
     def destroy(self):
         # Tk deletes every PhotoImage with the root that created it, so the

@@ -199,6 +199,20 @@ class TaskExecutor:
         task_id = task.id
         outcomes = []
         done = {step.position for step in steps if step.is_finished}
+
+        # A resumed task brings its earlier outputs back from the checkpoint
+        # so later steps still see what was already done. Finished flags come
+        # from the database, never from here: only context is restored.
+        checkpoint = getattr(task, "checkpoint", None) or {}
+        if isinstance(checkpoint, dict):
+            seen_labels = set()
+            for item in checkpoint.get("outcomes", []) or []:
+                if not isinstance(item, dict):
+                    continue
+                label, text = item.get("step", ""), item.get("outcome", "")
+                if label and label not in seen_labels:
+                    outcomes.append((label, text))
+                    seen_labels.add(label)
         remaining = [step for step in steps if not step.is_finished]
 
         with ThreadPoolExecutor(max_workers=self.max_parallel,
