@@ -31,6 +31,50 @@ def get_os():
 def clamp_number(value, minimum=0, maximum=100):
     return max(minimum, min(maximum, int(value)))
 
+# Cache for helper-binary detection so every call does not stat the disk.
+_TOOL_CACHE = {}
+
+
+def _have_tool(name):
+    """Whether a helper binary exists on PATH. Results are cached."""
+    if name not in _TOOL_CACHE:
+        try:
+            import shutil
+            _TOOL_CACHE[name] = shutil.which(name) is not None
+        except Exception:
+            _TOOL_CACHE[name] = False
+    return _TOOL_CACHE[name]
+
+
+def _run_capture(cmd, timeout=15):
+    """Run a helper and return (returncode, stdout). Never raises.
+
+    127 means the binary is missing. All platform backends below go through
+    here so a missing xdotool or osascript becomes a message, not a crash.
+    """
+    import subprocess
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace",
+                                   timeout=timeout)
+        return completed.returncode, (completed.stdout or "")
+    except FileNotFoundError:
+        return 127, ""
+    except Exception as error:
+        logger.debug(f"Helper {cmd[0] if cmd else '?'} failed: {error}")
+        return 1, ""
+
+
+def _as_quote(text):
+    """Escape a string for AppleScript double quotes."""
+    return str(text or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _osascript(script, timeout=15):
+    """Run AppleScript, returning (returncode, stripped stdout)."""
+    rc, out = _run_capture(["osascript", "-e", script], timeout=timeout)
+    return rc, out.strip()
+
 def activate_window(hwnd):
     """Brings a window by HWND to the foreground and restores it if minimized."""
     if not hwnd or get_os() != "windows":
@@ -427,11 +471,33 @@ def open_app(app_name):
         elif system == "darwin":
             mac_apps = {
                 "chrome": "open -a 'Google Chrome'",
+                "google chrome": "open -a 'Google Chrome'",
+                "safari": "open -a Safari",
                 "notepad": "open -a TextEdit",
+                "textedit": "open -a TextEdit",
                 "calculator": "open -a Calculator",
+                "calc": "open -a Calculator",
                 "vscode": "open -a 'Visual Studio Code'",
+                "vs code": "open -a 'Visual Studio Code'",
+                "code": "open -a 'Visual Studio Code'",
                 "file_explorer": "open .",
+                "file explorer": "open .",
+                "explorer": "open .",
+                "finder": "open -a Finder",
                 "cmd": "open -a Terminal",
+                "terminal": "open -a Terminal",
+                "command prompt": "open -a Terminal",
+                "powershell": "open -a Terminal",
+                "task manager": "open -a 'Activity Monitor'",
+                "taskmgr": "open -a 'Activity Monitor'",
+                "settings": "open -a 'System Settings'",
+                "edge": "open -a 'Microsoft Edge'",
+                "microsoft edge": "open -a 'Microsoft Edge'",
+                "spotify": "open -a Spotify",
+                "discord": "open -a Discord",
+                "word": "open -a 'Microsoft Word'",
+                "excel": "open -a 'Microsoft Excel'",
+                "powerpoint": "open -a 'Microsoft PowerPoint'",
             }
             if query in mac_apps:
                 speak(f"Opening {display_name}")
@@ -441,11 +507,30 @@ def open_app(app_name):
         else:
             linux_apps = {
                 "chrome": "google-chrome",
+                "google chrome": "google-chrome",
+                "firefox": "firefox",
                 "notepad": "gedit",
+                "text editor": "gedit",
+                "gedit": "gedit",
                 "calculator": "gnome-calculator",
+                "calc": "gnome-calculator",
                 "vscode": "code",
+                "vs code": "code",
+                "code": "code",
                 "file_explorer": "xdg-open .",
+                "file explorer": "xdg-open .",
+                "explorer": "xdg-open .",
+                "files": "xdg-open .",
                 "cmd": "gnome-terminal",
+                "terminal": "gnome-terminal",
+                "command prompt": "gnome-terminal",
+                "task manager": "gnome-system-monitor",
+                "taskmgr": "gnome-system-monitor",
+                "settings": "gnome-control-center",
+                "edge": "microsoft-edge",
+                "microsoft edge": "microsoft-edge",
+                "spotify": "spotify",
+                "discord": "discord",
             }
             if query in linux_apps:
                 speak(f"Opening {display_name}")
@@ -1990,8 +2075,63 @@ def click_element(name, window_title=None):
         return f"Failed to click '{wanted}': {e}"
 
 
+def _list_windows_macos():
+    """Window titles via AppleScript System Events."""
+    rc, out = _osascript(
+        'tell application "System Events" to get name of every window of '
+        "(every process whose background only is false)")
+    if rc != 0:
+        return ("Could not list windows. macOS automation needs permission: "
+                "System Settings > Privacy & Security > Accessibility.")
+    names = [part.strip() for part in out.split(",") if part.strip()]
+    if not names:
+        return "No open application windows were found."
+    marker = ""
+    rc_fg, front = _osascript(
+        'tell application "System Events" to get name of first window of '
+        "(first process whose frontmost is true)")
+    rows = []
+    for name in names:
+        mark = "  <- currently in focus" if (rc_fg == 0 and name == front) else ""
+        rows.append(f"- '{name}'{mark}")
+    return "Open windows:\n" + "\n".join(rows)
+
+
+def _list_windows_linux():
+    """Window titles via wmctrl, falling back to xdotool."""
+    if _have_tool("wmctrl"):
+        rc, out = _run_capture(["wmctrl", "-l"])
+        if rc == 0:
+            rows = []
+            for line in out.splitlines():
+                parts = line.split(None, 3)
+                if len(parts) == 4 and parts[3].strip():
+                    rows.append(f"- '{parts[3].strip()}'")
+            if rows:
+                return "Open windows:\n" + "\n".join(rows)
+            return "No open application windows were found."
+    if _have_tool("xdotool"):
+        rc, out = _run_capture(
+            ["xdotool", "search", "--onlyvisible", "--name", ""])
+        if rc == 0:
+            rows = []
+            for wid in out.split()[:50]:
+                _, name = _run_capture(["xdotool", "getwindowname", wid])
+                if name.strip():
+                    rows.append(f"- '{name.strip()}'")
+            if rows:
+                return "Open windows:\n" + "\n".join(rows)
+            return "No open application windows were found."
+    return ("Could not list windows. Install a window tool: "
+            "`sudo apt install wmctrl` or `sudo apt install xdotool`.")
+
+
 def list_windows():
     """Lists the open application windows so a task can be pointed at the right one."""
+    if get_os() == "darwin":
+        return _list_windows_macos()
+    if get_os() == "linux":
+        return _list_windows_linux()
     _ensure_com()
     try:
         import uiautomation as auto
@@ -2240,8 +2380,91 @@ def _find_window(title):
     return None
 
 
+def _focus_window_macos(title):
+    """Bring the first window whose title contains the text to the front."""
+    wanted = _as_quote(title)
+    script = ('tell application "System Events" to set frontmost of '
+              f'(first process whose name of its windows contains "{wanted}")'
+              " to true")
+    rc, _out = _osascript(script)
+    if rc != 0:
+        return (f"No open window matches '{title}'. Use list_windows to see "
+                f"what is available. (macOS automation also needs Accessibility "
+                f"permission: System Settings > Privacy & Security.)")
+    import time
+    time.sleep(0.4)
+    _rc, front = _osascript(
+        'tell application "System Events" to get name of first window of '
+        "(first process whose frontmost is true)")
+    shown = front if front else title
+    return f"Focused the window '{shown}'."
+
+
+def _focus_window_linux(title):
+    """Bring a window to the front by (partial) title."""
+    if _have_tool("wmctrl"):
+        rc, _out = _run_capture(["wmctrl", "-a", str(title)])
+        if rc == 0:
+            return f"Focused the window matching '{title}'."
+    if _have_tool("xdotool"):
+        rc, _out = _run_capture(
+            ["xdotool", "search", "--onlyvisible", "--name", str(title),
+             "windowactivate"])
+        if rc == 0:
+            return f"Focused the window matching '{title}'."
+        return (f"No open window matches '{title}'. Use list_windows to see "
+                f"what is available.")
+    return ("Could not focus windows. Install a window tool: "
+            "`sudo apt install wmctrl` or `sudo apt install xdotool`.")
+
+
+def _close_window_macos(title=None):
+    """Close a window via Cmd+W after focusing it (no title = frontmost)."""
+    if title:
+        focused = _focus_window_macos(title)
+        if focused.startswith("No open window matches"):
+            return focused
+    rc, _out = _osascript(
+        'tell application "System Events" to keystroke "w" using command down')
+    if rc != 0:
+        return ("Could not close the window. macOS automation needs "
+                "Accessibility permission: System Settings > Privacy & Security.")
+    if title:
+        return f"Closed the window '{title}'."
+    return "Closed the front window."
+
+
+def _close_window_linux(title=None):
+    """Close a window by (partial) title, or the active one."""
+    if title:
+        if _have_tool("wmctrl"):
+            rc, _out = _run_capture(["wmctrl", "-c", str(title)])
+            if rc == 0:
+                return f"Closed the window '{title}'."
+        if _have_tool("xdotool"):
+            rc, _out = _run_capture(
+                ["xdotool", "search", "--onlyvisible", "--name", str(title),
+                 "windowclose"])
+            if rc == 0:
+                return f"Closed the window '{title}'."
+            return (f"No open window matches '{title}'. Use list_windows to "
+                    f"see what is available.")
+        return ("Could not close windows. Install a window tool: "
+                "`sudo apt install wmctrl` or `sudo apt install xdotool`.")
+    if _have_tool("xdotool"):
+        rc, _out = _run_capture(["xdotool", "getactivewindow", "windowclose"])
+        if rc == 0:
+            return "Closed the front window."
+    return ("Could not close the front window. Install xdotool: "
+            "`sudo apt install xdotool`.")
+
+
 def focus_window(title):
     """Brings a window to the front by title, so clicks and typing land in the right app."""
+    if get_os() == "darwin":
+        return _focus_window_macos(title)
+    if get_os() == "linux":
+        return _focus_window_linux(title)
     _ensure_com()
     try:
         import uiautomation as auto  # noqa: F401
@@ -2281,6 +2504,10 @@ def focus_window(title):
 
 def close_window(title=None):
     """Closes a window by title, or the window in focus when no title is given."""
+    if get_os() == "darwin":
+        return _close_window_macos(title)
+    if get_os() == "linux":
+        return _close_window_linux(title)
     _ensure_com()
     try:
         import uiautomation as auto
@@ -2310,6 +2537,74 @@ def close_window(title=None):
         return f"Failed to close window: {e}"
 
 
+
+
+# Windows has no notify-send equivalent, so toasts go through the WinRT
+# notification manager via a throwaway script (arguments carry the text, so
+# quotes in titles can never break out of it).
+_WINDOWS_TOAST_PS1 = r'''
+param([string]$Title, [string]$Body)
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$text = $template.GetElementsByTagName("text")
+$text.Item(0).AppendChild($template.CreateTextNode($Title)) | Out-Null
+$text.Item(1).AppendChild($template.CreateTextNode($Body)) | Out-Null
+$toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("VAVE").Show($toast)
+'''
+
+
+def _notify_windows(title, message):
+    """Best-effort Windows toast. True when it was shown."""
+    import os
+    import subprocess
+    import tempfile
+    fd, path = tempfile.mkstemp(prefix="vave-toast-", suffix=".ps1")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(_WINDOWS_TOAST_PS1)
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", path, "-Title", title, "-Body", message],
+            capture_output=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return completed.returncode == 0
+    except Exception as error:
+        logger.debug(f"Windows toast note: {error}")
+        return False
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def notify_user(title, message=""):
+    """Shows a desktop notification with a title and message text."""
+    title = str(title or "VAVE").strip() or "VAVE"
+    message = str(message or "").strip()
+    system = get_os()
+    if system == "darwin":
+        rc, _out = _osascript(
+            f'display notification "{_as_quote(message)}" '
+            f'with title "{_as_quote(title)}"')
+        if rc == 0:
+            return f"Showed notification '{title}'."
+        return ("Could not show the notification. macOS notifications need "
+                "permission: System Settings > Notifications.")
+    if system == "linux":
+        if _have_tool("notify-send"):
+            rc, _out = _run_capture(["notify-send", title, message])
+            if rc == 0:
+                return f"Showed notification '{title}'."
+        return ("Could not show the notification. Install libnotify: "
+                "`sudo apt install libnotify-bin`.")
+    if _notify_windows(title, message):
+        return f"Showed notification '{title}'."
+    return ("Could not show a Windows toast here; "
+            "the message was logged instead.")
 
 
 def disable_voice_input():

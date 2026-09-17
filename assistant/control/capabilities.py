@@ -115,6 +115,7 @@ TOOL_CAPABILITIES = {
     "ingest_document": "memory.write",
     "send_telegram_update": "system.notify",
     "send_telegram_screenshot": "system.notify",
+    "notify_user": "system.notify",
 
     # Driving a real browser. Reading is cheap; acting as you is not.
     "browse": "browser.navigate",

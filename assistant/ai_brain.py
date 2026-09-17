@@ -157,6 +157,7 @@ AVAILABLE_FUNCTIONS = {
     "start_overwatch": __import__('assistant.overwatch', fromlist=['']).start_overwatch,
     "stop_overwatch": __import__('assistant.overwatch', fromlist=['']).stop_overwatch,
     "send_telegram_update": system_tasks.send_telegram_update,
+    "notify_user": system_tasks.notify_user,
     "send_telegram_screenshot": lambda **kwargs: __import__('assistant.telegram_sync', fromlist=['']).send_telegram_screenshot(**kwargs),
     "write_to_screen_line": system_tasks.write_to_screen_line,
     "media_control": system_tasks.media_control,
@@ -501,6 +502,7 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(screen|read screen|see screen|analyze screen|what is on my screen|describe screen|look at screen)\b"), ("analyze_screen", "read_screen", "take_screenshot")),
     (re.compile(r"\b(screenshot.*telegram|telegram.*screenshot|screenshot to phone|send me a screenshot)\b"), ("send_telegram_screenshot", "take_screenshot")),
     (re.compile(r"\b(telegram|message)\b"), ("send_telegram_update",)),
+    (re.compile(r"\b(notify|notification|alert me|show a notification)\b"), ("notify_user",)),
     (re.compile(r"\b(pause|resume|next track|skip song|previous track|play song|media)\b"), ("media_control",)),
     (re.compile(r"\b(snap|snap window|maximize|minimize|center window|split screen|tile|organize workspace|side by side)\b"), ("snap_window", "organize_workspace", "list_windows")),
 )
@@ -1025,6 +1027,27 @@ LLM_TOOLS = WEB_TOOLS + [
                     }
                 },
                 "required": ["message_text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "notify_user",
+            "description": "Shows a desktop notification with a title and message text on this computer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The notification title."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "The notification body text."
+                    }
+                },
+                "required": ["title"]
             }
         }
     },
@@ -3334,6 +3357,7 @@ SAFE_TOOLS = [
     "github_list_issues", "github_read_issue", "github_find_file",
     "github_read_file",
     "list_home_devices", "get_device_state",
+    "notify_user",
 ]
 for t in SAFE_TOOLS:
     guard.register_name("safe", t)
