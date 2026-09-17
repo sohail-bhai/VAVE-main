@@ -473,6 +473,7 @@ appear in the GUI status bar and on the phone via SSE.
 | 2026-09-17 | Phase 6 remainders implemented + tested (`tests/test_phase6_remainders.py`, 9 tests; 3 existing tests updated to the new intended behavior; smoke `time` → `what time is it`). Suite **806 green**. Phase 6 marked DONE. |
 | 2026-09-17 | Audit reports (`report.md`, `error_report.md`, 19 findings) resolved one by one with regression tests per domain (`tests/test_report_security.py`, `test_report_reliability.py`, `test_report_performance.py`, `test_report_architecture.py`, `test_report_edgecases.py`, `tests/test_notes.py`). Suite **870 green**, smoke 11/11. |
 | 2026-09-17 | Second audit round (16 findings, IDs recycled) resolved one by one the same way. Notable: CSRF origin on mutations, WS origin, full capability coverage + deny-unknown, approval-resume gate, async notifier + `flush()`, browser worker timeout, device attribution, volume/name anchoring. Suite **917 green**, smoke 11/11. |
+| 2026-09-17 | HGE §16 tracks 1–4 DONE one by one with per-track verification: auto-resume on startup (waiting-approval detection, checkpoint restore, voice+GUI hooks), Google OAuth vault + offline/consent + calendar unification, swarm DAG/roles/actor-critic + registration, Linux/macOS window bridges + notify tool. Suite **965 green**, smoke 11/11. |
 | 2026-09-16 | Reliability sprint after live-testing: 3-tier model routing, safety guard (direct + hypothetical destructive requests), vision auto-analyze, deterministic step tracking, Store/UWP launcher, Chromium accessibility nudge, console-safe window matching, physical clicks for web surfaces, screenshot-OCR click route (RapidOCR). 768 green. |
 | 2026-09-16 | Section 14 added: DeepSeek suggestions for leveling VAVE into a true system (brainstorm only, no code). |
 | 2026-09-16 | Section 15 added: live-test defect register with root causes, fixes, commits, and verification steps for the next agent. |
@@ -774,3 +775,92 @@ section keeps only the map and the still-open environment items:
 Items 1, 2 and 4 finished 2026-09-17 (D8/O2 verified, both regression files
 in the suite at 796 green, O4 implemented). Item 3 stands: build **S3 dry-run**
 then **S5 `vave doctor`** from section 14. O1 is ON HOLD, not active work.
+
+---
+
+## 16. HGE — System Hardening & Expansion Roadmap (2026-09-17)
+
+### 16.1 Audit & Hardening Verification: COMPLETE ✅
+
+Two comprehensive audit rounds resolved and permanently pinned 35 cumulative issues (19 in round 1 + 16 in round 2) across all 5 review domains:
+- **Security (8 resolved)**: CSRF origin checks on state-changing API endpoints (`SEC-01`), CSWSH origin validation on WebSockets (`SEC-02`), capability catalog mapping for 16 unmapped tools (`SEC-03`), hard invariants for `.env` and `control.db` (`SEC-04`), SSRF redirect/DNS protections, dotfile exposure checks, and credential read guards.
+- **Reliability (8 resolved)**: `close_app` mass system process kill prevention (`REL-01`), multi-approval premature task resumption race condition (`REL-02`), `TokenBucket` in-memory LRU cap & TTL pruning (`REL-03`), Windows reserved device names (`CON`, `NUL`) and collision avoidance in `save_upload` (`REL-04`), Playwright thread affinity, SQLite multi-connection lock collisions, and notes directory auto-creation.
+- **Performance (7 resolved)**: Asynchronous Telegram notification worker (`PERF-01`), `SecretStore.redact()` plaintext caching (`PERF-02`), browser thread `future.result()` worker timeout (`PERF-03`), synchronous voice Telegram decoupling, migration check caching, directory traversal limits, and tool schema selective prompt filtering.
+- **Architecture (5 resolved)**: Remote task device ID attribution (`ARCH-01`), atomic temp-file replace in `SiteMemory` (`ARCH-02`), capability/guard authorization alignment, ContextVar worker leak cleanup, and atomic config updates.
+- **Edge-Cases (7 resolved)**: Anchored volume command patterns to avoid math question hijacking (`EDGE-01`), anchored assistant name regex to avoid conversational renaming (`EDGE-02`), `stdin=subprocess.DEVNULL` for terminal commands (`EDGE-03`), user name change regex, path traversal defense, and TOCTOU double-read guards.
+
+**Test & Verification Status**:
+- **Suite**: **917 / 917 unit tests passing** (100% green, 144.6s run time).
+- **Smoke test**: **11 / 11 passing** (`main.py --smoke-test`).
+- **Reports**: `error_report.md` & `report.md` certified with **0 open defects**.
+
+---
+
+### 16.2 Expansion Roadmap: What To Do Next — ALL FOUR TRACKS DONE ✅
+
+#### Track 1: Automatic Task Recovery on Startup — DONE ✅
+- `interrupted_tasks()` now includes `WAITING_APPROVAL` (was RUNNING/PENDING
+  only); `_run_graph` restores step outputs from the task checkpoint (finished
+  flags still come from the DB only).
+- `bootstrap.resume_interrupted_tasks()` helper (never raises); voice loop
+  auto-resumes (one-shots excluded); GUI resumes in a background thread with
+  a system-log line. Verified: waiting-approval pickup, checkpoint restore,
+  helper failure-proofing, GUI kickoff.
+
+#### Track 2: Live Google Workspace OAuth2 — DONE ✅ (code; consent is manual)
+- `authorize()` requests `access_type=offline` + `prompt=consent` (refresh
+  tokens guaranteed; loopback PKCE was already automatic in the library).
+- Tokens persist encrypted as `secret://google_workspace_oauth`
+  (scope `google.*`); legacy files migrate on first use; `disconnect()`
+  forgets both; `calendar_sync` prefers shared credentials.
+- Verified with 8 mocked tests; `docs/google.md` updated. The consent screen
+  itself needs your Cloud project + browser (documented manual path).
+
+#### Track 3: Swarm DAG + Actor-Critic + Roles — DONE ✅
+- `ROLES` (Researcher/Planner/Coder/Verifier) with pass-through customs;
+  `run_swarm_dag` (validated DAG, wave-parallel, context passing,
+  skip-on-failed-dep); `run_actor_critic` (verdict protocol, cap, history);
+  lifecycle events on the bus. Old flows untouched.
+- Both registered (functions, schemas, sensitive tier, capabilities) plus a
+  swarm trigger group so the model is actually offered them.
+- Verified with 17 model-free tests.
+
+#### Track 4: Cross-Platform Parity — DONE ✅ (code; mac/Linux paths mocked)
+- Window list/focus/close: AppleScript backend (darwin), wmctrl/xdotool
+  backends (linux), all lazy with install/permission guidance. Extended
+  open_app aliases both platforms. New `notify_user` tool (osascript /
+  notify-send / WinRT toast), fully registered.
+- Volume/lock backends verified present, unchanged.
+- Verified with 17 mocked tests; Windows toast fired live. macOS/Linux paths
+  need a real machine to run (mocked here).
+
+#### Original track specs (kept for reference; all four are DONE above)
+
+#### Track 1: Automatic Task Recovery on Startup (Control Plane)
+- **Goal**: Auto-resume interrupted tasks upon app startup without manual intervention.
+- **Architecture**:
+  - In `assistant/control/service.py` / `main.py`, detect tasks left in `TaskStatus.RUNNING` or `TaskStatus.WAITING_APPROVAL` from previous crashes or machine reboots.
+  - Automatically invoke `executor.resume_interrupted()` or prompt user via GUI/voice to continue.
+  - Checkpoint state machine persists step outputs and allows seamless retry.
+
+#### Track 2: Live Google Workspace OAuth2 Integration
+- **Goal**: Transition `assistant/workspace/` from mock/demo mode to real token-refresh OAuth2 integration.
+- **Architecture**:
+  - Implement full OAuth2 PKCE flow with local callback listener for Google Calendar, Gmail, and Google Drive.
+  - Encrypt and store refresh tokens in `SecretStore` as `secret://google_workspace_oauth`.
+  - Enable live event scheduling, email drafting/sending, and semantic file search in Google Drive.
+
+#### Track 3: Autonomous Multi-Agent Swarm Expansion (`assistant/swarm.py`)
+- **Goal**: Upgrade parallel sub-agent coordinator to solve complex, multi-stage goals.
+- **Architecture**:
+  - Implement DAG-based dependency resolution for composite tasks.
+  - Add Actor-Critic verification loop: generator sub-agent produces step code/actions, critic sub-agent evaluates against guard rules and correctness criteria.
+  - Role-based specialization (Researcher, Planner, Coder, Verifier) communicating via the control plane event bus.
+
+#### Track 4: Cross-Platform Parity for System Tasks (`assistant/system_tasks.py`)
+- **Goal**: Provide native implementations for Linux and macOS.
+- **Architecture**:
+  - Linux: Implement `xdotool` / `wmctrl` / `ydotool` window management, ALSA/PulseAudio volume, and desktop notification bridges.
+  - macOS: Implement AppleScript / Quartz window management, CoreAudio volume, and native macOS notification bridges.
+  - Keep platform-specific imports lazy so app startup remains universally cross-platform.
+

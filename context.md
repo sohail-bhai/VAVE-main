@@ -253,11 +253,11 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 > **CURRENT STATUS: STAGES 12-14 (UPGRADE PLAN PHASES 0-5) COMPLETED**
 
 - **Verification Status**:
-  - **917 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
+  - **965 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
 - **Audit hardening (2026-09-17)**: all 19 findings in `report.md` fixed with
   per-domain regression tests (`test_report_security/reliability/performance/
   architecture/edgecases`, `test_notes`); second audit round (16 findings)
-  fixed the same way; suite **917 green**, smoke 11/11.
+  fixed the same way; HGE tracks 1–4 done; suite **965 green**, smoke 11/11.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -318,8 +318,10 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 6. ✅ Audit reports resolved (19 findings, per-domain regression tests)
 7. ✅ Second audit round resolved (16 findings: CSRF/WS origin, capability
    coverage, approval resume, notifier/browser async, device attribution,
-   volume/name anchoring, + more) — suite **917 green**
-8. Live voice test with `python main.py` (YOU need to run this)
+   volume/name anchoring, + more)
+8. ✅ HGE tracks 1–4 DONE (auto-resume, OAuth vault, swarm DAG/roles/critic,
+   platform parity) — suite **965 green**
+9. Live voice test with `python main.py` (YOU need to run this)
 9. Next builds when requested: S3 dry-run, S5 `vave doctor` (plan §14)
 
 ### Git State
