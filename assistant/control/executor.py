@@ -20,6 +20,7 @@ from assistant.control.capabilities import capability_for_tool
 from assistant.control.models import StepResult, StepStatus, TaskStatus
 from assistant.control.planner import Planner
 from assistant.control.service import get_control_plane
+from assistant import call_context
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +305,11 @@ class TaskExecutor:
         finally:
             if agent is not None:
                 self.plane.set_helper_idle(agent.id)
+            # Taint belongs to the step that read untrusted content. Pool
+            # workers are reused, so without this a later step - possibly of
+            # another task - inherits confirmations it never earned. (Matches
+            # ask_ai/run_task_step, which also scope taint per request.)
+            call_context.clear_taint()
 
     def _agent_for(self, task_id, step):
         """The agent that should do this step: the step's own, or the task's."""
@@ -347,14 +353,14 @@ class TaskExecutor:
         try:
             return adapter.run_step(instruction, context=context, agent=agent,
                                     token=token,
-                                    authorize=self._authorizer(task_id, agent),
+                                    authorize=self._authorizer(task_id, agent, token),
                                     resolve_secrets=self.plane.secrets.resolve)
         except TypeError:
             # An adapter that predates cancellation still works, it just
             # cannot be interrupted part-way.
             return adapter.run_step(instruction, context=context, agent=agent)
 
-    def _authorizer(self, task_id, agent):
+    def _authorizer(self, task_id, agent, token=None):
         """Decides, per tool, whether the running step may use it.
 
         This is where a brokered capability stops being advice: a tool whose
@@ -377,6 +383,13 @@ class TaskExecutor:
             if result["status"] == "granted":
                 return True, ""
             if result["status"] == "waiting":
+                # Stay in this turn while the user decides. Ending the turn
+                # here marks the step finished, and the later approval would
+                # release a grant nobody is left to use.
+                if self._wait_for_approvals(task_id, token=token):
+                    if self.plane.has_capability(capability, task_id=task_id):
+                        return True, ""
+                    return False, f"{capability} was not approved."
                 return False, (f"{capability} needs your approval first. "
                                "Ask again once it is approved.")
             return False, f"{capability} is not allowed. {result['judgement']['reason']}"
@@ -420,7 +433,7 @@ class TaskExecutor:
             return "This task already finished."
         return ""
 
-    def _wait_for_approvals(self, task_id):
+    def _wait_for_approvals(self, task_id, token=None):
         """Hold while the user decides. False means the task must not continue.
 
         The control plane already moved the task to `waiting_approval` when the
@@ -429,6 +442,8 @@ class TaskExecutor:
         deadline = time.monotonic() + self.approval_timeout
 
         while True:
+            if token is not None and token.cancelled:
+                return False
             task = self.plane.get_task(task_id)
             if task is None or task.status.is_terminal:
                 return False

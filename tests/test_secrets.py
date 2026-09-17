@@ -14,6 +14,8 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from unittest import mock
+
 from assistant.control.secrets import (
     KEY_ENVIRONMENT_VARIABLE,
     SecretNotFound,
@@ -277,6 +279,62 @@ class ScopedSecretTests(SecretTestCase):
         self.assertEqual("hello", self.secrets.reveal("public_note", capability="shell.run"))
         self.assertEqual("hello", self.secrets.reveal("public_note"))
         self.assertEqual("hello", self.secrets.resolve("secret://public_note"))
+
+
+class SharedStoreTests(unittest.TestCase):
+    """REL-03 + PERF-02: one cached store, not a connection per lookup.
+
+    Building a ControlStore per resolve_setting() leaks SQLite handles on
+    Windows and re-runs every migration on every lookup.
+    """
+
+    def setUp(self):
+        from assistant.control import secrets as secrets_module
+        secrets_module.reset_shared_store()
+        self.addCleanup(secrets_module.reset_shared_store)
+
+    def _mocks(self):
+        return (mock.patch("assistant.control.store.ControlStore"),
+                mock.patch("assistant.control.secrets.load_key",
+                           return_value=Fernet.generate_key()))
+
+    def test_store_is_created_once_and_reused(self):
+        from assistant.control import secrets as secrets_module
+        store_cls, key_fn = self._mocks()
+        with store_cls as mock_store_cls, key_fn:
+            first = secrets_module._shared_secret_store()
+            second = secrets_module._shared_secret_store()
+        self.assertIs(first, second)
+        self.assertEqual(1, mock_store_cls.call_count)
+
+    def test_reset_closes_and_drops(self):
+        from assistant.control import secrets as secrets_module
+        store_cls, key_fn = self._mocks()
+        with store_cls as mock_store_cls, key_fn:
+            first = secrets_module._shared_secret_store()
+            secrets_module.reset_shared_store()
+            second = secrets_module._shared_secret_store()
+        self.assertIsNot(first, second)
+        self.assertEqual(2, mock_store_cls.call_count)
+        first.store.close.assert_called_once()
+
+    def test_module_resolve_uses_the_cache(self):
+        from assistant.control import secrets as secrets_module
+        store_cls, key_fn = self._mocks()
+        with store_cls as mock_store_cls, key_fn:
+            secrets_module.resolve_setting("secret://a")
+            secrets_module.resolve_setting("secret://b")
+        self.assertEqual(1, mock_store_cls.call_count)
+
+    def test_module_resolve_still_returns_default_on_failure(self):
+        from assistant.control import secrets as secrets_module
+        with mock.patch(
+                "assistant.control.secrets._shared_secret_store",
+                side_effect=RuntimeError("no db")):
+            self.assertEqual(
+                "fallback",
+                secrets_module.resolve_setting("secret://a",
+                                               default="fallback"))
 
 
 if __name__ == "__main__":

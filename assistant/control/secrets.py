@@ -249,10 +249,42 @@ def resolve_setting(value, default=""):
     if not isinstance(value, str) or "secret://" not in value:
         return value
     try:
-        from assistant.control.store import ControlStore
-        store = SecretStore(ControlStore(), key=load_key())
-        return store.resolve_setting(value, default=default)
+        return _shared_secret_store().resolve_setting(value, default=default)
     except Exception as error:                            # store/key unavailable
         logger.warning("Could not open secret store to resolve reference: %s",
                        error)
         return default
+
+
+_shared_store = None
+_shared_lock = threading.Lock()
+
+
+def _shared_secret_store():
+    """One SecretStore for the whole process.
+
+    resolve_setting() is called from speech output, notifications, telegram
+    sync and system tasks. Building a ControlStore per call leaks SQLite
+    handles on Windows (database is locked) and re-runs every migration on
+    every lookup.
+    """
+    global _shared_store
+    with _shared_lock:
+        if _shared_store is None:
+            from assistant.control.store import ControlStore
+            _shared_store = SecretStore(ControlStore(), key=load_key())
+        return _shared_store
+
+
+def reset_shared_store():
+    """Drop the cached store, closing it. Tests call this between data dirs."""
+    global _shared_store
+    with _shared_lock:
+        store, _shared_store = _shared_store, None
+    if store is not None:
+        closer = getattr(store.store, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception:
+                pass

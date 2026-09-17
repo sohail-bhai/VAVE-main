@@ -7,6 +7,13 @@ from assistant.config import get_setting
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 NOTES_FILE = PROJECT_ROOT / "data" / "notes.txt"
 
+def _ensure_notes_file():
+    """The data folder may not exist on a fresh clone; notes must not crash."""
+    try:
+        NOTES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
 def add_note():
     speak("What should I write?")
 
@@ -22,24 +29,30 @@ def add_note():
 
     timestamp = datetime.now().strftime("%d %B %Y, %I:%M %p")
 
+    _ensure_notes_file()
     with open(NOTES_FILE, "a", encoding="utf-8") as file:
         file.write(f"[{timestamp}] {note}\n")
 
     speak("Note saved.")
 
 def read_notes():
-    if not NOTES_FILE.exists() or NOTES_FILE.read_text(encoding="utf-8").strip() == "":
+    _ensure_notes_file()
+    try:
+        with open(NOTES_FILE, "r", encoding="utf-8") as file:
+            notes = [line.strip() for line in file if line.strip()]
+    except FileNotFoundError:
+        notes = []
+
+    if not notes:
         speak("You have no notes.")
         return
 
     speak("Reading your notes.")
 
-    with open(NOTES_FILE, "r", encoding="utf-8") as file:
-        notes = file.readlines()
-
     for note in notes[-5:]:
-        speak(note.strip())
+        speak(note)
 
 def clear_notes():
+    _ensure_notes_file()
     NOTES_FILE.write_text("", encoding="utf-8")
     speak("All notes cleared.")

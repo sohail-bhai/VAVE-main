@@ -9,7 +9,10 @@ the rest of VAVE - and every test - can work against a stand-in instead of a
 real browser.
 """
 
+import concurrent.futures
+import functools
 import logging
+import queue
 import threading
 from pathlib import Path
 
@@ -40,6 +43,63 @@ class BrowserUnavailable(Exception):
     """Playwright or its browser is not installed."""
 
 
+class _BrowserThread:
+    """Runs every Playwright call on one dedicated thread.
+
+    Playwright's sync API must be used from the thread that created it, but
+    task steps run on pooled executor workers that change from step to step.
+    Every BrowserSession method below funnels through call(), so creation and
+    use always share a thread no matter who asks. Calls made from the worker
+    itself (nested helpers like find() inside click()) run inline.
+    """
+
+    def __init__(self):
+        self._queue = queue.Queue()
+        self._thread = None
+        self._lock = threading.Lock()
+
+    def _worker(self):
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            func, args, kwargs, future = item
+            if future.cancelled():
+                continue
+            try:
+                future.set_result(func(*args, **kwargs))
+            except BaseException as error:
+                if not future.done():
+                    try:
+                        future.set_exception(error)
+                    except Exception:
+                        pass
+
+    def _ensure(self):
+        with self._lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._worker, daemon=True, name="vave-browser")
+                self._thread.start()
+            return self._thread
+
+    def call(self, func, *args, **kwargs):
+        worker = self._ensure()
+        if threading.get_ident() == worker.ident:
+            return func(*args, **kwargs)
+        future = concurrent.futures.Future()
+        self._queue.put((func, args, kwargs, future))
+        return future.result()
+
+
+def _on_browser_thread(method):
+    """Run a BrowserSession method on the session's worker thread."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        return self._worker.call(lambda: method(self, *args, **kwargs))
+    return wrapper
+
+
 class BrowserSession:
     """A running browser, its current page, and the elements VAVE can see."""
 
@@ -53,6 +113,7 @@ class BrowserSession:
         self._page = None
         self._elements = []
         self._lock = threading.RLock()
+        self._worker = _BrowserThread()
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -60,6 +121,7 @@ class BrowserSession:
     def started(self):
         return self._page is not None
 
+    @_on_browser_thread
     def start(self):
         """Open the browser if it is not already open. Returns the page."""
         with self._lock:
@@ -117,6 +179,7 @@ class BrowserSession:
                           else self._context.new_page())
             return self._page
 
+    @_on_browser_thread
     def close(self):
         """Shut the browser down. The profile, and its logins, survive."""
         with self._lock:
@@ -140,6 +203,7 @@ class BrowserSession:
 
     # -- moving around ------------------------------------------------------
 
+    @_on_browser_thread
     def goto(self, url):
         page = self.start()
         if not url.startswith(("http://", "https://")):
@@ -148,12 +212,14 @@ class BrowserSession:
         self._settle()
         return self.describe()
 
+    @_on_browser_thread
     def back(self):
         page = self.start()
         page.go_back(wait_until="domcontentloaded")
         self._settle()
         return self.describe()
 
+    @_on_browser_thread
     def _settle(self):
         """Give the page a moment to finish rendering, without hanging on it."""
         try:
@@ -163,6 +229,7 @@ class BrowserSession:
 
     # -- looking ------------------------------------------------------------
 
+    @_on_browser_thread
     def describe(self):
         """Where we are: URL and title."""
         page = self.start()
@@ -173,6 +240,7 @@ class BrowserSession:
     # footer too, which crowds out the part that answers the question.
     CONTENT_SELECTORS = ("main", "[role=main]", "article", "#links", "#content")
 
+    @_on_browser_thread
     def read_text(self, limit=3000):
         """The readable text of the page, trimmed to fit a prompt."""
         page = self.start()
@@ -199,6 +267,7 @@ class BrowserSession:
             collapsed = collapsed[:limit] + " ... [trimmed]"
         return collapsed
 
+    @_on_browser_thread
     def elements(self, refresh=True):
         """Numbered interactive elements, the way a person would list them."""
         page = self.start()
@@ -227,6 +296,7 @@ class BrowserSession:
         self._elements = found
         return found
 
+    @_on_browser_thread
     def find(self, target):
         """Resolve what the model asked for: a number, or visible text."""
         elements = self.elements(refresh=not self._elements)
@@ -248,6 +318,7 @@ class BrowserSession:
 
     # -- acting -------------------------------------------------------------
 
+    @_on_browser_thread
     def click(self, target):
         match = self.find(target)
         prev_pages = len(self._context.pages) if self._context and hasattr(self._context, "pages") else 1
@@ -270,6 +341,7 @@ class BrowserSession:
         self._elements = []
         return {"clicked": match["label"], **self.describe()}
 
+    @_on_browser_thread
     def type_text(self, target, text, submit=False):
         # Auto-recover if target and text were swapped by small model
         body_text = str(text or "")
@@ -318,6 +390,7 @@ class BrowserSession:
             self._elements = []
         return {"typed_into": match["label"], "submitted": submit}
 
+    @_on_browser_thread
     def press(self, key):
         page = self.start()
         clean = str(key or "").strip()
@@ -347,6 +420,7 @@ class BrowserSession:
         self._settle()
         return self.describe()
 
+    @_on_browser_thread
     def wait_for_content(self, min_words=40, timeout_ms=None, quiet_for=1.5):
         """Wait until the page has real content and has stopped changing.
 
@@ -372,6 +446,7 @@ class BrowserSession:
 
         return False
 
+    @_on_browser_thread
     def wait_for_text(self, text, timeout_ms=None):
         """Wait until some text shows up - how you know an answer arrived."""
         page = self.start()
@@ -380,6 +455,7 @@ class BrowserSession:
             arg=text, timeout=timeout_ms or self.timeout_ms)
         return True
 
+    @_on_browser_thread
     def fill_form(self, fields):
         """Fill several boxes at once. `fields` is {label or number: value}."""
         filled = []
@@ -396,12 +472,14 @@ class BrowserSession:
             self.elements()
         return filled
 
+    @_on_browser_thread
     def tabs(self):
         """Every open tab, so a flow that opens one can come back."""
         self.start()
         return [{"index": index + 1, "title": page.title(), "url": page.url}
                 for index, page in enumerate(self._context.pages)]
 
+    @_on_browser_thread
     def new_tab(self, url=None):
         self.start()
         page = self._context.new_page()
@@ -411,6 +489,7 @@ class BrowserSession:
             return self.goto(url)
         return self.describe()
 
+    @_on_browser_thread
     def switch_tab(self, index):
         self.start()
         pages = self._context.pages
@@ -422,6 +501,7 @@ class BrowserSession:
         self._elements = []
         return self.describe()
 
+    @_on_browser_thread
     def looks_like_login(self):
         """Whether this page is asking a person to sign in."""
         page = self.start()
@@ -438,6 +518,7 @@ class BrowserSession:
         text = self.read_text(limit=1500).lower()
         return any(word in text for word in words)
 
+    @_on_browser_thread
     def wait_until_signed_in(self, timeout_ms=180_000, poll_ms=2000):
         """Wait for a person to finish signing in, in the window they can see.
 
@@ -454,6 +535,7 @@ class BrowserSession:
             time.sleep(poll_ms / 1000)
         return False
 
+    @_on_browser_thread
     def screenshot(self, path=None):
         page = self.start()
         target = Path(path or (PROJECT_ROOT / "data" / "browser_last.png"))
