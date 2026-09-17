@@ -1,8 +1,11 @@
 import logging
 logger = logging.getLogger(__name__)
 
+import copy
 import json
 import os
+import tempfile
+import threading
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -50,6 +53,10 @@ DEFAULT_CONFIG = {
     "api_require_auth": True,
     "api_trust_localhost": True,
     "api_rate_limit_per_minute": 120,
+    # Extra origins allowed to READ cross-origin API responses (same-origin
+    # callers like the served PWA need nothing). Empty = same-origin only.
+    # Pairing endpoints additionally reject any cross-origin browser request.
+    "api_cors_origins": [],
     "device_token_ttl_seconds": 2592000,
     # Send approvals, failures and security events to Telegram as well as the
     # phone's own connection.
@@ -198,6 +205,9 @@ _config_cache = None
 _config_mtime = 0
 _local_mtime = 0
 
+# Reads and writes race between the voice loop, task workers and the API.
+_config_lock = threading.RLock()
+
 def create_default_config():
     CONFIG_FILE.write_text(
         json.dumps(DEFAULT_CONFIG, indent=4),
@@ -227,39 +237,50 @@ def _read_local_config():
 
 def load_config():
     global _config_cache, _config_mtime, _local_mtime
-    if not CONFIG_FILE.exists():
-        create_default_config()
+    with _config_lock:
+        if not CONFIG_FILE.exists():
+            create_default_config()
 
-    try:
-        current_mtime = os.path.getmtime(CONFIG_FILE)
-        local_config, local_mtime = _read_local_config()
+        try:
+            current_mtime = os.path.getmtime(CONFIG_FILE)
+            local_config, local_mtime = _read_local_config()
 
-        if (_config_cache is not None and current_mtime == _config_mtime
-                and local_mtime == _local_mtime):
+            if (_config_cache is not None and current_mtime == _config_mtime
+                    and local_mtime == _local_mtime):
+                return _config_cache
+
+            with open(CONFIG_FILE, "r", encoding="utf-8") as file:
+                user_config = json.load(file)
+
+            merged = deep_merge(DEFAULT_CONFIG, user_config)
+            _config_cache = deep_merge(merged, local_config)
+            _config_mtime = current_mtime
+            _local_mtime = local_mtime
+
             return _config_cache
 
-        with open(CONFIG_FILE, "r", encoding="utf-8") as file:
-            user_config = json.load(file)
-
-        merged = deep_merge(DEFAULT_CONFIG, user_config)
-        _config_cache = deep_merge(merged, local_config)
-        _config_mtime = current_mtime
-        _local_mtime = local_mtime
-
-        return _config_cache
-
-    except Exception as error:
-        logger.info("Config error:", error)
-        logger.info("Using default config.")
-        return DEFAULT_CONFIG
+        except Exception as error:
+            logger.info("Config error:", error)
+            logger.info("Using default config.")
+            return DEFAULT_CONFIG
 
 def save_config(config):
-    CONFIG_FILE.write_text(
-        json.dumps(config, indent=4),
-        encoding="utf-8"
-    )
+    data = json.dumps(config, indent=4)
+    fd, tmp_name = tempfile.mkstemp(dir=str(CONFIG_FILE.parent),
+                                    prefix=".config.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(data)
+        os.replace(tmp_name, CONFIG_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     global _config_mtime
-    _config_mtime = 0
+    with _config_lock:
+        _config_mtime = 0
 
 def get_setting(key, default=None):
     config = load_config()
@@ -270,19 +291,34 @@ def update_setting(key, value):
     if key in SECRET_KEYS:
         return _update_local_setting(key, value)
 
-    config = load_config()
-    config[key] = value
-    # The cache holds values merged from config.local.json; writing it back
-    # wholesale would copy a credential into the shared file.
-    for secret in SECRET_KEYS:
-        config.pop(secret, None)
-    save_config(config)
+    with _config_lock:
+        # Work on a copy: load_config() returns the shared cache, and the
+        # secret-stripping below used to destroy cached credentials in memory.
+        config = copy.deepcopy(load_config())
+        config[key] = value
+        # The cache holds values merged from config.local.json; writing it back
+        # wholesale would copy a credential into the shared file.
+        for secret in SECRET_KEYS:
+            config.pop(secret, None)
+        save_config(config)
 
 
 def _update_local_setting(key, value):
     global _local_mtime
-    local_config, _ = _read_local_config()
-    local_config[key] = value
-    LOCAL_CONFIG_FILE.write_text(json.dumps(local_config, indent=4),
-                                 encoding="utf-8")
-    _local_mtime = 0
+    with _config_lock:
+        local_config, _ = _read_local_config()
+        local_config[key] = value
+        data = json.dumps(local_config, indent=4)
+        fd, tmp_name = tempfile.mkstemp(dir=str(LOCAL_CONFIG_FILE.parent),
+                                        prefix=".config-local.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                file.write(data)
+            os.replace(tmp_name, LOCAL_CONFIG_FILE)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+        _local_mtime = 0

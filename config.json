@@ -5,26 +5,26 @@
     "voice_volume": 1.0,
     "llm_model": "qwen2.5:3b",
     "featherless_enabled": false,
-    "featherless_api_key": "",
     "featherless_model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
     "llm_model_fast": "qwen2.5:3b",
-    "llm_model_smart": "qwen3.5:9b",
+    "llm_model_smart": "qwen3:4b",
+    "llm_model_deep": "",
     "model_escalation_enabled": true,
     "llm_tool_temperature": 0.1,
     "llm_chat_temperature": 0.7,
     "ollama_url": "http://localhost:11434",
     "llm_timeout_seconds": 300,
-    "telegram_bot_token": "secret://telegram_bot_token",
     "telegram_chat_id": "8751256134",
     "email_address": "shaikaohail2@gmail.com",
-    "email_app_password": "secret://email_app_password",
     "api_require_auth": true,
     "api_trust_localhost": true,
     "api_rate_limit_per_minute": 120,
+    "api_cors_origins": [],
     "device_token_ttl_seconds": 2592000,
     "notify_telegram": false,
     "agent_max_steps": 15,
     "browser_headless": false,
+    "browser_cdp_url": "http://127.0.0.1:9222",
     "auto_resume_tasks": true,
     "disk_warning_gb": 15.0,
     "health_sweep_seconds": 60,
@@ -45,6 +45,8 @@
     "notes_pause_seconds": 3.0,
     "normal_max_phrase_time": 25,
     "notes_max_phrase_time": 60,
+    "wakeword_model": "hey_jarvis",
+    "wakeword_threshold": 0.6,
     "websites": {
         "youtube": "https://www.youtube.com",
         "google": "https://www.google.com",
@@ -78,11 +80,6 @@
             "set volume to 60"
         ]
     },
-    "api_host": "0.0.0.0",
-    "api_port": 8765,
-    "test_key": true,
-    "wake_word_enabled": true,
-    "speech_enabled": false,
     "safety": {
         "voice": {
             "mode": "allow",
@@ -132,5 +129,11 @@
                 "pattern": "exact"
             }
         ]
-    }
+    },
+    "api_host": "0.0.0.0",
+    "api_port": 8765,
+    "test_key": true,
+    "wake_word_enabled": true,
+    "speech_enabled": false,
+    "ollama_num_gpu": null
 }

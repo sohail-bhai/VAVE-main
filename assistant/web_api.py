@@ -52,6 +52,41 @@ class BlockedAddress(WebApiError):
     """The address points somewhere on this machine or this network."""
 
 
+class _CheckedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to a target that passes check_address, and
+    never carry credential headers to a different host or scheme.
+
+    The stdlib follows 301/302/307 without re-checking, so a public API that
+    answers `Location: http://127.0.0.1:8765/...` would walk straight past
+    the SSRF filter — with the caller's credential headers attached.
+    """
+
+    _CREDENTIAL_HEADERS = ("authorization", "private-token", "x-api-key")
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        check_address(newurl)
+        new_request = super().redirect_request(req, fp, code, msg, headers,
+                                               newurl)
+        if new_request is None:
+            return None
+        try:
+            old = urllib.parse.urlparse(req.get_full_url())
+            new = urllib.parse.urlparse(new_request.get_full_url())
+        except Exception:
+            return new_request
+        if ((old.hostname or "").lower() != (new.hostname or "").lower()
+                or old.scheme.lower() != new.scheme.lower()):
+            for name in list(new_request.headers):
+                if name.lower() in self._CREDENTIAL_HEADERS:
+                    del new_request.headers[name]
+        return new_request
+
+
+def _open(request):
+    opener = urllib.request.build_opener(_CheckedRedirectHandler)
+    return opener.open(request, timeout=TIMEOUT)
+
+
 def _is_private(address):
     try:
         ip = ipaddress.ip_address(address)
@@ -155,12 +190,14 @@ def call(method, url, body=None, params=None, auth_secret="", auth_style="bearer
         request.add_header(name, value)
 
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with _open(request) as response:
             text = response.read().decode("utf-8", errors="replace")
             status = response.status
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:500]
         raise WebApiError(f"{error.code} from {url}: {detail}") from error
+    except BlockedAddress:
+        raise
     except Exception as error:
         raise WebApiError(f"Could not reach {url}: {error}") from error
 

@@ -249,6 +249,41 @@ class ApiSecurity:
             return True
         return self.trust_local and self.is_local(client_host)
 
+    def check_same_origin(self, request):
+        """Refuse browser requests arriving from another origin.
+
+        Pairing endpoints mint trust, so a web page must never drive them: an
+        evil.com tab in the user's own browser connects from loopback and
+        passes may_pair, then reads the code back through permissive CORS.
+        Browsers always attach Origin to cross-origin POSTs, while same-origin
+        callers (the served PWA, the docs UI) carry a matching Origin and
+        non-browsers (CLI, native apps, tests) carry none — so only a real
+        cross-origin page is refused. Unparseable origins fail open to avoid
+        breaking legitimate clients behind odd proxies.
+        """
+        headers = getattr(request, "headers", {}) or {}
+        get = getattr(headers, "get", None)
+        origin = get("origin", "") if callable(get) else ""
+        if not origin:
+            return
+        try:
+            from urllib.parse import urlparse
+            origin_host = (urlparse(origin).hostname or "").lower()
+        except Exception:
+            return
+        if not origin_host:
+            return
+        try:
+            server_host = (request.url.hostname or "").lower()
+        except Exception:
+            server_host = ""
+        if server_host and origin_host != server_host:
+            logger.warning("Refused cross-origin pairing request from %r.",
+                           origin)
+            raise PermissionError(
+                "Cross-origin pairing is not allowed. "
+                "Open the VAVE page itself to pair a device.")
+
     # -- rate limiting ------------------------------------------------------
 
     def check_rate(self, identity):

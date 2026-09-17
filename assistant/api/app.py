@@ -265,10 +265,16 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         lifespan=lifespan,
     )
 
-    # The desktop and mobile clients are separate origins.
+    # The desktop and mobile clients are separate origins. Cross-origin reads
+    # default to OFF: the served PWA and docs UI are same-origin (they need no
+    # CORS at all), native apps do not do CORS, and a wildcard would let any
+    # web page read loopback-trusted responses such as pairing codes.
+    # Extra origins are opt-in via the api_cors_origins setting.
+    _cors_origins = [o for o in (get_setting("api_cors_origins", []) or [])
+                     if isinstance(o, str) and o]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_cors_origins,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -286,6 +292,15 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         """Every call names a device, and no device may flood the API."""
         path = request.url.path
         client_host = request.client.host if request.client else ""
+
+        # Pairing endpoints mint trust: a cross-origin web page must not reach
+        # them even blind (CORS blocks the read, this blocks the side effect).
+        if path in ("/api/pair", "/api/pair/code"):
+            try:
+                guard.check_same_origin(request)
+            except PermissionError as error:
+                return JSONResponse(status_code=403,
+                                    content=error_body(403, str(error)))
 
         token = bearer_token(request.headers.get("authorization")) or request.query_params.get("token", "")
         if (path in OPEN_PATHS or path.startswith("/docs") or path.startswith("/static")
@@ -587,9 +602,13 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         return _files_or_404(shared_files.list_dir, path)
 
     @app.get("/api/files/search", tags=["files"])
-    def search_files(query: str, path: str = "", limit: int = 100):
+    async def search_files(query: str, path: str = "", limit: int = 100):
         """Find a file by name, without knowing where you left it."""
-        return _files_or_404(shared_files.search, query, path, limit)
+        try:
+            return await asyncio.to_thread(shared_files.search, query,
+                                           path, limit)
+        except shared_files.FileAccessError as error:
+            raise HTTPException(status_code=404, detail=str(error))
 
     @app.get("/api/files/download", tags=["files"])
     def download_file(path: str, request: Request):
