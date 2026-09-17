@@ -106,7 +106,7 @@ class ShortcutCommandTests(unittest.TestCase):
         with mock.patch("assistant.control.service.get_control_plane", return_value=self.plane):
             with mock.patch("assistant.commands.speak"):
                 with mock.patch("assistant.commands.tell_time") as tell_time:
-                    self.assertTrue(execute_command("time"))
+                    self.assertTrue(execute_command("what time is it"))
         tell_time.assert_called_once()
         self.assertEqual(0, len(self.store.list_command_shortcuts()))
 

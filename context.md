@@ -253,7 +253,7 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 > **CURRENT STATUS: STAGES 12-14 (UPGRADE PLAN PHASES 0-5) COMPLETED**
 
 - **Verification Status**:
-  - **796 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
+  - **806 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -268,9 +268,7 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 
 ## 5. Next Steps & Future Roadmap
 
-1. **Phase 6 remainders** — still open: 6.1 subprocess return-code check in
-   `open_app`, 6.3 bare-`time` alternative removal, 6.4 command snippet in
-   error speech. (6.2 list-windows voice + notes/app ordering done — §3.)
+1. **Phase 6 — DONE 2026-09-17** (remainders implemented + tested).
 2. **Phase 7 — Service Integrations**: Google Calendar/Email fast-path
    commands, Telegram sync verification, secret store credential migration.
 3. **Phase 8 — Control Plane Enhancements**: Network device discovery,
@@ -306,16 +304,18 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 - Or set `"llm_model_deep": "phi4"` when ready, `""` = disabled
 
 ### TODO (Next Session)
-1. ✅ Section 15 defects resolved with solutions (commit `990d71c`)
+1. ✅ Section 15 defects resolved with solutions
 2. ✅ Regression files: `tests/test_destructive_requests.py` (7),
-   `tests/test_chromium_click_path.py` (19) — suite **796 green**
+   `tests/test_chromium_click_path.py` (19) — suite was 796 green
 3. ✅ D8 closed: OCR page entries + chrome exclusion, live-proven, Sohail active
 4. ✅ O4 done: `take_screenshot(analyze=…)`; O1 still blocked (5.1GB free)
-5. Live voice test with `python main.py` (YOU need to run this)
-6. Next builds when requested: S3 dry-run, S5 `vave doctor` (plan §14)
+5. ✅ Phase 6 remainders implemented + tested
+   (`tests/test_phase6_remainders.py`, 9 tests) — suite **806 green**
+6. Live voice test with `python main.py` (YOU need to run this)
+7. Next builds when requested: S3 dry-run, S5 `vave doctor` (plan §14)
 
 ### Git State
 - Branch: `sohail`, remote: `https://github.com/sohail-bhai/VAVE-main.git`
-- Last commit: `990d71c` (close D8 end-to-end, both regression files)
+- Last commit: Phase 6 remainders (see log)
 - Note: `config.json` left uncommitted (user runtime state); `test_scaffold.py`
   restored after an over-broad temp cleanup deleted it

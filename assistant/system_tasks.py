@@ -349,6 +349,7 @@ def open_app(app_name):
                     pass
 
                 speak(f"Opening {display_name}")
+                launch_rc = None
                 if query in store_apps:
                     # Resolve the real AppID from the Start menu (AUMIDs vary
                     # by version); fall back to the known one.
@@ -359,7 +360,15 @@ def open_app(app_name):
                     cmd = win32_apps[query]
                     if not cmd.startswith("start "):
                         cmd = f"start {cmd}"
-                    os.system(cmd)
+                    try:
+                        completed = subprocess.run(
+                            ["cmd", "/c", cmd],
+                            capture_output=True, timeout=30,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                        launch_rc = completed.returncode
+                    except Exception as e:
+                        logger.debug(f"[Launcher] launch note for {display_name}: {e}")
+                        launch_rc = None
                     wait_loops = 50
 
                 # Wait for the launched window to be ready and activated
@@ -378,6 +387,13 @@ def open_app(app_name):
                 if verified_win:
                     win_name = getattr(verified_win, "Name", display_name) or display_name
                     return f"Successfully opened {display_name} (Verified active window: '{win_name}')."
+
+                # The launch command itself failed: say so honestly instead of
+                # "effect unconfirmed".
+                if launch_rc not in (None, 0):
+                    speak(f"Could not open {display_name}.")
+                    return (f"Could not open {display_name}. The launch command "
+                            f"exited with code {launch_rc}.")
 
                 # Native app didn't open — fall back to browser if a web URL exists
                 websites = get_setting("websites", {})
@@ -550,15 +566,21 @@ def close_app(app_name):
 
     target_exes = [x.lower() for x in proc_map.get(clean_name, [f"{clean_name}.exe", clean_name])]
     closed = False
+    denied = False
 
     for proc in psutil.process_iter(["name", "pid"]):
         try:
             p_name = proc.info["name"].lower()
-            if p_name in target_exes or clean_name in p_name:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        if p_name in target_exes or clean_name in p_name:
+            try:
                 proc.terminate()
                 closed = True
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+            except psutil.NoSuchProcess:
+                pass
+            except psutil.AccessDenied:
+                denied = True
 
     if closed:
         global _LAST_OPENED_APP
@@ -577,6 +599,10 @@ def close_app(app_name):
                 return f"Closed {display_name} successfully."
         except Exception:
             pass
+        if denied:
+            speak(f"Cannot close {display_name}: access denied.")
+            return (f"Cannot close {display_name}: access denied "
+                    f"(try running as administrator).")
         speak(f"No running process found for {display_name}.")
         return f"No running process found for {display_name}."
 

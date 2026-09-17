@@ -113,7 +113,7 @@ def run_smoke_tests():
     previous_speech_enabled = is_speech_enabled()
     set_speech_enabled(False)
     test_cases = [
-        ("time", lambda log: _contains(log, "speak", "time is")),
+        ("what time is it", lambda log: _contains(log, "speak", "time is")),
         ("date", lambda log: _contains(log, "speak", "date is")),
         ("open notepad", lambda log: ("app", "notepad") in log),
         ("search google for python", lambda log: _contains(log, "web", "q=python")),

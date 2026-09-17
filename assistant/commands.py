@@ -786,7 +786,7 @@ _QUIT_PATTERN = re.compile(
 _TIME_PATTERN = re.compile(
     r"^\s*(?:please\s+)?(?:what(?:'s|\s+is)\s+(?:the\s+)?time(?:\s+now)?|"
     r"tell\s+(?:me\s+)?(?:the\s+)?time|what\s+time\s+is\s+it|"
-    r"(?:get|check)\s+(?:the\s+)?time|current\s+time|time)\s*[.!?]?\s*$",
+    r"(?:get|check)\s+(?:the\s+)?time|current\s+time)\s*[.!?]?\s*$",
     re.IGNORECASE,
 )
 

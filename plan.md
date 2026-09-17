@@ -133,43 +133,15 @@ Verified 2026-09-17 (`pyproject.toml`, `vave` subcommands, 11 unit tests,
 
 ---
 
-## 8. Phase 6 — Daily Reliability: REMAINDERS ONLY
+## 8. Phase 6 — Daily Reliability: DONE ✅
 
-**Goal**: finish the three small items left after the reliability sprint.
-Already done and recorded in `context.md` §3: 6.2 list-windows voice
-(`_LIST_WINDOWS_PATTERN`), notes-before-app routing, anchored `_LOCK_PATTERN`,
-compound guard in `handle_app_command`.
-
-### Remaining tasks
-
-#### 6.1 App launch: honest failure reporting
-`open_app` Tier 1 still uses fire-and-forget `os.system(cmd)` (the later
-launcher rework added window verification but no return-code check).
-- Use `subprocess.run(["cmd", "/c", cmd], capture_output=True)`; if rc != 0
-  AND no window appears: "Could not open {name}. The command exited with
-  code {rc}." Keep "effect unconfirmed" for rc 0 + no window.
-- In `close_app`: catch `AccessDenied` on `proc.terminate()` and report
-  "Cannot close {name}: access denied (try running as administrator)".
-- Tests: mock `subprocess.run` rc=1 -> failure message; rc=0 + no window ->
-  "effect unconfirmed"; rc=0 + window -> success.
-
-#### 6.3 Routing: remove the bare-`time` alternative
-`_TIME_PATTERN` still ends with a bare `|time)` alternative
-(`commands.py:789`), so "shutdown time" answers with the time. Remove it.
-- Tests: extend `tests/test_command_routing.py`: "shutdown time" -> AI brain.
-
-#### 6.4 Error feedback: speak failures, not silence
-`controller.py process_command` still speaks only "Something went wrong while
-processing that command." (`controller.py:201`). Include the command,
-truncated to 50 chars.
-
-### Definition of done
-Suite green, CI green.
-
-### User manual test (Sohail)
-1. Say "shutdown time" — should NOT answer with the time.
-2. Break an app shortcut, say "open <it>" — should report failure honestly.
-3. Trigger any command error — the spoken message should name the command.
+Finished 2026-09-17. Remainders implemented + tested: Tier 1
+`subprocess.run` return-code check with honest failure
+(`tests/test_phase6_remainders.py`), `close_app` AccessDenied report,
+bare-`time` removed from `_TIME_PATTERN` ("shutdown time" → AI brain),
+command snippet in `process_command` error speech. Earlier bits
+(list-windows voice, notes-before-app ordering, anchored lock) were already
+in. Details in `context.md` §3.
 
 ---
 
@@ -478,6 +450,9 @@ appear in the GUI status bar and on the phone via SSE.
   nudge, RapidOCR click route, chrome-guard + OCR scan entries,
   `tests/test_destructive_requests.py` + `tests/test_chromium_click_path.py`.
   796 green. Details in `context.md` §3.
+- **Phase 6 remainders**: Tier 1 return-code check, `close_app` AccessDenied
+  report, bare-`time` removal, command snippet in error speech.
+  `tests/test_phase6_remainders.py` (9 tests). Suite: **806 green**.
 
 ## 13. Progress Log
 
@@ -494,6 +469,7 @@ appear in the GUI status bar and on the phone via SSE.
 | 2026-09-15 | ALL PHASES 2-5 DONE. 756 tests green locally and on GitHub CI (`success` on `8a28828`). Commits: `92fe7fd` (PWA), `a3042aa` (sweep/backup/journal), `3c6deb1` (Home Assistant), `8a28828` (packaging). |
 | 2026-09-16/17 | Reliability sprint + defect register (§15): all D1–D9 resolved, regression files in suite (796 green). Commits `9d8ee72` → `22fa84d`. |
 | 2026-09-17 | Plan cleanup: Phases 2–5 detail sections removed (verified one by one; record lives in `context.md` §3 + §12). Phase 6 rewritten to remainders (6.1, 6.3 bare-time, 6.4). §15 condensed to map + open items (O1 phi4 RAM, O3 voice). |
+| 2026-09-17 | Phase 6 remainders implemented + tested (`tests/test_phase6_remainders.py`, 9 tests; 3 existing tests updated to the new intended behavior; smoke `time` → `what time is it`). Suite **806 green**. Phase 6 marked DONE. |
 | 2026-09-16 | Reliability sprint after live-testing: 3-tier model routing, safety guard (direct + hypothetical destructive requests), vision auto-analyze, deterministic step tracking, Store/UWP launcher, Chromium accessibility nudge, console-safe window matching, physical clicks for web surfaces, screenshot-OCR click route (RapidOCR). 768 green. |
 | 2026-09-16 | Section 14 added: DeepSeek suggestions for leveling VAVE into a true system (brainstorm only, no code). |
 | 2026-09-16 | Section 15 added: live-test defect register with root causes, fixes, commits, and verification steps for the next agent. |

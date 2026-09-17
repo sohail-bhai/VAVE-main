@@ -40,7 +40,7 @@ class CommandIntelligenceTests(unittest.TestCase):
     def test_execute_command_records_usage(self):
         with mock.patch("assistant.control.service.get_control_plane", return_value=self.plane):
             with mock.patch("assistant.system_tasks.tell_time"):
-                execute_command("time")
+                execute_command("what time is it")
 
             with mock.patch("assistant.system_tasks.tell_battery"):
                 execute_command("battery")

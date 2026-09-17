@@ -572,9 +572,16 @@ class StructuredCommandRoutingTests(unittest.TestCase):
 
     def test_time_pattern_matches_exact_queries(self):
         from assistant.commands import _TIME_PATTERN
-        for cmd in ("time", "what time is it", "tell me the time", "current time", "what's the time now"):
+        for cmd in ("what time is it", "tell me the time", "current time", "what's the time now"):
             with self.subTest(cmd=cmd):
                 self.assertIsNotNone(_TIME_PATTERN.match(cmd), f"Expected {cmd!r} to match time pattern")
+
+    def test_bare_time_is_left_for_the_model(self):
+        # Phase 6 remainder: the bare word used to match, so "shutdown time"
+        # answered with the time. Now only full time questions route here.
+        from assistant.commands import _TIME_PATTERN
+        self.assertIsNone(_TIME_PATTERN.match("time"))
+        self.assertIsNone(_TIME_PATTERN.match("shutdown time"))
 
     def test_time_pattern_rejects_casual_mentions(self):
         from assistant.commands import _TIME_PATTERN

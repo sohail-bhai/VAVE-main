@@ -198,7 +198,11 @@ class AssistantController:
             )
             logger.info("Command processing error:", error)
             traceback.print_exc()
-            speak("Something went wrong while processing that command.")
+            snippet = str(command or "")[:50]
+            if snippet:
+                speak(f"Something went wrong with '{snippet}'.")
+            else:
+                speak("Something went wrong while processing that command.")
             should_continue = True
 
         if should_continue:
