@@ -87,6 +87,7 @@ class SecretStore:
         self.store = store
         self._fernet = Fernet(key or load_key())
         self._lock = threading.RLock()
+        self._plaintext_cache = None
 
     # -- keeping ------------------------------------------------------------
 
@@ -102,11 +103,14 @@ class SecretStore:
                 description=description,
                 allowed_capabilities=allowed_capabilities or "",
                 updated_at=now())
+            self._plaintext_cache = None
         return self.describe(name)
 
     def delete(self, name):
         with self._lock:
-            return self.store.delete_secret(name)
+            deleted = self.store.delete_secret(name)
+            self._plaintext_cache = None
+            return deleted
 
     def names(self):
         return [row["name"] for row in self.store.list_secrets()]
@@ -181,19 +185,36 @@ class SecretStore:
 
         Belt and braces: nothing should ever put a value here, so anything
         this catches is a bug that would otherwise reach a log or a phone.
+        Values are cached (invalidated by put/delete) because this runs on
+        every timeline event: without the cache each call costs a query per
+        secret plus a Fernet decryption per secret.
         """
         if not text:
             return text
 
         result = str(text)
-        for name in self.names():
-            try:
-                value = self.reveal(name, capability="*")
-            except (SecretNotFound, PermissionError):
-                continue
+        for name, value in self._plaintexts().items():
             if value and value in result:
                 result = result.replace(value, f"secret://{name}")
         return result
+
+    def _plaintexts(self):
+        """name -> value for every stored secret, cached until put/delete.
+
+        Note: rows written straight to the store (secrets restore) bypass
+        this; restore is an operator-driven, restart-adjacent operation, so
+        the next process starts cold and correct.
+        """
+        with self._lock:
+            if self._plaintext_cache is None:
+                found = {}
+                for name in self.names():
+                    try:
+                        found[name] = self.reveal(name, capability="*")
+                    except (SecretNotFound, PermissionError):
+                        continue
+                self._plaintext_cache = found
+            return dict(self._plaintext_cache)
 
     # -- migration ----------------------------------------------------------
 

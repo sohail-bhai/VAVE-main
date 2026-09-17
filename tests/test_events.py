@@ -159,6 +159,7 @@ class NotifierTests(EventTestCase):
     def test_an_approval_reaches_the_phone(self):
         self.plane.request_capability("google.gmail.send")
 
+        self.assertTrue(self.notifier.flush())
         self.assertEqual(1, len(self.channel.delivered))
         self.assertTrue(self.channel.delivered[0].needs_answer)
         self.assertEqual("action", self.channel.delivered[0].urgency)
@@ -168,6 +169,7 @@ class NotifierTests(EventTestCase):
 
         self.plane.complete_task(task.id, "Tidied 12 notes.")
 
+        self.assertTrue(self.notifier.flush())
         self.assertIn("Tidied 12 notes.", self.messages())
 
     def test_routine_progress_is_not_a_notification(self):
@@ -182,12 +184,14 @@ class NotifierTests(EventTestCase):
 
         self.plane.kill_helper(agent.id, reason="It kept clicking Buy.")
 
+        self.assertTrue(self.notifier.flush())
         urgencies = [item.urgency for item in self.channel.delivered]
         self.assertIn("security", urgencies)
 
     def test_an_emergency_stop_is_reported(self):
         self.plane.emergency_stop()
 
+        self.assertTrue(self.notifier.flush())
         self.assertIn("security", [item.urgency for item in self.channel.delivered])
 
     def test_a_broken_channel_never_stops_the_work(self):
@@ -202,6 +206,7 @@ class NotifierTests(EventTestCase):
 
         self.plane.complete_task(task.id, "Tidied 12 notes.")
 
+        self.assertTrue(self.notifier.flush())
         self.assertIn("Tidied 12 notes.", self.messages())
 
     def test_recent_notifications_are_kept_for_catching_up(self):
@@ -248,6 +253,7 @@ class TelegramChannelTests(EventTestCase):
 
         self.plane.request_capability("google.gmail.send")
 
+        self.assertTrue(notifier.flush())
         self.assertEqual(["Needs you: Waiting for your approval: "
                           "Can I send email as you?"], sent)
 

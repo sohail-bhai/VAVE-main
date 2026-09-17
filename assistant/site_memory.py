@@ -12,6 +12,8 @@ no model and no network.
 
 import json
 import logging
+import os
+import tempfile
 import threading
 import urllib.parse
 from pathlib import Path
@@ -53,7 +55,19 @@ class SiteMemory:
     def _save(self, data):
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            fd, tmp_name = tempfile.mkstemp(dir=str(self.path.parent),
+                                            prefix=".site_notes.",
+                                            suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as file:
+                    file.write(json.dumps(data, indent=2))
+                os.replace(tmp_name, self.path)
+            except Exception:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
         except OSError:
             logger.exception("Could not write site notes")
 

@@ -15,6 +15,7 @@ import mimetypes
 import os
 import shutil
 import time
+import uuid
 from pathlib import Path
 
 from assistant.config import get_setting
@@ -27,6 +28,15 @@ HIDDEN_NAMES = {".ssh", ".gnupg", ".aws", ".config/gcloud", "id_rsa", "id_ed2551
 
 # One page of a directory. A phone cannot draw ten thousand rows anyway.
 MAX_ENTRIES = 500
+
+# Windows treats these names as devices however they are asked for: writing
+# to CON prints at the console, COM1/AUX can hang the I/O thread, and a name
+# with a colon is an NTFS alternate data stream. None of them is a file.
+WINDOWS_RESERVED_STEMS = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 
 # How many results a search will look at before giving up.
 SEARCH_LIMIT = 200
@@ -242,13 +252,18 @@ def save_upload(folder, filename, stream, overwrite=False):
     safe_name = Path(str(filename or "upload")).name
     if not safe_name or safe_name in (".", ".."):
         raise FileAccessError("That file needs a name.")
+    if ":" in safe_name:
+        raise FileAccessError("That file needs a name without a colon.")
+    if Path(safe_name).stem.upper() in WINDOWS_RESERVED_STEMS:
+        raise FileAccessError(
+            f"'{safe_name}' is a reserved device name on Windows.")
     if _is_hidden(Path(safe_name)):
         raise FileAccessError("That one is not shared.")
 
     destination = target_dir / safe_name
     if destination.exists() and not overwrite:
         stem, suffix = destination.stem, destination.suffix
-        destination = target_dir / f"{stem}-{int(time.time())}{suffix}"
+        destination = target_dir / f"{stem}-{uuid.uuid4().hex[:8]}{suffix}"
 
     with open(destination, "wb") as handle:
         shutil.copyfileobj(stream, handle)

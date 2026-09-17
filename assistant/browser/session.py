@@ -43,6 +43,12 @@ class BrowserUnavailable(Exception):
     """Playwright or its browser is not installed."""
 
 
+# A wedged Playwright call must fail, not freeze the task forever. Every
+# legitimate single op finishes far inside this (Playwright's own timeouts
+# are ~20s); anything slower means the browser side is dead.
+DEFAULT_WORKER_TIMEOUT = 120.0
+
+
 class _BrowserThread:
     """Runs every Playwright call on one dedicated thread.
 
@@ -53,7 +59,8 @@ class _BrowserThread:
     itself (nested helpers like find() inside click()) run inline.
     """
 
-    def __init__(self):
+    def __init__(self, timeout=DEFAULT_WORKER_TIMEOUT):
+        self._timeout = timeout
         self._queue = queue.Queue()
         self._thread = None
         self._lock = threading.Lock()
@@ -83,20 +90,39 @@ class _BrowserThread:
                 self._thread.start()
             return self._thread
 
-    def call(self, func, *args, **kwargs):
+    def call(self, func, *args, timeout=None, **kwargs):
         worker = self._ensure()
         if threading.get_ident() == worker.ident:
             return func(*args, **kwargs)
         future = concurrent.futures.Future()
         self._queue.put((func, args, kwargs, future))
-        return future.result()
+        limit = self._timeout if timeout is None else timeout
+        try:
+            if limit is None:
+                return future.result()
+            return future.result(timeout=limit)
+        except concurrent.futures.TimeoutError:
+            # The worker is wedged: abandon it so the next call gets a fresh
+            # thread instead of queueing behind a corpse forever. (The stuck
+            # thread is a daemon; it dies with the process.)
+            with self._lock:
+                if self._thread is worker:
+                    self._thread = None
+            raise concurrent.futures.TimeoutError(
+                f"Browser worker did not respond within {limit}s.") from None
 
 
 def _on_browser_thread(method):
     """Run a BrowserSession method on the session's worker thread."""
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
-        return self._worker.call(lambda: method(self, *args, **kwargs))
+        try:
+            return self._worker.call(lambda: method(self, *args, **kwargs))
+        except concurrent.futures.TimeoutError:
+            # Handles are bonded to the dead worker; drop them so the next
+            # start() relaunches instead of driving a corpse cross-thread.
+            self._abandon_browser()
+            raise
     return wrapper
 
 
@@ -120,6 +146,13 @@ class BrowserSession:
     @property
     def started(self):
         return self._page is not None
+
+    def _abandon_browser(self):
+        """Drop handles bonded to a dead worker so start() relaunches."""
+        self._playwright = None
+        self._context = None
+        self._page = None
+        self._elements = []
 
     @_on_browser_thread
     def start(self):

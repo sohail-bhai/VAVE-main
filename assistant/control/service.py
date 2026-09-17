@@ -346,13 +346,13 @@ class ControlPlane:
 
     # -- tasks --------------------------------------------------------------
 
-    def create_task(self, goal, steps=None, capability=None):
+    def create_task(self, goal, steps=None, capability=None, device_id=""):
         """Accept a goal and lay out the steps the user will see."""
         if self._stopped:
             raise RuntimeError("VAVE is stopped. Reset before starting new work.")
 
         task = Task(goal=goal, status=TaskStatus.PENDING,
-                    device_id=self.local_device.id)
+                    device_id=device_id or self.local_device.id)
 
         helper = self.find_helper_for(capability) if capability else None
         if helper is not None:
@@ -740,6 +740,16 @@ class ControlPlane:
                     approval_id=approval.id)
         return approval
 
+    def _has_pending_approvals(self, task_id, exclude=""):
+        """Whether this task still has open approvals besides one."""
+        try:
+            outstanding = self.store.list_approvals(pending_only=True)
+        except Exception:
+            return False
+        return any(getattr(item, "task_id", "") == task_id
+                   and getattr(item, "id", "") != exclude
+                   for item in outstanding)
+
     def resolve_approval(self, approval_id, approved):
         approval = self.store.get_approval(approval_id)
         if approval is None or approval.status != ApprovalStatus.PENDING:
@@ -759,8 +769,14 @@ class ControlPlane:
         if approval.task_id:
             task = self.store.get_task(approval.task_id)
             if task is not None and task.status == TaskStatus.WAITING_APPROVAL:
-                self._set_task_status(
-                    task, TaskStatus.RUNNING if approved else TaskStatus.CANCELLED)
+                if not approved:
+                    self._set_task_status(task, TaskStatus.CANCELLED)
+                elif not self._has_pending_approvals(approval.task_id,
+                                                     exclude=approval.id):
+                    self._set_task_status(task, TaskStatus.RUNNING)
+                # else: more approvals are still open, so the task stays
+                # waiting until the last one resolves. Resuming early would
+                # release steps whose own approval never came.
 
         self.record(
             f"You approved: {approval.action}" if approved

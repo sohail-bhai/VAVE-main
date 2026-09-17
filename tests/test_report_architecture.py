@@ -165,5 +165,53 @@ class Arch03ConfigSafetyTests(unittest.TestCase):
             self.assertEqual([], list(Path(tmp).glob(".config.*.tmp")))
 
 
+class Arch01TaskAttributionTests(unittest.TestCase):
+    """N-ARCH-01: remote tasks carry the calling device, not the local one."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from fastapi.testclient import TestClient
+        from assistant.api.app import create_app
+        from assistant.api.auth import ApiSecurity
+        from assistant.control.service import ControlPlane
+        from assistant.control.store import ControlStore
+        self.tempdir = tempfile.mkdtemp(prefix="vave-arch01-")
+        self.store = ControlStore(Path(self.tempdir) / "control.db")
+        self.plane = ControlPlane(store=self.store)
+        self.guard = ApiSecurity(self.store, require_auth=True,
+                                 trust_local=True)
+        self.client = TestClient(create_app(control=self.plane,
+                                            security=self.guard))
+
+    def tearDown(self):
+        self.store.close()
+        import shutil
+        shutil.rmtree(self.tempdir, ignore_errors=True)
+
+    def _pair(self, name="RemotePhone"):
+        code = self.guard.issue_pairing_code()["code"]
+        res = self.client.post("/api/pair",
+                               json={"code": code, "name": name})
+        self.assertEqual(201, res.status_code)
+        return res.json()["token"], res.json()["device"]["id"]
+
+    def test_remote_task_carries_calling_device(self):
+        token, device_id = self._pair()
+        res = self.client.post(
+            "/api/tasks", json={"goal": "Tidy my notes"},
+            headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(201, res.status_code)
+        task_id = res.json()["id"]
+        self.assertEqual(device_id, res.json()["device_id"])
+        self.assertEqual(device_id,
+                         self.plane.get_task(task_id).device_id)
+
+    def test_local_default_unchanged(self):
+        task = self.plane.create_task("Local work")
+        self.assertEqual(self.plane.local_device.id, task.device_id)
+
+
 if __name__ == "__main__":
     unittest.main()

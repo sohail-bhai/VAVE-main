@@ -101,5 +101,119 @@ class Edge04UnicodeOutputTests(unittest.TestCase):
         self.assertEqual("hello", result)
 
 
+class Edge01VolumeRoutingTests(unittest.TestCase):
+    """N-EDGE-01: volume words + numbers in questions must not move speakers."""
+
+    def _handle(self, command):
+        from assistant import commands
+        with mock.patch.object(commands, "set_volume") as mock_set, \
+             mock.patch.object(commands, "change_volume_by") as mock_change, \
+             mock.patch.object(commands, "mute_volume") as mock_mute:
+            handled = commands.handle_volume_command(command)
+        return handled, mock_set, mock_change, mock_mute
+
+    def test_real_volume_commands_still_work(self):
+        cases = (
+            ("volume up", "change", 1),
+            ("volume up 20", "change", 1),
+            ("volume down", "change", 1),
+            ("volume down 20", "change", 1),
+            ("volume 40", "set", 1),
+            ("set volume to 40", "set", 1),
+            ("mute volume", "mute", 1),
+            ("mute", "mute", 1),
+            ("turn the volume up", "change", 1),
+            ("turn the volume down", "change", 1),
+            ("increase volume", "change", 1),
+            ("decrease volume", "change", 1),
+        )
+        for command, kind, _ in cases:
+            with self.subTest(command=command):
+                handled, mock_set, mock_change, mock_mute = self._handle(command)
+                self.assertTrue(handled, command)
+                if kind == "set":
+                    mock_set.assert_called_once()
+                elif kind == "change":
+                    mock_change.assert_called_once()
+                else:
+                    mock_mute.assert_called_once()
+
+    def test_volume_up_amount_parsed(self):
+        handled, mock_set, mock_change, _mock_mute = self._handle("volume up 20")
+        self.assertTrue(handled)
+        mock_change.assert_called_once_with(20)
+
+    def test_set_volume_amount_parsed(self):
+        handled, mock_set, _mock_change, _mock_mute = self._handle("set volume to 40")
+        self.assertTrue(handled)
+        mock_set.assert_called_once_with(40)
+
+    def test_questions_fall_through_untouched(self):
+        for command in ("what is the volume of a sphere with radius 5?",
+                        "calculate volume of 50 boxes",
+                        "what is the volume of a sphere of radius 10",
+                        "volume"):
+            with self.subTest(command=command):
+                handled, mock_set, mock_change, mock_mute = self._handle(command)
+                self.assertFalse(handled, command)
+                mock_set.assert_not_called()
+                mock_change.assert_not_called()
+                mock_mute.assert_not_called()
+
+
+class Edge02AssistantNameTests(unittest.TestCase):
+    """N-EDGE-02: only a real rename instruction renames the assistant."""
+
+    def _change(self, command):
+        from assistant import commands
+        with mock.patch.object(commands, "update_setting") as mock_update, \
+             mock.patch.object(commands, "speak"):
+            result = commands.change_assistant_name(command)
+        return result, mock_update
+
+    def test_real_instructions_rename(self):
+        for command, name in (("change assistant name to friday", "Friday"),
+                              ("set your name to friday", "Friday"),
+                              ("please set your name to friday", "Friday"),
+                              ("change your name to jarvis", "Jarvis")):
+            with self.subTest(command=command):
+                result, mock_update = self._change(command)
+                self.assertTrue(result)
+                mock_update.assert_called_once_with("assistant_name", name)
+
+    def test_conversation_does_not_rename(self):
+        for command in ("can i change your name to friday later",
+                        "can i change your name to jarvis tomorrow?",
+                        "what is your name",
+                        "do you like your name"):
+            with self.subTest(command=command):
+                result, mock_update = self._change(command)
+                self.assertFalse(result)
+                mock_update.assert_not_called()
+
+
+class Edge03StdinDisconnectTests(unittest.TestCase):
+    """N-EDGE-03: interactive commands get EOF at once, never a 15s hang."""
+
+    def test_stdin_hungry_command_returns_fast(self):
+        import sys
+        import tempfile
+        import time
+        from pathlib import Path
+        from assistant import system_tasks
+        with tempfile.TemporaryDirectory(prefix="vave-edge03-") as tmp:
+            script = Path(tmp) / "ask.py"
+            script.write_text(
+                "import sys; sys.stdout.write('got:%d' % "
+                "len(sys.stdin.read()))",
+                encoding="utf-8")
+            began = time.monotonic()
+            result = system_tasks.run_terminal_command(
+                f'"{sys.executable}" "{script}"')
+            elapsed = time.monotonic() - began
+        self.assertEqual("got:0", result)
+        self.assertLess(elapsed, 10.0)
+
+
 if __name__ == "__main__":
     unittest.main()

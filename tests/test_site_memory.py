@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-
+from unittest import mock
 from assistant.site_memory import MAX_NOTES_PER_SITE, SiteMemory, domain_of
 
 
@@ -38,6 +38,18 @@ class MemoryTests(unittest.TestCase):
 
         self.assertEqual(["Issues live under /-/issues"],
                          self.memory.recall("https://gitlab.com/somewhere/else"))
+
+    def test_a_failed_write_leaves_the_old_file_intact(self):
+        self.memory.remember("https://example.com", "first note")
+        before = self.memory.path.read_text(encoding="utf-8")
+        with mock.patch("os.replace", side_effect=OSError("disk vanished")):
+            self.memory.remember("https://example.com", "second note")
+        self.assertEqual(before,
+                         self.memory.path.read_text(encoding="utf-8"))
+        leftovers = list(Path(self.tempdir).glob(".site_notes.*.tmp"))
+        self.assertEqual([], leftovers)
+        self.assertEqual(["first note"],
+                         self.memory.recall("https://example.com"))
 
     def test_another_site_is_not_told_what_this_one_learned(self):
         self.memory.remember("https://gitlab.com", "needs a login")

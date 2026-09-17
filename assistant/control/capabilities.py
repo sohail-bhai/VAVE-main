@@ -188,6 +188,26 @@ TOOL_CAPABILITIES = {
     "scrape_project_ideas": "web.search",
     "spawn_parallel_agents": "web.search",
     "run_actor_critic_research": "web.search",
+
+    # Desktop lifecycle and input. Reads and trivial queries ride LOW
+    # capabilities so everyday requests keep working; anything that kills,
+    # launches, or drives input goes through approval like everything else.
+    "open_app": "system.action",
+    "close_app": "system.power",
+    "close_window": "system.window.manage",
+    "focus_window": "system.window.manage",
+    "list_windows": "system.window.manage",
+    "press_hotkey": "system.input.control",
+    "write_to_screen_line": "system.input.control",
+    "create_google_slides": "google.drive.write",
+    "set_volume": "system.action",
+    "mute_volume": "system.action",
+    "tell_time": "system.action",
+    "tell_date": "system.action",
+    "tell_battery": "system.action",
+    "get_weather": "web.search",
+    "wait": "system.action",
+    "propose_new_feature": "filesystem.write",
 }
 
 # Anything not in the catalog is treated as this risky, because an unknown

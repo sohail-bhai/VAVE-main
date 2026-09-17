@@ -15,6 +15,7 @@ import logging
 import secrets
 import threading
 import time
+from collections import OrderedDict
 
 from assistant.config import get_setting
 from assistant.control.models import Device, DeviceStatus, now
@@ -52,11 +53,15 @@ def hash_token(token):
 class TokenBucket:
     """Per-caller rate limit. Refills steadily, caps at burst size, backed by store when provided."""
 
+    # In-memory identities are bounded: without this, randomized caller ids
+    # grow the dict forever on long-running servers.
+    MAX_IDENTITIES = 1000
+
     def __init__(self, per_minute, store=None):
         self.capacity = max(1, per_minute)
         self.rate = self.capacity / 60.0
         self.store = store
-        self._tokens = {}
+        self._tokens = OrderedDict()
         self._lock = threading.Lock()
 
     def take(self, identity):
@@ -85,16 +90,27 @@ class TokenBucket:
                 self.store.update_rate_limit(identity, tokens, current)
                 return 0
             else:
-                tokens, last = self._tokens.get(identity, (self.capacity, current))
+                try:
+                    tokens, last = self._tokens.pop(identity)
+                except KeyError:
+                    tokens, last = self.capacity, current
                 elapsed = max(0.0, current - last)
                 tokens = min(self.capacity, tokens + elapsed * self.rate)
 
                 if tokens < 1:
                     self._tokens[identity] = (tokens, current)
+                    self._prune_identities()
                     return max(1, int((1 - tokens) / self.rate) + 1)
 
                 self._tokens[identity] = (tokens - 1, current)
+                self._prune_identities()
                 return 0
+
+    def _prune_identities(self):
+        """Drop the stalest in-memory identities past the cap (LRU order:
+        every access re-inserts at the end, so the front is the stalest)."""
+        while len(self._tokens) > self.MAX_IDENTITIES:
+            self._tokens.popitem(last=False)
 
 
 class ApiSecurity:
@@ -283,6 +299,37 @@ class ApiSecurity:
             raise PermissionError(
                 "Cross-origin pairing is not allowed. "
                 "Open the VAVE page itself to pair a device.")
+
+    def check_websocket_origin(self, websocket, token):
+        """Refuse cross-origin browser sockets that carry no credential.
+
+        A page on evil.com can open ws://127.0.0.1:8765/ws/events from the
+        user's own browser; loopback trust would wave it through and stream
+        task output and notifications to the attacker (CSWSH). Browsers always
+        send Origin on the handshake: absent (native apps, curl, tests) or
+        matching passes; anything else needs a real device token. Unparseable
+        origins fail closed — unlike plain HTTP, a socket stays open.
+        """
+        headers = getattr(websocket, "headers", {}) or {}
+        get = getattr(headers, "get", None)
+        origin = get("origin", "") if callable(get) else ""
+        if not origin:
+            return
+        try:
+            from urllib.parse import urlparse
+            origin_host = (urlparse(origin).hostname or "").lower()
+            server_host = (websocket.url.hostname or "").lower()
+        except Exception:
+            raise PermissionError(
+                "Cross-origin WebSocket connections need a device token.")
+        if not origin_host or not server_host or origin_host == server_host:
+            return
+        credential = token or bearer_token(
+            get("authorization", "") if callable(get) else "")
+        if not credential:
+            logger.warning("Refused cross-origin WebSocket from %r.", origin)
+            raise PermissionError(
+                "Cross-origin WebSocket connections need a device token.")
 
     # -- rate limiting ------------------------------------------------------
 

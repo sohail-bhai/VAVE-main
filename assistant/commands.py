@@ -71,24 +71,30 @@ def change_user_name(command):
     speak(f"Okay, I will call you {new_name}.")
     return True
 
+# A rename is an instruction at the start of the sentence, never a question
+# that mentions renaming ("can I change your name to Jarvis tomorrow?").
+_ASSISTANT_NAME_CHANGE_PATTERN = re.compile(
+    r"^(?:please\s+)?(?:change|set)\s+(?:assistant\s+name|your\s+name)\s+to\s+(.+)$",
+    re.IGNORECASE,
+)
+
 def change_assistant_name(command):
     """
     Example:
     change assistant name to friday
     set your name to friday
     """
-    phrases = ["change assistant name to", "set assistant name to", "change your name to", "set your name to"]
+    match = _ASSISTANT_NAME_CHANGE_PATTERN.match(command.strip())
+    if not match:
+        return False
 
-    for phrase in phrases:
-        if phrase in command:
-            new_name = command.split(phrase, 1)[1].strip().title()
+    new_name = match.group(1).strip().title()
+    if not new_name:
+        return False
 
-            if new_name:
-                update_setting("assistant_name", new_name)
-                speak(f"Okay, my name is now {new_name}.")
-                return True
-
-    return False
+    update_setting("assistant_name", new_name)
+    speak(f"Okay, my name is now {new_name}.")
+    return True
 
 def handle_settings_command(command):
     if change_user_name(command):
@@ -152,7 +158,8 @@ def handle_model_switch_command(command):
 
 def handle_volume_command(command):
     """
-    Volume commands:
+    Volume commands (anchored: a question merely mentioning volume and a
+    number falls through to the AI brain instead of moving the speakers):
     - volume down            -> decrease by default step
     - volume down 20         -> decrease by 20
     - volume up              -> increase by default step
@@ -165,23 +172,42 @@ def handle_volume_command(command):
     if "volume" not in command and "mute" not in command:
         return False
 
-    if "mute" in command:
-        mute_volume()
+    text = str(command or "").strip()
+
+    amount_match = re.match(
+        r"^(?:please\s+)?(?:set\s+)?volume\s+(?:to\s+)?(\d{1,3})\s*[.!?]?\s*$",
+        text, re.IGNORECASE)
+    if amount_match:
+        set_volume(int(amount_match.group(1)))
         return True
 
-    amount = extract_number(command)
-    default_step = int(get_setting("default_volume_step", 5))
-
-    if "down" in command or "decrease" in command or "lower" in command:
-        change_volume_by(-(amount if amount is not None else default_step))
-        return True
-
-    if "up" in command or "increase" in command or "raise" in command:
+    up_match = re.match(
+        r"^(?:please\s+)?(?:turn\s+(?:the\s+)?volume\s+up|"
+        r"turn\s+(?:the\s+|it\s+|that\s+)?up|volume\s+up|"
+        r"(?:increase|raise)\s+(?:the\s+)?volume)"
+        r"(?:\s+(?:by\s+)?(\d{1,3}))?\s*[.!?]?\s*$",
+        text, re.IGNORECASE)
+    if up_match:
+        amount = extract_number(up_match.group(0))
+        default_step = int(get_setting("default_volume_step", 5))
         change_volume_by(amount if amount is not None else default_step)
         return True
 
-    if amount is not None:
-        set_volume(amount)
+    down_match = re.match(
+        r"^(?:please\s+)?(?:turn\s+(?:the\s+)?volume\s+down|"
+        r"turn\s+(?:the\s+|it\s+|that\s+)?down|volume\s+down|"
+        r"(?:decrease|lower)\s+(?:the\s+)?volume)"
+        r"(?:\s+(?:by\s+)?(\d{1,3}))?\s*[.!?]?\s*$",
+        text, re.IGNORECASE)
+    if down_match:
+        amount = extract_number(down_match.group(0))
+        default_step = int(get_setting("default_volume_step", 5))
+        change_volume_by(-(amount if amount is not None else default_step))
+        return True
+
+    if re.match(r"^(?:please\s+)?(?:mute|unmute)(?:\s+(?:the\s+)?volume)?"
+                r"\s*[.!?]?\s*$", text, re.IGNORECASE):
+        mute_volume()
         return True
 
     return False

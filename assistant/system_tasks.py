@@ -539,9 +539,18 @@ def close_app(app_name):
     """
     Closes or terminates a running application by name.
     """
-    clean_name = str(app_name).lower().strip().replace("close ", "").replace("kill ", "")
-    display_name = clean_name.replace("_", " ").title()
+    clean_name = re.sub(r"^(close|kill)\b\s*", "",
+                        str(app_name).lower().strip())
+    display_name = clean_name.replace("_", " ").title() or "That app"
     import psutil
+
+    # An empty or fragmentary name must never reach the matcher: "" is a
+    # substring of every process name, so close_app("close") used to
+    # terminate the whole machine. Matching below is exact-only for the
+    # same reason - "s" must not mean sihost.exe.
+    if len(clean_name) < 3:
+        speak("Tell me which app to close.")
+        return "No app named. Tell me which app to close."
 
     proc_map = {
         "notepad": ["notepad.exe"],
@@ -573,7 +582,7 @@ def close_app(app_name):
             p_name = proc.info["name"].lower()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-        if p_name in target_exes or clean_name in p_name:
+        if p_name in target_exes:
             try:
                 proc.terminate()
                 closed = True
@@ -1491,7 +1500,8 @@ def run_terminal_command(command):
     """Executes a background terminal command and returns the output."""
     import subprocess
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, timeout=15)
+        result = subprocess.run(command, shell=True, capture_output=True,
+                                stdin=subprocess.DEVNULL, timeout=15)
         output = _decode_subprocess_output(result.stdout).strip()
         error = _decode_subprocess_output(result.stderr).strip()
         if result.returncode == 0:

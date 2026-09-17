@@ -11,6 +11,7 @@ never stop the work that produced the event.
 """
 
 import logging
+import queue
 import threading
 
 from assistant.control.models import EventType
@@ -32,6 +33,12 @@ NOTIFY_ON = {
 
 # The most recent notifications a client can catch up on after reconnecting.
 HISTORY = 50
+
+
+# Marker queued by Notifier.flush(); the worker sets the paired event once
+# every earlier delivery has finished.
+class _FlushMarker:
+    pass
 
 
 class Notification:
@@ -106,12 +113,27 @@ class Notifier:
         self._history = []
         self._history_limit = history
         self._lock = threading.RLock()
+        self._queue = queue.Queue()
+        self._worker = threading.Thread(target=self._deliver_loop,
+                                        daemon=True, name="vave-notifier")
+        self._worker.start()
         self._unsubscribe = plane.subscribe(self._on_event)
 
     def close(self):
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
+        self._queue.put(None)
+
+    def flush(self, timeout=10.0):
+        """Wait until everything queued so far is delivered. True if so.
+
+        Tests use this to assert delivery deterministically; production code
+        never needs it (delivery is fire-and-forget by design).
+        """
+        done = threading.Event()
+        self._queue.put((_FlushMarker, done))
+        return done.wait(timeout)
 
     def add_channel(self, channel):
         with self._lock:
@@ -162,7 +184,21 @@ class Notifier:
             self._history = self._history[-self._history_limit:]
             channels = list(self.channels)
 
+        # Delivery runs on the worker thread: a slow channel (Telegram with
+        # no network takes the full 15s timeout) must never stall the thread
+        # that recorded the event. Order is preserved; failures stay contained.
         for channel in channels:
+            self._queue.put((channel, notification))
+
+    def _deliver_loop(self):
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            if isinstance(item, tuple) and item and item[0] is _FlushMarker:
+                item[1].set()
+                continue
+            channel, notification = item
             try:
                 channel.deliver(notification)
             except Exception:

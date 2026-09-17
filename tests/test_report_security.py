@@ -346,5 +346,215 @@ class Sec04ProtectedReadTests(unittest.TestCase):
             self.assertEqual("hi", system_tasks.read_file(str(plain)))
 
 
+class Sec01bMutationOriginTests(unittest.TestCase):
+    """N-SEC-01: every state-changing verb needs a token or same origin."""
+
+    def setUp(self):
+        import tempfile
+        self.tempdir = tempfile.mkdtemp(prefix="vave-sec01b-test-")
+        self.store = ControlStore(Path(self.tempdir) / "control.db")
+
+    def tearDown(self):
+        self.store.close()
+        import shutil
+        shutil.rmtree(self.tempdir, ignore_errors=True)
+
+    def _open_client(self):
+        plane = ControlPlane(store=self.store)
+        guard = ApiSecurity(self.store, require_auth=False)
+        return TestClient(create_app(control=plane, security=guard)), guard
+
+    def test_unauthenticated_cross_origin_post_refused(self):
+        client, _guard = self._open_client()
+        res = client.post("/api/tasks", json={"goal": "open calc"},
+                          headers={"origin": "https://evil.example"})
+        self.assertEqual(403, res.status_code)
+
+    def test_unauthenticated_same_origin_post_allowed(self):
+        client, _guard = self._open_client()
+        res = client.post("/api/tasks", json={"goal": "open calc"})
+        self.assertEqual(201, res.status_code)
+
+    def test_bearer_post_ignores_origin(self):
+        client, guard = self._open_client()
+        code = guard.issue_pairing_code()["code"]
+        claim = client.post("/api/pair", json={"code": code, "name": "T"})
+        token = claim.json()["token"]
+        res = client.post(
+            "/api/tasks", json={"goal": "open calc"},
+            headers={"Authorization": f"Bearer {token}",
+                     "origin": "https://evil.example"})
+        self.assertEqual(201, res.status_code)
+
+    def test_reads_unaffected_by_origin_rule(self):
+        client, _guard = self._open_client()
+        res = client.get("/api/tasks",
+                         headers={"origin": "https://evil.example"})
+        self.assertNotEqual(403, res.status_code)
+
+
+class Sec02bWebSocketOriginTests(unittest.TestCase):
+    """N-SEC-02: cross-origin browser sockets need a credential (CSWSH)."""
+
+    def _socket(self, origin, server_host):
+        ws = mock.MagicMock()
+        ws.headers = {"origin": origin} if origin is not None else {}
+        ws.url.hostname = server_host
+        return ws
+
+    def _guard(self):
+        import tempfile
+        tmpdir = tempfile.mkdtemp(prefix="vave-sec02b-")
+        self.addCleanup(__import__("shutil").rmtree, tmpdir,
+                        ignore_errors=True)
+        store = ControlStore(Path(tmpdir) / "control.db")
+        self.addCleanup(store.close)
+        return ApiSecurity(store, require_auth=True, trust_local=True)
+
+    def test_evil_origin_without_token_refused(self):
+        guard = self._guard()
+        with self.assertRaises(PermissionError):
+            guard.check_websocket_origin(
+                self._socket("https://evil.example", "127.0.0.1"), "")
+
+    def test_evil_origin_with_token_allowed(self):
+        guard = self._guard()
+        guard.check_websocket_origin(
+            self._socket("https://evil.example", "127.0.0.1"), "tok123")
+
+    def test_same_origin_and_absent_origin_allowed(self):
+        guard = self._guard()
+        guard.check_websocket_origin(
+            self._socket("http://127.0.0.1:8765", "127.0.0.1"), "")
+        guard.check_websocket_origin(self._socket(None, "127.0.0.1"), "")
+
+    def _open(self, **guard_kwargs):
+        import shutil
+        import tempfile
+        tmpdir = tempfile.mkdtemp(prefix="vave-sec02b-")
+        self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+        store = ControlStore(Path(tmpdir) / "control.db")
+        self.addCleanup(store.close)
+        plane = ControlPlane(store=store)
+        guard = ApiSecurity(store, **guard_kwargs)
+        return TestClient(create_app(control=plane, security=guard)), plane, guard
+
+    def test_evil_socket_gets_no_events(self):
+        from starlette.websockets import WebSocketDisconnect
+        client, plane, _guard = self._open(require_auth=False)
+        plane.record("Secret thing")
+        with self.assertRaises(WebSocketDisconnect):
+            with client.websocket_connect(
+                    "/ws/activity",
+                    headers={"origin": "https://evil.example"}):
+                pass
+
+    def test_token_socket_survives_evil_origin(self):
+        client, plane, guard = self._open(require_auth=True,
+                                          trust_local=True)
+        code = guard.issue_pairing_code()["code"]
+        claim = client.post("/api/pair", json={"code": code, "name": "T"})
+        token = claim.json()["token"]
+        plane.record("Hello thing")
+        with client.websocket_connect(
+                f"/ws/activity?token={token}",
+                headers={"origin": "https://evil.example"}) as websocket:
+            # History replays first (pairing record), then our event.
+            websocket.receive_json()
+            self.assertEqual("Hello thing",
+                             websocket.receive_json()["message"])
+
+
+class Sec03bCapabilityCoverageTests(unittest.TestCase):
+    """N-SEC-03: every tool mapped; unknown tools denied, not auto-granted."""
+
+    def setUp(self):
+        import tempfile
+        self.tempdir = tempfile.mkdtemp(prefix="vave-sec03b-test-")
+        self.store = ControlStore(Path(self.tempdir) / "control.db")
+
+    def tearDown(self):
+        self.store.close()
+        import shutil
+        shutil.rmtree(self.tempdir, ignore_errors=True)
+
+    def _executor(self, **kwargs):
+        from assistant.control.executor import TaskExecutor
+        kwargs.setdefault("max_attempts", 1)
+        kwargs.setdefault("approval_timeout", 0.5)
+        return TaskExecutor(plane=ControlPlane(store=self.store), **kwargs)
+
+    def test_every_registered_tool_is_mapped(self):
+        from assistant.ai_brain import AVAILABLE_FUNCTIONS
+        from assistant.control.capabilities import TOOL_CAPABILITIES
+        missing = [name for name in AVAILABLE_FUNCTIONS
+                   if name not in TOOL_CAPABILITIES]
+        self.assertEqual([], missing)
+
+    def test_unknown_tool_is_denied(self):
+        authorize = self._executor()._authorizer("", None)
+        allowed, reason = authorize("definitely_not_a_tool")
+        self.assertFalse(allowed)
+        self.assertIn("not a registered tool", reason)
+
+    def test_risky_tools_need_approval(self):
+        plane = ControlPlane(store=self.store)
+        for tool in ("close_app", "press_hotkey"):
+            with self.subTest(tool=tool):
+                task = plane.create_task(f"Use {tool}")
+                authorize = self._executor()._authorizer(task.id, None)
+                allowed, reason = authorize(tool)
+                self.assertFalse(allowed)
+                self.assertIn("approval", reason)
+
+    def test_trivial_tools_still_auto_granted(self):
+        plane = ControlPlane(store=self.store)
+        task = plane.create_task("Ask away")
+        authorize = self._executor()._authorizer(task.id, None)
+        for tool in ("tell_time", "wait", "list_windows", "open_app"):
+            with self.subTest(tool=tool):
+                allowed, _reason = authorize(tool)
+                self.assertTrue(allowed)
+
+
+class Sec04bProtectedStoreTests(unittest.TestCase):
+    """N-SEC-04: control.db and .env are off limits for mutation and reads."""
+
+    def test_mutation_of_database_denied(self):
+        from assistant.guard import _is_hard_denied
+        for path in ("data/control.db", "data/control.db-wal",
+                     "data/control.db-shm", ".env", ".env.local"):
+            with self.subTest(path=path):
+                denied, reason = _is_hard_denied(
+                    "write_file", {"filename": path})
+                self.assertTrue(denied, path)
+                self.assertIn("hard-denied", reason)
+
+    def test_mutation_of_plain_files_allowed(self):
+        from assistant.guard import _is_hard_denied
+        denied, _reason = _is_hard_denied(
+            "write_file", {"filename": "data/notes.txt"})
+        self.assertFalse(denied)
+
+    def test_read_of_env_denied(self):
+        from assistant.guard import _is_hard_denied, is_protected_read_path
+        self.assertTrue(is_protected_read_path(".env"))
+        self.assertTrue(is_protected_read_path(".env.local"))
+        denied, _reason = _is_hard_denied(
+            "read_file", {"path": ".env"})
+        self.assertTrue(denied)
+
+    def test_read_file_refuses_env_directly(self):
+        import tempfile
+        from pathlib import Path
+        from assistant import system_tasks
+        with tempfile.TemporaryDirectory(prefix="vave-sec04b-") as tmp:
+            env = Path(tmp) / ".env"
+            env.write_text("TOKEN=abc", encoding="utf-8")
+            result = system_tasks.read_file(str(env))
+            self.assertIn("Refusing", result)
+            self.assertNotIn("abc", result)
+
+
 if __name__ == "__main__":
     unittest.main()

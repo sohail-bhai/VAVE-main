@@ -55,7 +55,8 @@ class CatalogTests(unittest.TestCase):
     def test_a_tool_without_a_capability_reports_none(self):
         self.assertEqual("system.shell.run",
                          capabilities.capability_for_tool("run_terminal_command"))
-        self.assertEqual("", capabilities.capability_for_tool("tell_time"))
+        self.assertEqual("", capabilities.capability_for_tool(
+            "definitely_not_a_tool"))
 
 
 class PolicyTestCase(unittest.TestCase):

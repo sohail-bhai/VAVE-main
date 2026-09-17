@@ -117,8 +117,19 @@ _READ_EXFIL_REGEX = re.compile(
     re.IGNORECASE
 )
 
-_PROTECTED_READ_NAMES = ("secret.key", "control.db", "id_rsa", "id_ed25519")
+_PROTECTED_READ_NAMES = ("secret.key", "control.db", "id_rsa", "id_ed25519",
+                         ".env")
 _PROTECTED_READ_DIRS = (".ssh", ".aws", ".gnupg")
+
+# Database sidecars and dotted env variants share the sensitivity.
+_PROTECTED_READ_SUFFIXES = ("control.db-wal", "control.db-shm",
+                            "control.db-journal")
+
+
+def _protected_basename(base: str) -> bool:
+    if base in _PROTECTED_READ_NAMES or base in _PROTECTED_READ_SUFFIXES:
+        return True
+    return base.startswith(".env.")
 
 
 def is_protected_read_path(raw_path) -> str:
@@ -135,7 +146,7 @@ def is_protected_read_path(raw_path) -> str:
     if not parts:
         return ""
     base = parts[-1]
-    if base in _PROTECTED_READ_NAMES or base.endswith(".pem"):
+    if _protected_basename(base) or base.endswith(".pem"):
         return f"credential file '{base}'"
     hit = next((p for p in parts if p in _PROTECTED_READ_DIRS), None)
     if hit:
@@ -164,8 +175,13 @@ def _is_hard_denied(tool_name: str, args: dict) -> tuple:
                 continue
             norm = os.path.normpath(raw_val).replace("\\", "/").lower()
             parts = [p for p in norm.split("/") if p and p != "."]
-            # Protect assistant/*, gui/*, logs/*, config.json, and data/secret.key
-            if any(p in ("assistant", "gui", "logs") for p in parts) or norm.endswith("config.json") or norm.endswith("secret.key"):
+            base = parts[-1] if parts else ""
+            # Protect assistant/*, gui/*, logs/*, config.json, data/secret.key,
+            # the control database (+ sidecars) and .env credential files.
+            if (any(p in ("assistant", "gui", "logs") for p in parts)
+                    or norm.endswith("config.json")
+                    or norm.endswith("secret.key")
+                    or _protected_basename(base)):
                 return True, f"Mutation of protected system file '{raw_val}' is hard-denied."
 
     # 3. Invariant: Destructive disk/partition wipe commands

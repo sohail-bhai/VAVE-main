@@ -1,10 +1,13 @@
 """Regression tests for report.md / error_report.md — Performance domain."""
 
+import concurrent.futures
 import threading
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from assistant.control.models import EventType
 
 
 class Perf01TelegramForwardTests(unittest.TestCase):
@@ -127,6 +130,120 @@ class Perf04ToolBudgetTests(unittest.TestCase):
         for request in ("open netflix and open sohail profile", ""):
             tools = select_tools(request)
             self.assertLess(len(json.dumps(tools)), catalogue_size)
+
+
+class NotifierAsyncDeliveryTests(unittest.TestCase):
+    """N-PERF-01: slow channels never stall the thread recording events."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from assistant.control.notifier import Notifier
+        from assistant.control.service import ControlPlane
+        from assistant.control.store import ControlStore
+        self.tempdir = tempfile.mkdtemp(prefix="vave-nperf01-")
+        self.store = ControlStore(Path(self.tempdir) / "control.db")
+        self.plane = ControlPlane(store=self.store)
+        self.notifier = Notifier(self.plane)
+
+    def tearDown(self):
+        self.notifier.close()
+        self.plane.close()
+        self.store.close()
+        import shutil
+        shutil.rmtree(self.tempdir, ignore_errors=True)
+
+    def test_record_returns_while_channel_blocked(self):
+        started = threading.Event()
+        release = threading.Event()
+        delivered = threading.Event()
+
+        class SlowChannel:
+            name = "slow"
+
+            def deliver(self, notification):
+                started.set()
+                release.wait(timeout=10)
+                delivered.set()
+
+        self.notifier.add_channel(SlowChannel())
+        began = time.monotonic()
+        self.plane.record("Something went wrong", EventType.TASK_FAILED)
+        elapsed = time.monotonic() - began
+        self.assertLess(elapsed, 3.0)
+        self.assertTrue(started.wait(timeout=10))
+        release.set()
+        self.assertTrue(delivered.wait(timeout=10))
+
+    def test_delivery_order_preserved(self):
+        got = []
+        done = threading.Event()
+
+        class CollectingChannel:
+            name = "collector"
+
+            def deliver(self, notification):
+                got.append(notification.event.message)
+                if len(got) >= 2:
+                    done.set()
+
+        self.notifier.add_channel(CollectingChannel())
+        self.plane.record("First thing", EventType.TASK_FAILED)
+        self.plane.record("Second thing", EventType.TASK_FAILED)
+        self.assertTrue(done.wait(timeout=10))
+        self.assertEqual(["First thing", "Second thing"], got)
+
+    def test_failing_channel_does_not_stop_others(self):
+        got = []
+        done = threading.Event()
+
+        class BrokenChannel:
+            name = "broken"
+
+            def deliver(self, notification):
+                raise ConnectionError("down")
+
+        class GoodChannel:
+            name = "good"
+
+            def deliver(self, notification):
+                got.append(notification.event.message)
+                done.set()
+
+        self.notifier.add_channel(BrokenChannel())
+        self.notifier.add_channel(GoodChannel())
+        self.plane.record("Something went wrong", EventType.TASK_FAILED)
+        self.assertTrue(done.wait(timeout=10))
+        self.assertEqual(["Something went wrong"], got)
+
+
+class Perf03BrowserTimeoutTests(unittest.TestCase):
+    """N-PERF-03: a wedged browser call fails fast, never hangs the task."""
+
+    def test_timed_out_call_abandons_worker(self):
+        from assistant.browser.session import _BrowserThread
+        worker = _BrowserThread(timeout=0.2)
+        gate = threading.Event()
+        with self.assertRaises(concurrent.futures.TimeoutError):
+            worker.call(gate.wait, 30)
+        self.assertIsNone(worker._thread)
+        self.assertEqual("ok", worker.call(lambda: "ok", timeout=5))
+
+    def test_timeout_abandons_browser_state(self):
+        from assistant.browser.session import BrowserSession
+        session = BrowserSession()
+        session._page = mock.sentinel.stale
+        session._context = mock.sentinel.stale
+        session._playwright = mock.sentinel.stale
+        stub = mock.MagicMock()
+        stub.call.side_effect = concurrent.futures.TimeoutError("slow")
+        session._worker = stub
+        with self.assertRaises(concurrent.futures.TimeoutError):
+            session.describe()
+        self.assertIsNone(session._page)
+        self.assertIsNone(session._context)
+        self.assertIsNone(session._playwright)
+        self.assertEqual([], session._elements)
 
 
 if __name__ == "__main__":

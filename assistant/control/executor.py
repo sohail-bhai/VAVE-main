@@ -371,7 +371,12 @@ class TaskExecutor:
         def authorize(tool_name):
             capability = capability_for_tool(tool_name)
             if not capability:
-                return True, ""
+                # Deny by default: an unmapped tool skips policy evaluation,
+                # approval gates and the audit trail entirely. Every registered
+                # tool must be mapped in TOOL_CAPABILITIES (there is a test
+                # pinning that); anything else is not a tool at all.
+                return False, (f"{tool_name} is not a registered tool, so it "
+                               "cannot run inside a task.")
 
             if self.plane.has_capability(capability, task_id=task_id):
                 return True, ""

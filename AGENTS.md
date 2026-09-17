@@ -247,8 +247,10 @@ Known limits in Version 1.2:
   interrupted between tool calls by a cancel token.
 - A running step is interrupted between tool calls, not inside one. A shell
   command already running finishes first.
-- A new tool must be added to `TOOL_CAPABILITIES` in `capabilities.py`, or it
-  is treated as needing no capability.
+- A new tool must be added to `TOOL_CAPABILITIES` in `capabilities.py` with
+  the right risk tier. Unmapped tools are denied inside tasks (deny by
+  default); `tests/test_report_security.py` pins full coverage, so add the
+  mapping or the suite fails.
 - Browser work needs `pip install playwright && python -m playwright install
   chromium`. Some sites serve an empty page to a headless browser, so
   `browser_headless` defaults to false.

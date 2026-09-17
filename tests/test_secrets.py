@@ -337,5 +337,40 @@ class SharedStoreTests(unittest.TestCase):
                                                default="fallback"))
 
 
+class RedactCacheTests(SecretTestCase):
+    """N-PERF-02: redact() must not query + decrypt per secret per call."""
+
+    def test_repeat_redact_issues_no_new_queries(self):
+        self.secrets.put("token_a", "alpha-value")
+        with mock.patch.object(self.secrets.store, "list_secrets",
+                               wraps=self.secrets.store.list_secrets) as mock_list, \
+             mock.patch.object(self.secrets.store, "get_secret",
+                               wraps=self.secrets.store.get_secret) as mock_get:
+            self.assertEqual("secret://token_a here",
+                             self.secrets.redact("alpha-value here"))
+            first_lists, first_gets = (mock_list.call_count,
+                                       mock_get.call_count)
+            self.assertEqual("secret://token_a again",
+                             self.secrets.redact("alpha-value again"))
+            self.assertEqual(first_lists, mock_list.call_count)
+            self.assertEqual(first_gets, mock_get.call_count)
+
+    def test_put_invalidates_cache(self):
+        self.secrets.put("token_a", "alpha-value")
+        self.assertEqual("secret://token_a",
+                         self.secrets.redact("alpha-value"))
+        self.secrets.put("token_a", "beta-value")
+        self.assertEqual("secret://token_a and alpha-value",
+                         self.secrets.redact("beta-value and alpha-value"))
+
+    def test_delete_invalidates_cache(self):
+        self.secrets.put("token_a", "alpha-value")
+        self.assertEqual("secret://token_a",
+                         self.secrets.redact("alpha-value"))
+        self.secrets.delete("token_a")
+        self.assertEqual("alpha-value",
+                         self.secrets.redact("alpha-value"))
+
+
 if __name__ == "__main__":
     unittest.main()

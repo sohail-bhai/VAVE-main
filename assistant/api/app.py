@@ -302,6 +302,17 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                 return JSONResponse(status_code=403,
                                     content=error_body(403, str(error)))
 
+        # Any other state change without a bearer token gets the same bar: a
+        # loopback-trusted browser tab on evil.com must not create tasks,
+        # resolve approvals, upload files or flip home devices.
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            if not bearer_token(request.headers.get("authorization")):
+                try:
+                    guard.check_same_origin(request)
+                except PermissionError as error:
+                    return JSONResponse(status_code=403,
+                                        content=error_body(403, str(error)))
+
         token = bearer_token(request.headers.get("authorization")) or request.query_params.get("token", "")
         if (path in OPEN_PATHS or path.startswith("/docs") or path.startswith("/static")
                 or path.startswith("/m/") or path == "/m"):
@@ -433,19 +444,22 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                 for task in plane.list_tasks(limit=limit, active_only=active_only)]
 
     @app.post("/api/tasks", status_code=201, tags=["tasks"])
-    def create_task(request: CreateTaskRequest):
-        steps = [step.model_dump() for step in request.plan] or request.steps
-        if not steps and request.autoplan:
-            steps = runner.planner.plan(request.goal)
+    def create_task(body: CreateTaskRequest, request: Request):
+        steps = [step.model_dump() for step in body.plan] or body.steps
+        if not steps and body.autoplan:
+            steps = runner.planner.plan(body.goal)
 
         try:
-            task = plane.create_task(request.goal, steps=steps,
-                                     capability=request.capability or None)
+            caller = getattr(getattr(request, "state", None), "device", None)
+            task = plane.create_task(
+                body.goal, steps=steps,
+                capability=body.capability or None,
+                device_id=getattr(caller, "id", "") or "")
         except RuntimeError as error:
             # Raised while an emergency stop is latched.
             raise HTTPException(status_code=409, detail=str(error))
 
-        if request.run:
+        if body.run:
             runner.submit(task.id)
 
         return plane.task_detail(task.id)
@@ -1321,6 +1335,11 @@ def create_app(control=None, executor=None, security=None, notifier=None):
     async def notification_stream(websocket: WebSocket, token: str = ""):
         """Only what is worth interrupting a person for."""
         try:
+            guard.check_websocket_origin(websocket, token)
+        except PermissionError:
+            await websocket.close(code=1008)
+            return
+        try:
             guard.authenticate(
                 token or bearer_token(websocket.headers.get("authorization")),
                 websocket.client.host if websocket.client else "")
@@ -1369,6 +1388,11 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         authenticated the same way - by token, or by being local.
         """
         try:
+            guard.check_websocket_origin(websocket, token)
+        except PermissionError:
+            await websocket.close(code=1008)
+            return
+        try:
             guard.authenticate(
                 token or bearer_token(websocket.headers.get("authorization")),
                 websocket.client.host if websocket.client else "")
@@ -1413,6 +1437,11 @@ def create_app(control=None, executor=None, security=None, notifier=None):
 
     async def _stream(websocket, token, keep):
         """Shared plumbing for the event sockets."""
+        try:
+            guard.check_websocket_origin(websocket, token)
+        except PermissionError:
+            await websocket.close(code=1008)
+            return
         try:
             guard.authenticate(
                 token or bearer_token(websocket.headers.get("authorization")),
