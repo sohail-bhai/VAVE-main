@@ -8,18 +8,18 @@ execute a phase alone. Read sections 1-3 fully before touching code.
 
 ## 1. Current State
 
-- Baseline commit: `18e5a21` on branch `sohail`, remote `origin`
-  (`https://github.com/sohail-bhai/VAVE-main.git`).
-- Plan Phases 0-5 are COMPLETE (see section 9). Test count: **756**, all
-  green locally and on GitHub CI.
-- CI: `.github/workflows/ci.yml` (windows-latest, Python 3.13) runs compileall,
-  unittest, smoke test on every push. Always check the run after pushing
-  (section 3.6).
-- `context.md` holds the stage-by-stage history; `AGENTS.md` holds repo rules.
-  This file holds the forward plan.
-- Phases remaining, in order: **6 (Daily Reliability) -> 7 (Service
-  Integrations) -> 8 (Control Plane Enhancements)**. Stretch items are
-  unscheduled.
+- Branch `sohail`, remote `https://github.com/sohail-bhai/VAVE-main.git`.
+  Latest: docs rollup (see Progress Log). Last code change: `990d71c`.
+- Plan Phases 0-5 are COMPLETE and verified (artifacts + tests + wiring, one
+  by one). Their detail sections were removed from this file; summaries live
+  in `context.md` §3 and §12 below. Suite: **796 green** locally; CI runs
+  compileall + unittest + smoke on every push.
+- `context.md` holds history and the agent-trap list; `AGENTS.md` holds repo
+  rules. This file holds the forward plan only.
+- Remaining, in order: **Phase 6 remainders -> 7 (Service Integrations) ->
+  8 (Control Plane Enhancements)**. Stretch items are unscheduled.
+- Open environment items (need the user, not code): phi4 needs ~8GB free RAM
+  (5.1GB available); live voice (`python main.py`) still unverified.
 
 ## 2. Environment Facts (READ FIRST — these bite)
 
@@ -103,451 +103,73 @@ icon cache). Reuse the venv (don't delete) to keep pip's cache warm.
 
 ---
 
-## 4. Phase 2 — Mobile PWA Client (NEXT UP)
+## 4. Phase 2 — Mobile PWA Client: DONE ✅
 
-**Goal**: a phone-friendly web app served by the existing FastAPI server at
-`/m`. No new toolchain, no build step — plain HTML/CSS/JS files. The phone
-pairs, submits goals, watches steps, answers approvals, reads notifications.
-
-**Decisions already made by the user**: PWA approach (not Flutter/RN);
-Home Assistant is Phase 4; keep everything behind existing auth.
-
-### Read first
-- `assistant/api/app.py` — `create_app`, the auth middleware (lines ~278-305),
-  `OPEN_PATHS` (~line 220), tasks/approvals/notifications/events routes,
-  `lifespan` (~line 242).
-- `docs/control-plane.md` — endpoint semantics.
-- `gui/theme.py` — the dashboard's dark palette, for visual consistency.
-
-### Key API facts (verified at baseline)
-- Auth: `Authorization: Bearer <token>` on every `/api/*` route except
-  `OPEN_PATHS`. The middleware ALSO accepts `?token=<token>` query param —
-  **EventSource cannot set headers, so the SSE stream must use the query param**.
-- Pair from the phone: `POST /api/pair` with `{"code": "...", "name": "...",
-  "kind": "phone"}`; codes come from `POST /api/pair/code` (or
-  `python -m assistant.api --pair`).
-- Create a task: `POST /api/tasks` with `{"goal": "...", "autoplan": true,
-  "run": true}` (fields of `CreateTaskRequest`).
-- Task detail/progress: `GET /api/tasks/{id}` (steps carry status).
-- Approvals: `GET /api/approvals?pending_only=true`;
-  `POST /api/approvals/{id}` with `{"approved": true|false}`.
-- Notifications: `GET /api/notifications?limit=20`;
-  `POST /api/notifications/{id}/read`.
-- Live events: `GET /api/events/stream` (SSE, needs token).
-- WebSockets exist (`/ws/events`, `/ws/notifications`) with 25s pings —
-  use SSE first, it is simpler and already authenticated.
-
-### Tasks
-
-- [x] ~~2.1 **Serve the app.** Create `mobile/` at repo root with `index.html`,
-      `styles.css`, `app.js`, `manifest.webmanifest`, `sw.js`, and icon files
-      (SVG is acceptable for the manifest; declare `purpose: "any"`).
-      In `create_app` (after routes are registered):
-      ```python
-      from fastapi.staticfiles import StaticFiles
-      mobile_dir = Path(__file__).resolve().parent.parent / "mobile"
-      if mobile_dir.is_dir():
-          app.mount("/m", StaticFiles(directory=str(mobile_dir), html=True), name="mobile")
-      ```
-      The auth middleware must let `/m` through like `/docs`: add
-      `or path.startswith("/m")` to the open-path branch (~line 285). The
-      PAGES are public; the API calls from JS carry the token. Note the
-      middleware still rate-limits open paths by host — that stays.~~
-      (Done with one change: serves `mobile/pwa/` only, because `mobile/`
-      holds the sibling Expo project — its source must not be web content.)
-- [x] ~~2.2 **Login screen.** `localStorage` keys: `vave_token`, `vave_host`
-      (e.g. `http://192.168.1.20:8765`). Fields: host, token; plus a "pair a
-      new device" flow (host + pairing code -> `POST /api/pair`, store the
-      returned token). Validate on save with `GET /api/status`. Show the
-      device name and a logout button (clears storage only — revocation is
-      `DELETE /api/devices/{id}/token` from the desktop GUI).~~
-- [x] ~~2.3 **Tasks screen.** Text input + submit -> `POST /api/tasks`
-      `{goal, autoplan: true, run: true}`. List recent tasks
-      (`GET /api/tasks?limit=20`). Tapping one shows steps with status
-      (pending/running/done/failed) and progress. Live updates: one
-      EventSource to `{host}/api/events/stream?token={token}`; refresh the
-      open task on relevant events; fall back to 5s polling if SSE errors.~~
-      (SSE live + 15s poll safety net; task cards always show steps/progress.)
-- [x] ~~2.4 **Approvals.** Poll `GET /api/approvals` every few seconds while
-      the app is open (or react to SSE events if they carry approval ids —
-      check `assistant/events.py` for the event types). Approve/Deny buttons
-      -> `POST /api/approvals/{id}` `{"approved": bool}`. Destructive-looking
-      approvals should require a second tap (confirm step) in the UI.~~
-      (Approve requires a second tap; refresh-driven, no polling loop — SSE + 15s net.)
-- [x] ~~2.5 **Notifications.** List from `GET /api/notifications`, unread
-      badge, mark-one and mark-all read. (Mark-all: loop the endpoint.)~~
-      (Badge + per-item read state; mark-all loops the read endpoint.)
-- [x] ~~2.6 **Installable PWA.** `manifest.webmanifest` (name, theme color
-      matching the dashboard, display `standalone`, icons). `sw.js` caches
-      ONLY the static shell (html/css/js/icons) on install; NEVER cache
-      `/api/*` responses. Register with a network-first strategy for the
-      shell so updates land.~~
-- [x] ~~2.7 **(Optional) QR pairing.** Only if it stays dependency-free or the
-      user approves adding `qrcode`. Otherwise the phone types host+code once.~~
-      (Deferred to Stretch item "QR pairing for the PWA".)
-- [x] ~~2.8 **Docs.** `docs/mobile.md`: pairing, install, what works over LAN,
-      security notes (LAN only, tokens are bearer secrets, log out clears
-      storage). Add `mobile/` to the repository map in `AGENTS.md` and a
-      short subsection in `README.md`.~~
-
-### Automated tests (new file `tests/test_mobile_pwa.py`)
-- Static serving: TestClient on `create_app()` -> `GET /m/` returns 200 and
-  contains the app title; `GET /m/manifest.webmanifest` returns 200 with the
-  right content type; `GET /m/sw.js` returns 200.
-- Auth boundary: `GET /api/tasks` WITHOUT a token returns 401 while `/m/`
-  paths return 200 (pair a device in the test like
-  `tests/test_api_hardening.py` does — reuse that pattern).
-- Manifest sanity: JSON parses, has `name`, `icons`, `display` (fetch the file
-  from disk, not through HTTP, if simpler).
-
-### Definition of done
-- All tasks ticked; suite green locally; clean-install dry run green if any
-  dependency or app.py structural change was made; CI green on GitHub.
-- Commit suggestion: `feat(mobile): serve installable PWA control client at /m`.
-
-### User manual test (Sohail)
-1. `venv\Scripts\python.exe -m assistant.api --host 0.0.0.0 --port 8765`
-2. Note the PC's LAN IP; on the phone (same Wi-Fi) open `http://<ip>:8765/m`.
-3. On the PC run `venv\Scripts\python.exe -m assistant.api --pair --port 8765`.
-4. Enter host + code in the phone UI; confirm it logs in and shows status.
-5. Submit "what time is it" (autoplan) and watch the steps complete.
-6. Submit something destructive (e.g. "shut down the laptop") and DENY the
-   approval from the phone; then approve a harmless one.
-7. Check notifications appear and can be marked read.
-8. Browser menu -> "Add to Home Screen"; launch standalone; log out and in.
-9. Report anything that looks broken or ugly — UI polish is in scope.
+Verified 2026-09-17 (`mobile/pwa/` served at `/m`, auth boundary, 5 tests;
+`docs/mobile.md`). Details in `context.md` §3, compact record in §12.
 
 ---
 
-## 5. Phase 3 — Reliability & Ops
+## 5. Phase 3 — Reliability & Ops: DONE ✅
 
-**Goal**: health that sweeps itself, a secrets backup that survives a lost
-`data/secret.key`, and an audit view a human can read in the GUI.
-
-### Read first
-- `assistant/control/service.py` — find the on-read sweep logic for agents and
-  devices (search `sweep` / `offline`); `agent_health()`, `device_health()`-style
-  methods; `heartbeat()`.
-- `assistant/api/app.py` `lifespan` (auto-resume thread already lives there —
-  copy its daemon-thread pattern).
-- `assistant/bootstrap.py`, `main.py`, `gui/app.py` — the three entry points.
-- `assistant/control/secrets.py` — `SecretStore`, key handling, `put()`/`resolve()`.
-- `assistant/task_journal.py`, `assistant/audit.py` — journal + ledger format.
-- `gui/pages/activity_page.py` — existing page pattern for the audit view.
-
-### Tasks
-
-- [x] ~~3.1 **Background health sweep.** New module `assistant/health_sweep.py`:
-      `start(interval_seconds=60)` — idempotent (module-level `_thread` guard),
-      daemon thread, loop = sleep interval, then try: get control plane
-      (only if already created or creatable cheaply — read `service.py`'s
-      `get_control_plane` and decide; if creating the plane at sweep time is
-      too heavy, guard with a "plane exists" check and skip otherwise) ->
-      call the same sweep functions the read paths use -> swallow+log all
-      exceptions (the sweep must never kill anything). Wire it:
-      API server: inside `lifespan` next to auto-resume. CLI/GUI: at the end
-      of `bootstrap_safety()` in `assistant/bootstrap.py`, behind
-      try/except so a sweep failure never blocks startup. Add config
-      `health_sweep_seconds` (default 60, 0 disables) to `DEFAULT_CONFIG`
-      and `config.json`.~~
-      (Deviation: wired once in `bootstrap_safety()`, which all three entry
-      points share — including the API server. `start()` is idempotent. The
-      sweep only touches `service._control_plane` when it already exists, so
-      short-lived processes and tests pay nothing.)
-- [x] ~~3.2 **Secrets backup runbook + tool.** New module
-      `assistant/secrets_backup.py`, runnable as
-      `venv\Scripts\python.exe -m assistant.secrets_backup <export|verify|restore> ...`
-      - `export --out FILE --passphrase PASS`: bundle `data/secret.key` +
-        the encrypted secrets rows (read via a fresh `ControlStore`; serialize
-        the raw encrypted values, never decrypted plaintext) as JSON, encrypt
-        the whole bundle with a key derived from the passphrase (PBKDF2-HMAC-
-        SHA256 or scrypt via `cryptography` — already a dependency), write file.
-      - `verify FILE --passphrase PASS`: decrypt, check structure, report
-        secret names and capability scopes, confirm key file digest matches
-        the bundled one.
-      - `restore FILE --passphrase PASS`: requires `--yes` flag; writes
-        `secret.key` back and upserts the secret rows into the store. Refuse
-        if a `secret.key` already exists unless `--force`.
-      - Docs: `docs/secrets-backup.md` with the restore-after-reinstall runbook.
-      IMPORTANT: `export` reads real `data/` — that is its job — but tests
-      MUST run it with `VAVE_DATA_DIR` pointed at a temp dir.~~
-      (Passphrase key derivation reuses `secrets._coerce_key`; rows carry
-      allowed_capabilities so scopes survive the round trip.)
-- [x] ~~3.3 **Audit view in GUI.** Extend `assistant/task_journal.py` with
-      `recent_entries(limit=50)` parsing only the ACTIVE audit file for
-      `task_journal` records (reuse the parsing already in
-      `get_weekly_failure_summary`). In the GUI, extend the Activity page
-      (or add a modal reachable from it) showing: time, request, outcome
-      (color-coded), tools run, step count. Read-only. Follow the EventBus/
-      main-thread rules in `AGENTS.md` — build data in a worker thread if
-      reading is slow, post through `gui/ui_queue`.~~
-      (A "Journal" filter on the Activity page; entries carry an outcome
-      tone on the category badge. Tail-read of the live file only.)
-
-### Automated tests
-- `tests/test_health_sweep.py`: `start()` twice -> one thread; with a fake
-  plane (mock `assistant.control.service.get_control_plane`) the sweep calls
-  the sweep functions; interval 0 disables; exceptions in the plane are
-  swallowed (raise inside the mock, sweep survives).
-- `tests/test_secrets_backup.py` (uses `VaveTestCase` or explicit
-  `VAVE_DATA_DIR` temp): export -> verify -> restore into a SECOND temp dir ->
-  `SecretStore` in dir 2 resolves the same secret with the restored key;
-  wrong passphrase fails cleanly; restore without `--yes` refuses; existing
-  key without `--force` refuses.
-- `tests/test_task_journal.py`: extend for `recent_entries` (write N entries
-  into a temp ledger, read back, ordering and redaction).
-
-### Definition of done
-Suite green, CI green, docs written.
-
-### User manual test (Sohail)
-1. Start the API server, pair the phone, then kill the phone's Wi-Fi — after
-   ~5 min the Devices page/API should show it offline WITHOUT anyone
-   refreshing (that is the sweep working; devices use a 5-min window).
-2. `python -m assistant.secrets_backup export --out backup.vault --passphrase ...`
-   then `verify`. (Later, on a scratch copy of the data dir, try `restore`.)
-3. Open the GUI Activity page: run a few voice/GUI commands, see the journal
-   entries appear with outcomes.
+Verified 2026-09-17 (background sweep in `bootstrap_safety()`, secrets
+backup CLI + runbook, GUI Journal filter, 15 tests). Details in `context.md`
+§3, compact record in §12.
 
 ---
 
-## 6. Phase 4 — Home Assistant Bridge
+## 6. Phase 4 — Home Assistant Bridge: DONE ✅
 
-**Goal**: "turn off the bedroom light" / "what's the living room temperature"
-as first-class VAVE capabilities, over the HA REST API, zero-trust gated.
-
-### Read first
-- `assistant/gitlab_agent.py` / `assistant/github_agent.py` — the pattern for
-  an API-backed agent module (client class, transport seam for tests,
-  module-level tool functions returning strings).
-- `assistant/web_api.py` — `web_api_get`/`web_api_call` + credential
-  resolution via `secret://`.
-- `assistant/control/capabilities.py` — `TOOL_CAPABILITIES` and risk tiers.
-- `assistant/guard.py` — `SAFE_TOOLS` / `SENSITIVE_TOOLS` / `REACHES_OUTWARD`.
-- `assistant/ai_brain.py` — `AVAILABLE_FUNCTIONS`, `LLM_TOOLS` schema,
-  `TOOL_GROUPS`, `SEMANTIC_TOOL_ALIASES`.
-- `assistant/api/app.py` — how `/api/google/*` endpoints gate through the
-  policy engine (mirror that for `/api/home/*`).
-
-### Tasks
-
-- [x] ~~4.1 `assistant/home.py`: `HomeAssistantClient` with a
-      transport seam (`_request(method, path, json)`) like the GitHub agent.
-      Config: `home_assistant_url` (default `""` = disabled) added to
-      `DEFAULT_CONFIG` + `config.json`. Credential: `secret://homeassistant`
-      (a HA long-lived access token), stored with
-      `allowed_capabilities="home.*"` — see `SecretStore.put(name, value,
-      description="", allowed_capabilities="")` in `secrets.py:93`. When the
-      URL or secret is missing, tools return a helpful "not configured" string
-      instead of raising.~~
-      (Module functions take `_client_override` like the GitHub agent; narrow
-      secret scopes produce a "not allowed" sentence instead of raising.)
-- [x] ~~4.2 **Tools**: `list_home_devices()` (GET `/api/states`, filtered to
-      sensible domains: light, switch, climate, media_player, sensor,
-      binary_sensor), `get_device_state(entity_id)`, `control_device(entity_id,
-      action, value=None)` (on/off/toggle/brightness 0-100/temperature;
-      POST `/api/services/<domain>/<service>` with `entity_id`). All return
-      readable strings; state changes VERIFY by re-reading the state after
-      the call (honest reporting, matching `open_app`'s pattern).~~
-- [x] ~~4.3 **Registration**: functions in `AVAILABLE_FUNCTIONS`; schemas in
-      `LLM_TOOLS`; new `"home"` entry in `TOOL_GROUPS` (keywords: "light",
-      "lights", "lamp", "thermostat", "temperature", "fan", "tv", "home",
-      "living room", "bedroom", "kitchen"); aliases in
-      `SEMANTIC_TOOL_ALIASES` for "turn on/off". Guard: reads in
-      `SAFE_TOOLS`, `control_device` in `SENSITIVE_TOOLS`. Capabilities:
-      `home.read` (safe), `home.control` (sensitive) in
-      `TOOL_CAPABILITIES`.~~
-      (Reads registered MEDIUM risk via `home.read`; `control_device` is also
-      in `REACHES_OUTWARD` so tainted contexts must confirm.)
-- [x] ~~4.4 **Voice routing**: NO new anchored regex patterns — the phrases are
-      open-ended ("dim the bedroom light to 40") so they must flow to the AI
-      brain, which now has the tools. This is deliberate: overlapping
-      substring patterns are a known bug source (see AGENTS.md).~~
-- [x] ~~4.5 **REST**: `GET /api/home/devices` and `POST /api/home/control`
-      following the permission/policy gating used by `/api/google/*`.~~
-      (Control reuses `_held_for_approval`: 202 + approval first, one-shot
-      grant spent on the second identical call.)
-- [x] ~~4.6 **Docs**: README section + AGENTS.md map entry.~~
-
-### Automated tests (`tests/test_home_assistant.py`)
-Fake transport pattern from `tests/test_developer_git.py`: list devices
-parses states; control maps on/off to the right service URL and payload;
-brightness/temperature mapping; state verification re-reads after acting;
-missing URL/secret -> friendly string; policy: control without permission is
-denied (mirror how existing capability tests do it).
-
-### User manual test (Sohail)
-1. In HA: create a long-lived access token (Profile -> Security).
-2. Store it: start the API, then use the secret store — check
-   `docs/control-plane.md`'s secrets section for the exact storage command
-   (or ask in the next session; if no CLI exists, a tiny script using
-   `plane.secrets.put("homeassistant", token, allowed_capabilities="home.*")`
-   is acceptable, kept out of the repo or gitignored).
-3. Set `home_assistant_url` in `config.json` (e.g. `http://homeassistant.local:8123`).
-4. Say: "what devices are connected to my home", "turn off the bedroom
-   light", "set the living room thermostat to 24". Watch the GUI approval
-   card for the sensitive control action.
+Verified 2026-09-17 (`assistant/home.py`, `GET /api/home/devices`,
+approval-held `POST /api/home/control`, 14 tests). Details in `context.md`
+§3, compact record in §12.
 
 ---
 
-## 7. Phase 5 — Packaging & Distribution
+## 7. Phase 5 — Packaging & Distribution: DONE ✅
 
-**Goal**: `pip install .` works; `vave` command exists; versioned releases.
-
-### Tasks
-- [x] ~~7.1 `pyproject.toml`: metadata, `version` (start `1.3.0`), pinned deps
-      mirrored from `requirements.txt` (keep requirements.txt as the dev
-      pin source; pyproject can reference it or duplicate — decide and
-      document which is canonical: requirements.txt stays canonical, pyproject
-      uses `dependencies` parsed to match).~~
-      (`requirements.txt` stays canonical; pyproject mirrors it with the same
-      win32 markers.)
-- [x] ~~7.2 Console script `vave = main:main` (check `main.py`'s `main(argv)`
-      signature works as an entry point; adjust if it needs `sys.argv`
-      handling).~~
-      (Installed and verified; `main(argv=None)` reads sys.argv itself.)
-- [x] ~~7.3 Subcommands: `vave gui`, `vave serve`, `vave once`, `vave smoke`,
-      `vave pair` mapping to existing flags. Implement in `main.py` as an
-      argv pre-parser (PowerShell-friendly), keeping ALL current flags
-      working (backwards compatible).~~
-      (Pure `_expand_subcommand` + `_pair_args`; 9 unit tests.)
-- [x] ~~7.4 Clean-room test: fresh venv, `pip install .`, run `vave smoke`,
-      verify `vave gui` imports (don't open the window in automation).~~
-      (Done: `vave` 1.3.0 installed clean, `vave smoke` 11/11 from a foreign
-      cwd. Installed copies read config next to the package — repo checkout
-      stays the day-to-day home; README says so.)
-- [x] ~~7.5 README: replace setup section with both flows (git-clone venv flow
-      stays; add pip flow). Optional: `scripts/build_exe.ps1` PyInstaller
-      spec documented but NOT in CI.~~
-      (Both flows documented; clone URL fixed to VAVE-main. PyInstaller
-      skipped deliberately: no PyInstaller in the tree and the
-      model/browser/OCR stack does not freeze cleanly.)
-
-### User manual test (Sohail)
-`pip install .` in a fresh venv on your machine, run `vave smoke`, then
-`vave gui` and use it for a day.
+Verified 2026-09-17 (`pyproject.toml`, `vave` subcommands, 11 unit tests,
+`vave smoke` 11/11). Details in `context.md` §3, compact record in §12.
 
 ---
 
-## 8. Phase 6 — Daily Reliability
+## 8. Phase 6 — Daily Reliability: REMAINDERS ONLY
 
-**Goal**: VAVE's most-used actions (open app, window management, command
-routing) stop failing silently and stop misrouting. This is the boring work
-that makes the assistant feel solid rather than demo-ware.
+**Goal**: finish the three small items left after the reliability sprint.
+Already done and recorded in `context.md` §3: 6.2 list-windows voice
+(`_LIST_WINDOWS_PATTERN`), notes-before-app routing, anchored `_LOCK_PATTERN`,
+compound guard in `handle_app_command`.
 
-### Read first
-- `assistant/system_tasks.py` — `open_app` (lines 243-443), `close_app`,
-  `activate_window`, `snap_window`, `close_window`, `focus_window`,
-  `list_windows`, `_find_window`. The 3-tier app launcher, the window
-  management functions, and how they verify (or don't).
-- `assistant/commands.py` — `execute_single_command` (the full router),
-  `_ATOMIC_INTENTS`, `_QUIT_PATTERN`, `_TIME_PATTERN`, `_LOCK_PATTERN`,
-  `_SYSTEM_SHUTDOWN_PATTERN`. How overlapping substrings can misroute.
-- `assistant/controller.py` — `process_command` and how it calls
-  `execute_command`. What happens on error.
-- `assistant/ai_brain.py` lines 79-198 — `AVAILABLE_FUNCTIONS` to see what
-  is already registered vs what the command layer can reach.
-- `tests/test_smoke.py` and `tests/test_system_tasks.py` — existing test
-  patterns for system actions.
-
-### Tasks
+### Remaining tasks
 
 #### 6.1 App launch: honest failure reporting
-`open_app` Tier 1 uses `os.system("start chrome")` which is fire-and-forget.
-The verification loop after it can find the window, but if `os.system` itself
-fails (app not installed, broken shortcut), the function returns
-"Action sent; effect unconfirmed" — a lie.
+`open_app` Tier 1 still uses fire-and-forget `os.system(cmd)` (the later
+launcher rework added window verification but no return-code check).
+- Use `subprocess.run(["cmd", "/c", cmd], capture_output=True)`; if rc != 0
+  AND no window appears: "Could not open {name}. The command exited with
+  code {rc}." Keep "effect unconfirmed" for rc 0 + no window.
+- In `close_app`: catch `AccessDenied` on `proc.terminate()` and report
+  "Cannot close {name}: access denied (try running as administrator)".
+- Tests: mock `subprocess.run` rc=1 -> failure message; rc=0 + no window ->
+  "effect unconfirmed"; rc=0 + window -> success.
 
-- Replace `os.system(cmd)` in Tier 1 with `subprocess.Popen` + return code
-  check. `start` is a shell built-in, so use
-  `subprocess.run(["cmd", "/c", cmd], capture_output=True)` instead.
-- If the subprocess returns a non-zero exit code AND the verification loop
-  finds no window, return a clear failure: "Could not open {name}. The
-  command exited with code {rc}."
-- If the subprocess succeeds but no window appears (UWP apps, background
-  services), keep the current "effect unconfirmed" message — that is honest.
-- In `close_app`: the `proc.terminate()` call can raise `AccessDenied` for
-  admin-owned processes. Catch it and report "Cannot close {name}: access
-  denied (try running as administrator)" instead of silently continuing.
-- Tests: mock `subprocess.run` to return rc=1 for a missing app, assert
-  the failure message. Mock it returning rc=0 with no window found, assert
-  "effect unconfirmed". Mock rc=0 + window found, assert success.
-
-#### 6.2 Window management: expose `list_windows` to voice
-`list_windows` exists in `AVAILABLE_FUNCTIONS` but has no command-layer
-entry point. Users cannot discover what windows are open.
-
-- Add a `_LIST_WINDOWS_PATTERN` regex to `commands.py` matching
-  "list windows", "what windows are open", "show open windows",
-  "what apps are running".
-- Route it in `execute_single_command` (before the AI brain fallback) to
-  `system_tasks.list_windows()`. Speak the result.
-- Register the pattern in `_shortcut_trigger_reserved` so shortcuts cannot
-  shadow it.
-- Tests: mock `list_windows` to return a known string, assert the command
-  routes to it.
-
-#### 6.3 Command routing: prevent substring misfires
-The current router uses substring matching for some commands. Examples of
-known false positives:
-- "what time is it" matches `_TIME_PATTERN` correctly, but "shutdown time"
-  also contains "time" — currently safe because patterns are anchored, but
-  "time" as a bare word matches `_TIME_PATTERN` via the `time` alternative.
-- "open notes" matches `handle_app_command` (which routes to Tier 3 browser)
-  instead of `_ADD_NOTE_PATTERN` (which is checked later).
-- "volume" in a sentence like "what's the volume of that container" would
-  match `handle_volume_command`.
-
-Fixes:
-- Tighten `_TIME_PATTERN`: remove the bare `time` alternative. The user
-  never says just "time" — they say "what time is it" or "tell me the time".
-- Tighten `_LOCK_PATTERN`: remove bare `lock` — require the object
-  ("laptop", "computer", "pc", "screen").
-- Move `_ADD_NOTE_PATTERN` and `_READ_NOTES_PATTERN` checks BEFORE
-  `handle_app_command` in the router so "open notes" goes to the note
-  handler, not the browser.
-- Add a compound-command guard in `handle_app_command`: if the command
-  contains "note" or "notes", return False early.
-- Tests: write a test suite (`tests/test_command_routing.py`) that asserts
-  each pattern against known true-positives and known false-positives.
-  Include: "what time is it" -> time, "shutdown time" -> AI brain,
-  "open notes" -> add_note, "open chrome" -> open_app, "volume of water"
-  -> AI brain, "volume up" -> volume, "lock the laptop" -> lock,
-  "lock it" -> AI brain.
+#### 6.3 Routing: remove the bare-`time` alternative
+`_TIME_PATTERN` still ends with a bare `|time)` alternative
+(`commands.py:789`), so "shutdown time" answers with the time. Remove it.
+- Tests: extend `tests/test_command_routing.py`: "shutdown time" -> AI brain.
 
 #### 6.4 Error feedback: speak failures, not silence
-When `process_command` catches an exception, it speaks "Something went
-wrong" but does not include the command name. When `open_app` or
-`close_app` fail, the error is logged but not always spoken.
-
-- In `controller.py` `process_command`: include the command (truncated to
-  50 chars) in the error spoken to the user: "Something went wrong with
-  '{command snippet}'."
-- In `open_app`: the `except` block at line 440 should log the traceback
-  at DEBUG (not INFO) and speak the error reason, not just "Could not
-  open."
-- Tests: no new tests needed — this is a logging/speech change covered by
-  existing error-path tests.
-
-### Automated tests
-- `tests/test_command_routing.py` (new file): pattern-vs-utterance matrix.
-  Each test feeds a command string through `execute_single_command` (with
-  mocks for all side effects) and asserts which handler was called.
-- Extend `tests/test_system_tasks.py` for 6.1: mock `subprocess.run`
-  return codes in `open_app`.
+`controller.py process_command` still speaks only "Something went wrong while
+processing that command." (`controller.py:201`). Include the command,
+truncated to 50 chars.
 
 ### Definition of done
-Suite green, CI green, no new warnings from compileall.
+Suite green, CI green.
 
 ### User manual test (Sohail)
-1. Say "open chrome" — should open or report failure honestly.
-2. Say "open notepad" — should open and focus.
-3. Say "list windows" — should enumerate open windows.
-4. Say "open notes" — should go to the note handler, not the browser.
-5. Say "lock the laptop" — should lock.
-6. Say "lock it" — should NOT lock (goes to AI brain).
-7. Say "what time is it" — should answer.
-8. Say "shutdown time" — should NOT answer with the time (goes to AI brain).
+1. Say "shutdown time" — should NOT answer with the time.
+2. Break an app shortcut, say "open <it>" — should report failure honestly.
+3. Trigger any command error — the spoken message should name the command.
 
 ---
 
@@ -850,6 +472,12 @@ appear in the GUI status bar and on the phone via SSE.
   script), subcommands `gui/serve/once/smoke/pair`, clean-room
   `pip install .` + `vave smoke` 11/11 verified, README pip flow. 9 new
   tests. 756 green.
+- **Reliability sprint (2026-09-16 → 17, `9d8ee72` → `22fa84d`)**: routing
+  fast-paths, 3-tier model routing, destructive-NL guard, VLM screenshot
+  analysis, deterministic chaining, Store launcher rework, Chromium a11y
+  nudge, RapidOCR click route, chrome-guard + OCR scan entries,
+  `tests/test_destructive_requests.py` + `tests/test_chromium_click_path.py`.
+  796 green. Details in `context.md` §3.
 
 ## 13. Progress Log
 
@@ -864,6 +492,8 @@ appear in the GUI status bar and on the phone via SSE.
 | 2026-09-15 | Phase 4 complete: `assistant/home.py` over the HA REST API (states, verified control), `home.read`/`home.control` capabilities, brain + guard registration, `GET /api/home/devices` + approval-held `POST /api/home/control`. 14 new tests. |
 | 2026-09-15 | Phase 5 complete: `pyproject.toml` (v1.3.0, `vave` console script), subcommands `gui/serve/once/smoke/pair`, clean-room `pip install .` + `vave smoke` 11/11 verified, README pip flow. 9 new tests. Temp venvs removed (C: critically low at ~5 GB free — user cleanup needed). |
 | 2026-09-15 | ALL PHASES 2-5 DONE. 756 tests green locally and on GitHub CI (`success` on `8a28828`). Commits: `92fe7fd` (PWA), `a3042aa` (sweep/backup/journal), `3c6deb1` (Home Assistant), `8a28828` (packaging). |
+| 2026-09-16/17 | Reliability sprint + defect register (§15): all D1–D9 resolved, regression files in suite (796 green). Commits `9d8ee72` → `22fa84d`. |
+| 2026-09-17 | Plan cleanup: Phases 2–5 detail sections removed (verified one by one; record lives in `context.md` §3 + §12). Phase 6 rewritten to remainders (6.1, 6.3 bare-time, 6.4). §15 condensed to map + open items (O1 phi4 RAM, O3 voice). |
 | 2026-09-16 | Reliability sprint after live-testing: 3-tier model routing, safety guard (direct + hypothetical destructive requests), vision auto-analyze, deterministic step tracking, Store/UWP launcher, Chromium accessibility nudge, console-safe window matching, physical clicks for web surfaces, screenshot-OCR click route (RapidOCR). 768 green. |
 | 2026-09-16 | Section 14 added: DeepSeek suggestions for leveling VAVE into a true system (brainstorm only, no code). |
 | 2026-09-16 | Section 15 added: live-test defect register with root causes, fixes, commits, and verification steps for the next agent. |
@@ -1115,275 +745,51 @@ scariest failure mode.
 
 ---
 
-## 15. Live-Test Defect Register & Handoff (2026-09-16)
+## 15. Live-Test Defect Register — RESOLVED ✅
 
-> This is the handoff for the next coding agent. Section 14 is *ideas*; this
-> section is *what actually broke, why, what was done, and how to prove it*.
-> Every entry has a symptom the user saw, the real root cause found by
-> instrumenting, the fix commit, and a verification step. Read this before
-> touching pointer/vision/launcher code.
+All nine defects from the 2026-09-16 live test are fixed, unit-regressed, and
+live-verified where a live check exists. The full evidence narratives lived
+here during the fix session; they now live in three durable places, so this
+section keeps only the map and the still-open environment items:
+- `context.md` §3 (sprint record) and Agent Traps (every trap from old §15.4).
+- `git log 9d8ee72..22fa84d` (every fix commit, messages carry the detail).
+- The suite itself: `tests/test_destructive_requests.py` (D4),
+  `tests/test_chromium_click_path.py` (D8), `tests/test_ocr_click.py` (D9).
 
-### 15.0 Ground truth: what the user experienced
+### 15.1 Resolution map
 
-The user ran the desktop GUI and hit, in order: a destructive "what would you
-do if I said delete my files" that went hunting through File Explorer; an
-"open netflix" that opened the Microsoft Store / a browser instead of the app;
-and "open netflix and open sohail profile" that looped forever clicking a
-button and never opened the profile. The net finding: **the model was not the
-problem — it could not see the screen.** Details below.
+| Defect | Resolution (commit) |
+| --- | --- |
+| D1 slow chaining | deterministic step tracking (`88b4853`) |
+| D2 conversational tool calls | suppression + prompt rule (`174d2b9`) |
+| D3 single model / GPU crash | 3-tier routing (`22d8849`, `11370fc`); phi4 still RAM-blocked (O1) |
+| D4 destructive NL requests | request-level guard + hypothetical phrasing (`6f4845b`, `4119dd4`); `tests/test_destructive_requests.py` |
+| D5 blind screenshots | VLM auto-analysis + `analyze=` flag (`81cfff0`) |
+| D6 Store/app launching | real AppID lookup, hidden PowerShell, browser fallback (`96baa44`, `09bcd80`, `12e3fa9`) |
+| D7 console window match | console exclusion (`3a5ff5e`) |
+| D8 Chromium click loop | OCR page entries, chrome exclusion/guard, triggers, prompt rule, stall hint (`bdd0697`, `5d9ea80`, `e14abd4`, `990d71c`); Sohail verified active |
+| D9 dead OCR fallback | RapidOCR tier + window scoping (`a1e254a`); live-proven on Calculator |
 
-### 15.1 Commit map (this session)
+### 15.2 Defects (detail removed — table above, evidence in git history + suite)
 
-| Commit | What it fixes | Defect |
-| --- | --- | --- |
-| `9d8ee72` | weather / list_windows / notes routing fast-paths | routing |
-| `174d2b9` | no tool calls for conversational input; `num_gpu` config | D2 |
-| `22d8849` | 3-tier model routing (fast/smart/deep) | D3 |
-| `11370fc` | 3-tier edge cases (thresholds, disabled tiers, strikes) | D3 |
-| `6f4845b` | block destructive natural-language requests | D4 |
-| `81cfff0` | screenshots auto-analyzed by the VLM | D5 |
-| `88b4853` | deterministic step tracking (no per-step LLM call) | D1 |
-| `4119dd4` | hypothetical destructive phrasing + Netflix browser fallback | D4, D6 |
-| `96baa44` | generic browser fallback when native app is missing | D6 |
-| `09bcd80` | Store/UWP apps launched via PowerShell | D6 |
-| `12e3fa9` | resolve the real Store AppID at runtime | D6 |
-| `3a5ff5e` | terminals excluded from window-title matching | D7 |
-| `bdd0697` | real mouse click for Chromium; stall nudge every repeat | D8 |
-| `5d9ea80` | force Chromium accessibility (`WM_GETOBJECT`) | D8 |
-| `e14abd4` | robust nudge: all process HWNDs + foreground | D8 |
-| `a1e254a` | screenshot-OCR click route via RapidOCR | D9 |
-| `990d71c` | OCR page entries in scans, chrome exclusion from scans, chrome-guard,
-  profile trigger, prompt rule, OCR hint in stall redirect, OCR rank 4,
-  `take_screenshot(analyze=…)`, both regression files (D4+D8), eager vision
-  imports (sys.modules wipe trap) | D8, D4, O4 |
-
-### 15.2 Defects
-
-#### D1 — Multi-step tasks took 40-50s
-- **Symptom.** "Open netflix and pick a profile" took ~45s even on the fast
-  model.
-- **Root cause.** `_remaining_work()` made a *separate* LLM call after every
-  step just to ask "is it done?". A 3-step request cost ~7 model calls.
-- **Fix.** `88b4853`: deterministic sequential mapping (each non-inspection
-  tool call completes one step); the LLM verdict is only used on ambiguity.
-- **Verify.** `venv\Scripts\python.exe -m unittest tests.test_chained_tasks`
-  (20 tests). Watch a 3-step task in the log: model calls should be ~3, not ~7.
-
-#### D2 — Conversational input triggered tools
-- **Symptom.** "hello" / "what is 2+2" caused tool calls (`tell_date`, random
-  tools) instead of a plain answer.
-- **Root cause.** `select_tools()` offered tools for every input; the model
-  then felt obliged to call one.
-- **Fix.** `174d2b9`: conversational suppression (greetings, math, jokes,
-  knowledge questions get an empty tool list) + a "WHEN NOT TO USE TOOLS"
-  block in `get_system_prompt()`.
-- **Verify.** `select_tools("hello there")` returns `[]`;
-  `select_tools("open notepad")` returns tools.
-
-#### D3 — Single model, GPU crash, no fallback
-- **Symptom.** The default model (`qwen3.5:9b`) crashed the 4GB GPU.
-- **Root cause.** No tiering; a 9B model cannot run on this laptop.
-- **Fix.** `22d8849`, `11370fc`: fast (`qwen2.5:3b`, GPU) / smart (`qwen3:4b`,
-  partial GPU) / deep (opt-in, RAM-gated); rule-based classifier; escalation
-  with strike tracking; "switch to fast/smart/deep/auto" voice commands.
-- **OPEN (see 15.3 O1).** The deep tier (`phi4`) cannot load — RAM, not code.
-
-#### D4 — Destructive natural-language requests were not blocked
-- **Symptom.** "delete all my files" (and the hypothetical "what would you do
-  if I said delete my files") was attempted; the user saw File Explorer
-  hunting through documents and killed the process.
-- **Root cause.** `guard._DESTRUCTIVE_COMMAND_REGEX` only matched *shell*
-  patterns (`rm -rf`, `del /f`, `diskpart`). Natural language never reached a
-  shell string, so nothing matched.
-- **Fix.** `6f4845b`: `guard.is_destructive_request(text)` — request-level
-  patterns, hooked into `ask_ai()` and `run_task_step()` *before* the model,
-  with a spoken refusal and an audit record. Safe overrides keep "delete this
-  note", "clear my notes", "shutdown" working. `4119dd4`: hypothetical/indirect
-  phrasing ("what would you do if I said…", "can you delete…", "help me wipe…")
-  also blocked.
-- **Verify.** Ad-hoc matrix (17 + 11 phrases) was run; for the handoff, add a
-  permanent `tests/test_destructive_requests.py` asserting the true/false set:
-  block "delete all my files" / "wipe my drive" / "what if I asked you to erase
-  everything"; allow "delete this note" / "shutdown" / "open notepad".
-- **NOTE.** The user's incident happened while testing; after `6f4845b` +
-  `4119dd4` the request-level guard rejects it. **Never remove that guard**, and
-  keep it *before* the model (a model can always be talked into trying).
-
-#### D5 — Screenshots were saved but the model could not see them
-- **Symptom.** `take_screenshot` returned a file path; the model had no image
-  input and so learned nothing.
-- **Root cause.** The tool returned a string, never an analysis.
-- **Fix.** `81cfff0`: `take_screenshot` now runs the local VLM
-  (`moondream:latest` via `vision.analyze_screen`) and returns the path **plus**
-  a description; a VLM failure falls back to path-only (never breaks capture).
-- **Verify.** With Ollama running, `take_screenshot` returns a "Screen
-  analysis:" block. Add ~2-5s to the call when the VLM loads.
-
-#### D6 — "open netflix" opened the Store / a browser instead of the app
-- **Symptom.** Netflix opened the Microsoft Store "app not found"; later, a
-  browser opened even though the app was installed.
-- **Root cause (three layers).**
-  1. `start netflix:` is a Store *protocol handler*, not the app launcher.
-  2. The hardcoded AppID `Microsoft.Netflix_8wekyb3d8bbwe!Netflix` was **wrong
-     for this machine**; the real one is
-     `4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App` (AppIDs vary by install
-     source/version). The PowerShell launch failed silently.
-  3. There was no browser fallback when the app genuinely did not open.
-- **Fix.** `96baa44` generic browser fallback for known web apps;
-  `09bcd80` Store/UWP apps launched via `Start-Process shell:AppsFolder\…`;
-  `12e3fa9` look the **real** AppID up from `Get-StartApps` at launch time
-  (hardcoded IDs are fallback only).
-- **Verify.** `probe_click.py <title>` lists windows; `Get-StartApps` should
-  show the app. Launch should return "Successfully opened …" and the window
-  should exist.
-
-#### D7 — `_find_window("Netflix")` matched the terminal
-- **Symptom.** The probe "clicked" a terminal tab instead of Netflix.
-- **Root cause.** `_find_window` does substring title matching, and a console's
-  title *is its command line* (`… python probe_click.py Netflix`), so the
-  console matched.
-- **Fix.** `3a5ff5e`: console window classes
-  (`CASCADIA_HOSTING_WINDOW_CLASS`, `ConsoleWindowClass`, `mintty`) are excluded
-  from title matching unless the query is itself a terminal alias.
-- **Verify.** With a console whose title contains "Netflix", `_find_window(
-  "Netflix")` must return the browser, not the console.
-
-#### D8 — THE BIG ONE: `click_element` silently no-ops on Chromium/PWA
-- **Symptom.** "open netflix and open sohail profile": Netflix opened, then the
-  model clicked something eight times and never opened the profile. The user
-  saw it "pressing the settings button".
-- **Evidence (keep this, it is the proof).**
-  - Log: `click_element({'name': 'Profile 1 Profile', 'window_title':
-    'Netflix'})` repeated ~8 times, alternating with
-    `get_clickable_elements`.
-  - `probe_click.py Netflix "Profile 1 Profile"` printed:
-    `'Profile 1 Profile' (Button) … click_at(x=1150, y=35)` — **(1150,35) is
-    the Edge toolbar**, and the element list contained only `Chrome Legacy
-    Window`, `view_1065`, `view_1062`, `Settings and more (Alt+F)`,
-    `netflix.com`. **No page content at all.**
-- **Root cause (three, all real).**
-  1. **Chromium hides its renderer's accessibility tree until a client asks.**
-     UI Automation therefore sees only browser chrome, never the page. The only
-     "Profile" the model could see was Edge's own toolbar avatar button.
-  2. `click_element` preferred `GetInvokePattern()`, which Chromium reports as
-     **successful while doing nothing** — so no physical click ever happened.
-  3. The stall redirect fired **once** and then stayed silent, so the model
-     repeated the dead click five more times.
-- **Fix.**
-  - `bdd0697`: web-backed controls (Chrome/Electron framework or
-    `Chrome_WidgetWin` class) get a **real `pyautogui` click** at the element
-    centre; native controls keep `InvokePattern`. Also the stall redirect now
-    fires on **every** repeat past `_REPEAT_LIMIT`.
-  - `5d9ea80`: `_nudge_accessibility()` sends `WM_GETOBJECT`/`OBJID_CLIENT` to
-    the Chromium window, which flips its accessibility engine on
-    (lab-proven: an example.com page went **39 → 58 named nodes** including
-    body text). Wired into `get_clickable_elements`, `click_element`,
-    `read_screen` via `_prepare_window_for_scan`.
-  - `e14abd4`: nudge **all** same-process Chromium HWNDs (top + render-widget
-    children) and foreground the window first, because a single top-HWND nudge
-    was measured leaving the tree off.
-- **Status: RESOLVED (mechanics) — read carefully.**
-  - The **diagnosis is proven** (probe output above).
-  - The **nudge is lab-proven** (39→58 nodes) but unreliable on real windows;
-    it stays as a best-effort first step, NOT the route.
-  - The **production route is OCR (D9) and it is live-proven**: the 2026-09-17
-    run used `find_and_click_text` twice, clicked real OCR coordinates
-    (`click_at` after a UIA miss), varied targets instead of looping one
-    button, and reported honestly when stuck. The identical-repeat loop is
-    gone.
-  - **End state: Sohail's profile is active.** Proof by elimination: the gate
-    screen earlier showed five profiles (Sohail, Basheer, Rehana, basherehan4,
-    Aftab); the profile menu now offers exactly the other four
-    (basherehan4/Basheer/Rehana/Aftab at (1109,171)/(1087,235)/(1084,301)/
-    (1074,364)) plus Manage/Transfer. Sohail is the missing fourth: it is the
-    active profile, so "open sohail profile" holds.
-  - What closed it, beyond D9: `get_clickable_elements` now appends OCR page
-    text with coordinates for Chromium windows; toolbar controls are excluded
-    from Chromium scans (matching stays unfiltered, so genuine toolbar clicks
-    still resolve); `find_and_click_text` is offered on click/profile
-    requests; the system prompt teaches the browser-window rule; the stall
-    redirect names the OCR route; OCR rank 4 matches "sohail profile" to a
-    "Sohail" tile.
-- **Verify (done 2026-09-17).** `probe_click.py` scan shows page text with
-  coordinates; `--text "open netflix and open sohail profile"` run used OCR
-  tools, no identical loop. `venv -m unittest`: 796 green.
-
-#### D9 — OCR fallback was dead (Tesseract not installed)
-- **Symptom.** `click_element`'s OCR fallback never fired; nothing to fall back
-  to.
-- **Root cause.** `vision.find_text_on_screen` required the Tesseract *binary*,
-  which is not installed on this machine.
-- **Fix.** `a1e254a`: added a RapidOCR tier (ONNX, CPU, **no binary**) between
-  Tesseract and UIA. `find_text_on_screen` now ranks matches (exact >
-  whole-word > prefix > substring) and accepts a `within=(l,t,r,b)` window
-  filter. `find_and_click_text(target_text, window_title=…)` scopes the search
-  to one window (focuses it; ignores matches outside).
-- **Dep.** `rapidocr-onnxruntime` added to `requirements.txt` (installed in the
-  venv; models cache on first use, ~4s/scan on CPU).
-- **Verify (proven).** Live on Calculator: OCR found `C` and `1`, clicked both,
-  screen read back `1`. `tests/test_ocr_click.py` (12 tests, mocked).
-- **Why this matters for D8.** This is the route the user asked for: *look at
-  the screen, then decide where to click.* It works regardless of who opened
-  the window and regardless of Chromium accessibility.
-
-### 15.3 Open items (not defects — unfinished verification / environment)
+### 15.3 Open items (need the user, not code)
 
 - **O1 — phi4 (deep tier) cannot load.** It is downloaded (9.1GB) but needs
   ~8GB free RAM; the machine has ~5GB free. **Not a code bug.** Free RAM (close
   Chrome/Edge/apps), then set `"llm_model_deep": "phi4"` in `config.json`.
   `""` = disabled. `_can_run_deep()` gates it automatically at >=6GB free.
-- **O2 — End-to-end Netflix/OCR task not confirmed.** Needs a clean GUI restart
-  and the 15.2 D8 verification. This is the single most important next check.
+- **O2 — DONE 2026-09-17.** Sohail verified active by elimination (see table).
 - **O3 — Live voice (`python main.py`) never run.** Only `--text` / GUI text
   input have been exercised. Do not run it in automation; hand it to the user
   with a checklist: "what time is it", "take a screenshot", "delete all my
   files" (must refuse), "open notepad and type hello".
-- **O4 — `take_screenshot` latency.** The VLM analysis adds load time on first
-  use. Acceptable, but if it becomes annoying, make analysis opt-in via a
-  `take_screenshot(analyze=False)` parameter.
+- **O4 — DONE.** `take_screenshot(analyze=…)` parameter added; default still
+  analyzes.
 
-### 15.4 Traps the next agent will hit (learned the hard way)
+### 15.4 Traps — moved to `context.md` Agent Traps (single source of truth).
 
-1. **A running GUI keeps old code.** Every retest must *quit* `vave_gui.py`
-   completely, not minimize it. Half the "same problem still happens" reports
-   were stale processes.
-2. **Use the venv**: `venv\Scripts\python.exe`. System Python has no deps.
-3. **PowerShell 5.1**: no `&&`, no `rg`, and `$_` gets mangled inside
-   `powershell -Command "…"` from this tool — prefer writing a script file, or
-   run logic through Python.
-4. **`uiautomation` sets process DPI awareness on import** (metrics jumped
-   1536x864 → 1920x1080 at 125% scaling). It imports before `pyautogui` clicks,
-   so coordinates agree — but do not reorder that without thinking.
-5. **Chromium is a special case everywhere.** Window titles lie (a console
-   contains "netflix"), page content is invisible until nudged, and
-   `InvokePattern` is a no-op. Prefer OCR for anything on a web page.
-6. **Never run `python main.py` bare** — it starts the mic loop and blocks.
-7. **`data/`, `logs/`, `config.json` are user state.** Tests must use
-   `VAVE_DATA_DIR` / `VaveTestCase`.
-8. **The destructive-request guard must stay in front of the model.**
-   `guard.is_destructive_request` in `ask_ai`/`run_task_step` is load-bearing;
-   removing it re-opens D4.
-9. **`mock.patch.dict(sys.modules, …)` deletes everything imported inside the
-   region on exit** (it restores a snapshot). If `assistant.vision`
-   (pytesseract → numpy) is first imported inside such a region, later
-   `from assistant.vision import …` re-executes the chain and numpy's C
-   extension dies with `ImportError: cannot load module more than once per
-   process` — swallowed by broad excepts, surfacing as phantom "click didn't
-   land" failures. Cost a full ghost-hunt on 2026-09-17. Rule: any test file
-   combining `patch.dict(sys.modules)` with mocks that lazily import heavy
-   modules must `import assistant.vision` eagerly at the top (see
-   `tests/test_chromium_click_path.py`, `tests/test_ocr_click.py`).
+### 15.5 Continuation — DONE except building §14 items
 
-### 15.5 Suggested continuation order
-
-1. ~~Confirm **D8/O2** with a clean restart + `probe_click.py`~~ — DONE
-   2026-09-17 (see D8 status; O2 end state verified by elimination).
-2. ~~Write the two missing regression files~~ — DONE 2026-09-17:
-   `tests/test_destructive_requests.py` (7 tests, D4 matrix + hooks) and
-   `tests/test_chromium_click_path.py` (19 tests: classification, nudge,
-   physical click, every-repeat stall, chrome-guard, triggers, scan entries).
-   Suite: **796 green**.
-3. Then build from section 14: **S3 dry-run** (safe testing) and **S5 `vave
-   doctor`** (capability report) are the smallest, highest-value next steps.
-4. O1 (phi4 RAM) is still blocked on free RAM (5.1GB free 2026-09-17, needs
-   ~8GB) — user action, no code. O4 done (`take_screenshot(analyze=…)`).
+Items 1, 2 and 4 finished 2026-09-17 (D8/O2 verified, both regression files
+in the suite at 796 green, O1 still user-blocked, O4 implemented). Item 3
+stands: build **S3 dry-run** then **S5 `vave doctor`** from section 14.

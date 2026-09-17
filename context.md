@@ -203,6 +203,49 @@ Driven by `plan.md`. Completed:
 
 *(Note: Phase 7 Proactive AI & Morning Briefings omitted per user directive.)*
 
+### Reliability Sprint (2026-09-16 → 17, commits `9d8ee72` → `22fa84d`)
+Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
+- [x] **Routing fast-paths**: `_LIST_WINDOWS_PATTERN` ("list windows" voice),
+  weather fast-path, notes-before-app ordering (Phase 6 items 6.2 + most of
+  6.3 — `_LOCK_PATTERN` already anchored; bare-`time` alternative and the
+  6.1 return-code check plus 6.4 error snippet remain open).
+- [x] **3-tier model routing**: fast `qwen2.5:3b` / smart `qwen3:4b` / deep
+  (RAM-gated), rule classifier, escalation with strikes (see §6).
+- [x] **Safety guard for natural language**: `guard.is_destructive_request`
+  blocks "delete all my files" AND hypothetical phrasing ("what would you do
+  if I said…") before the model; `tests/test_destructive_requests.py`.
+- [x] **Vision that sees**: `take_screenshot(analyze=…)` auto-describes via
+  moondream; RapidOCR tier in `find_text_on_screen` (no Tesseract needed);
+  Chromium scans list OCR page text; toolbar excluded from Chromium scans;
+  chrome-guard reroutes to OCR; deterministic chaining (no per-step LLM call).
+- [x] **Launcher rework**: real Store AppID lookup, hidden PowerShell launch,
+  generic browser fallback, longer UWP waits.
+- [x] **Regression files**: `tests/test_chromium_click_path.py` (19),
+  `tests/test_ocr_click.py` (14). Suite: **796 green**.
+- [x] **Proven live**: model used OCR tools, clicked real coordinates, no
+  identical loop; Sohail profile verified active by elimination.
+
+### Agent Traps (learned hard — read before debugging pointer/vision/launcher)
+1. A running GUI keeps old code: retests must quit `vave_gui.py` fully.
+2. Venv only: `venv\Scripts\python.exe`. PowerShell 5.1: no `&&`, no `rg`;
+   `$_` gets mangled inside `powershell -Command "…"` — write script files.
+3. `uiautomation` sets process DPI awareness on import (1536x864 → 1920x1080
+   at 125% scaling); it imports before `pyautogui` clicks, so coordinates
+   agree — do not reorder without thinking.
+4. Chromium is a special case everywhere: console titles contain anything
+   (substring match hit a terminal), page content is invisible until nudged,
+   `InvokePattern` no-ops on web elements. Prefer OCR for page text.
+5. `mock.patch.dict(sys.modules, …)` restores a snapshot on exit, deleting
+   everything imported inside the region. If `assistant.vision`
+   (pytesseract → numpy, whose C extension cannot init twice) is first
+   imported there, later imports explode with `ImportError: cannot load module
+   more than once per process` — surfacing as phantom click failures. Rule:
+   test files combining it with lazy-importing mocks must
+   `import assistant.vision` eagerly at the top.
+6. Never run `python main.py` bare (mic loop). `data/`, `logs/`,
+   `config.json` are user state — tests use `VAVE_DATA_DIR`.
+7. `guard.is_destructive_request` in `ask_ai`/`run_task_step` is load-bearing.
+
 ---
 
 ## 4. Current Operational Stage
@@ -210,7 +253,7 @@ Driven by `plan.md`. Completed:
 > **CURRENT STATUS: STAGES 12-14 (UPGRADE PLAN PHASES 0-5) COMPLETED**
 
 - **Verification Status**:
-  - **756 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
+  - **796 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -225,8 +268,9 @@ Driven by `plan.md`. Completed:
 
 ## 5. Next Steps & Future Roadmap
 
-1. **Phase 6 — Daily Reliability**: App launch failure reporting, window
-   management exposure, command routing tightening, error feedback.
+1. **Phase 6 remainders** — still open: 6.1 subprocess return-code check in
+   `open_app`, 6.3 bare-`time` alternative removal, 6.4 command snippet in
+   error speech. (6.2 list-windows voice + notes/app ordering done — §3.)
 2. **Phase 7 — Service Integrations**: Google Calendar/Email fast-path
    commands, Telegram sync verification, secret store credential migration.
 3. **Phase 8 — Control Plane Enhancements**: Network device discovery,
