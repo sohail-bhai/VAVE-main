@@ -290,19 +290,17 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 
 ## 5. Next Steps & Future Roadmap
 
-1. **Phase 6 — DONE 2026-09-17** (remainders implemented + tested).
-2. **Phase 7 — Service Integrations**: Google Calendar/Email fast-path
-   commands, Telegram sync verification, secret store credential migration.
-3. **Phase 8 — Control Plane Enhancements**: Network device discovery,
-   proactive suggestions engine, continuous hands-free wake word mode,
-   proactive notifications to phone.
+Future work now follows [`docs/jarvis-autonomy-roadmap.md`](docs/jarvis-autonomy-roadmap.md).
+Next gate is **Phase 0: repair/benchmark Ollama on current RX 7600 XT**, then
+build deterministic evaluations before the unified grounded world model.
 
 ---
 
 ## 6. Multi-Model Routing (Session 2026-09-15)
 
 ### What Was Built
-- 3-tier model routing: fast (qwen2.5:3b) → smart (qwen3:4b) → deep (phi4)
+- 3-tier model routing, now configured as fast (`qwen2.5:7b`) → smart
+  (`qwen2.5:14b`) → deep critic (`deepseek-r1:14b`)
 - Rule-based complexity classifier in `select_model()` (instant, no model call)
 - Conversational query suppression in `select_tools()` — no tool calls for
   greetings, math, jokes, knowledge questions
@@ -311,19 +309,17 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 - RAM gating for phi4 (`_can_run_deep()` checks >=6GB free)
 - Voice commands: "switch to fast/smart/deep/auto"
 
-### Models on This Hardware (RTX 3050 4GB VRAM + 16GB RAM)
-| Model | Size | Where | Speed | Status |
-|---|---|---|---|---|
-| qwen2.5:3b | 1.9GB | GPU | 3-5s | Active, fast tier |
-| qwen3:4b | 2.5GB | Partial GPU | 13-67s | Active, smart tier |
-| phi4 | 9.1GB | CPU only | 20-60s | Pulled, CAN'T LOAD (5GB free, needs ~8GB) |
-| qwen3.5:9b | 6.6GB | Crashes GPU | 48s+ CPU | Unused |
+### Current Hardware and Models (verified 2026-11-03)
 
-### phi4 RAM Issue — ON HOLD (locked as future implementation, 2026-09-17)
-- Model is downloaded (9.1GB) but fails to load with only 5GB free RAM
-- Needs ~8GB free for weights + KV cache; the RAM situation is not changing
-- Do not revisit until hardware changes. When it does: free RAM, then set
-  `"llm_model_deep": "phi4"` (`""` = disabled); `_can_run_deep()` gates it
+- Ryzen 7 7700 (8C/16T), 16 GB DDR5-5200, Windows 11 Pro.
+- Radeon RX 7600 XT with 16 GB dedicated VRAM; Ollama ROCm detects `gfx1102`
+  and 15.8 GiB available.
+- No default physical microphone; typed/GUI/API/Telegram operation is primary.
+- F: contains complete blobs/manifests for `qwen2.5:7b`, `qwen2.5:14b`, and
+  `deepseek-r1:14b` (~22.7 GB total).
+- Current Ollama 0.40.13 server rejects all three as bad manifests while
+  starting through the C: junction. Blobs exist; do not delete them. Repair
+  and benchmark through roadmap Phase 0.
 
 ### TODO (Next Session)
 1. ✅ Section 15 defects resolved with solutions
@@ -344,7 +340,8 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
    review-driven fixer, lessons journal (`assistant/coding_workflow.py`)
    — suite **1001 green**, smoke 11/11
 10. Live voice test with `python main.py` (YOU need to run this)
-11. ✅ S5 `vave doctor` and S3 dry-run built; next roadmap choice required.
+11. ✅ S5 `vave doctor` and S3 dry-run built; next work is autonomy roadmap
+    Phase 0 (Ollama repair and model benchmarks).
 
 ### Git State
 - Branch: `sohail`, remote: `https://github.com/sohail-bhai/VAVE-main.git`

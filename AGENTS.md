@@ -74,6 +74,7 @@ Primary user-facing capabilities:
 - `assistant/guard.py`, `assistant/confirm.py`, `assistant/audit.py`, `assistant/overwatch/`: the safety layer. Preserve these.
 - Dry-run is context/process scoped through `assistant/call_context.py` and enforced first in `guard.call()`. Safe reads may execute; consequential tools simulate; hard-denies stay blocked; secrets are never resolved. Direct service boundaries (Workspace, Home Assistant, remote files, coding/project/self-evolution) must preserve this invariant.
 - `docs/control-plane.md`: control plane architecture, endpoints and limitations.
+- `docs/jarvis-autonomy-roadmap.md`: active source of truth for future Jarvis-level autonomy work. Follow phases and acceptance gates in order; Phase 0 runtime/model readiness is next.
 - `config.json`: user-editable runtime config.
 - `data/notes.txt`: user notes data file.
 - `requirements.txt`: Python dependencies.
@@ -201,6 +202,14 @@ Dependencies include:
 PyAudio can be difficult to install on Windows. The README suggests `pipwin install pyaudio` if normal installation fails.
 
 Ollama models MUST always be stored on F: drive (`F:\ollama\models`), never on C: drive. The environment variable `OLLAMA_MODELS` is set to `F:\ollama\models` for the user.
+
+Current hardware (verified 2026-11-03): AMD Ryzen 7 7700 (8C/16T),
+16 GB DDR5-5200, AMD Radeon RX 7600 XT with 16 GB dedicated VRAM
+(`gfx1102`, detected by Ollama ROCm), Windows 11 Pro. There is no usable
+default physical microphone; voice must remain optional. F: contains
+`qwen2.5:7b`, `qwen2.5:14b`, and `deepseek-r1:14b` blobs/manifests, but the
+current Ollama server rejects them as bad manifests while starting through the
+C: junction. Do not delete the blobs; follow roadmap Phase 0 repair steps.
 
 ## Verification
 

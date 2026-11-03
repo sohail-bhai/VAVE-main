@@ -1,5 +1,10 @@
 # VAVE Project Powerhouse & Self-Evolution Plan
 
+> **Next implementation source of truth:**
+> [`docs/jarvis-autonomy-roadmap.md`](docs/jarvis-autonomy-roadmap.md).
+> Existing phases below record completed foundation work; new autonomous-agent
+> development follows roadmap Phase 0 onward.
+
 This document is the single source of truth for transforming VAVE into an autonomous **Project Powerhouse & Self-Evolving AI Project Manager**.
 
 ---
