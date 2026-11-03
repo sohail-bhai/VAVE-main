@@ -15,6 +15,13 @@ import threading
 
 _call_origin = contextvars.ContextVar("call_origin", default="voice")
 
+# Rehearsal state is context-scoped for one request. A process-wide override
+# supports `--dry-run` for GUI/server modes whose worker threads are not all
+# created through spawn_thread().
+_dry_run = contextvars.ContextVar("dry_run", default=False)
+_process_dry_run = False
+_process_dry_run_lock = threading.Lock()
+
 # Set when untrusted content enters the task, with a plain-language note of
 # where it came from so a confirmation can say so.
 _untrusted_source = contextvars.ContextVar("untrusted_source", default=None)
@@ -47,6 +54,30 @@ def get_origin() -> str:
 
 def reset_origin(token: contextvars.Token) -> None:
     _call_origin.reset(token)
+
+
+def set_dry_run(active: bool = True) -> contextvars.Token:
+    """Enable or disable rehearsal mode for current context."""
+    return _dry_run.set(bool(active))
+
+
+def reset_dry_run(token: contextvars.Token) -> None:
+    _dry_run.reset(token)
+
+
+def set_process_dry_run(active: bool) -> bool:
+    """Set process-wide rehearsal mode and return previous value."""
+    global _process_dry_run
+    with _process_dry_run_lock:
+        previous = _process_dry_run
+        _process_dry_run = bool(active)
+        return previous
+
+
+def is_dry_run() -> bool:
+    with _process_dry_run_lock:
+        process_enabled = _process_dry_run
+    return bool(_dry_run.get() or process_enabled)
 
 def spawn_thread(target, args=(), kwargs=None, daemon=True, name=None) -> threading.Thread:
     if kwargs is None:

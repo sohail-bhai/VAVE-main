@@ -519,7 +519,13 @@ def _telegram_worker():
                                         pm = ProjectManager()
                                         res = pm.run_managed_project(g_text)
                                         cycles = res.get("cycles_run", 0)
-                                        if res.get("ok"):
+                                        if res.get("dry_run"):
+                                            send_telegram_message(
+                                                token,
+                                                chat_id,
+                                                f"🧪 Managed Project Rehearsal Completed\n\n{res.get('summary')}",
+                                            )
+                                        elif res.get("ok"):
                                             send_telegram_message(
                                                 token,
                                                 chat_id,
@@ -540,10 +546,17 @@ def _telegram_worker():
                                         )
 
                                 if _start_autonomy_job(_run_bg_project, "telegram-project"):
+                                    from assistant import guard
+
+                                    dispatched = (
+                                        "🧪 Managed Project Rehearsal Dispatched"
+                                        if guard.dry_run_active()
+                                        else "🚀 Managed Project Dispatched"
+                                    )
                                     send_telegram_message(
                                         token,
                                         chat_id,
-                                        f"🚀 Managed Project Dispatched\nGoal: {goal_text}\n\nSynthesizing VisionSpec, orchestrating coding engines, and running critique loops...",
+                                        f"{dispatched}\nGoal: {goal_text}\n\nSynthesizing VisionSpec and execution plan...",
                                     )
                                 else:
                                     send_telegram_message(
@@ -561,6 +574,18 @@ def _telegram_worker():
 
                             if text_lower.startswith("/approve_gap "):
                                 gap_id_target = text_clean.split(" ", 1)[1].strip()
+                                from assistant import guard
+                                if guard.dry_run_active():
+                                    from assistant.self_evolution import preview_capability
+
+                                    preview = preview_capability(gap_id_target)
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        preview.get("message")
+                                        or f"❌ {preview.get('error', 'Gap not found.')}",
+                                    )
+                                    continue
                                 if _autonomy_lock.locked():
                                     send_telegram_message(
                                         token,
@@ -590,7 +615,13 @@ def _telegram_worker():
                                     def _run_bg_impl(gid=gap_id_target):
                                         try:
                                             impl_res = implement_capability(gid)
-                                            if impl_res.get("ok"):
+                                            if impl_res.get("dry_run"):
+                                                send_telegram_message(
+                                                    token,
+                                                    chat_id,
+                                                    f"🧪 Self-Evolution Rehearsal for {gid}:\n{impl_res.get('message')}",
+                                                )
+                                            elif impl_res.get("ok"):
                                                 send_telegram_message(
                                                     token,
                                                     chat_id,
@@ -618,6 +649,18 @@ def _telegram_worker():
                                 continue
 
                             if text_lower in ["/approve_all_gaps", "approve all gaps"]:
+                                from assistant import guard
+                                if guard.dry_run_active():
+                                    from assistant.self_evolution import list_capability_gaps
+
+                                    pending = list_capability_gaps(status="pending")
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        "🧪 DRY RUN: would approve and implement "
+                                        f"{len(pending)} pending gap(s). No registry or files changed.",
+                                    )
+                                    continue
                                 if _autonomy_lock.locked():
                                     send_telegram_message(
                                         token,
@@ -640,11 +683,17 @@ def _telegram_worker():
                                     def _run_bg_all_impl():
                                         try:
                                             res = implement_all_approved_gaps()
-                                            send_telegram_message(
-                                                token,
-                                                chat_id,
-                                                f"Batch evolution completed: {res.get('successful')}/{res.get('total')} succeeded."
-                                            )
+                                            if res.get("dry_run"):
+                                                message = (
+                                                    "Batch evolution rehearsal completed: "
+                                                    f"{res.get('total')} approved gap(s) previewed; no changes made."
+                                                )
+                                            else:
+                                                message = (
+                                                    "Batch evolution completed: "
+                                                    f"{res.get('successful')}/{res.get('total')} succeeded."
+                                                )
+                                            send_telegram_message(token, chat_id, message)
                                         except Exception:
                                             logger.exception("Batch evolution execution failed")
                                             send_telegram_message(
@@ -665,6 +714,14 @@ def _telegram_worker():
 
                             if text_lower.startswith("/reject_gap "):
                                 gap_id_target = text_clean.split(" ", 1)[1].strip()
+                                from assistant import guard
+                                if guard.dry_run_active():
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        f"🧪 DRY RUN: would reject gap {gap_id_target}. Registry unchanged.",
+                                    )
+                                    continue
                                 from assistant.self_evolution import reject_gap
                                 res = reject_gap(gap_id_target)
                                 send_telegram_message(
@@ -691,8 +748,16 @@ def _telegram_worker():
                                 parts = text_lower.split(" ")
                                 if len(parts) >= 2:
                                     approved = text_lower.startswith("/yes")
-                                    confirm.resolve(parts[1], approved)
-                                    send_telegram_message(token, chat_id, f"Confirmation received ({parts[1]}).")
+                                    from assistant import guard
+                                    if guard.dry_run_active():
+                                        send_telegram_message(
+                                            token,
+                                            chat_id,
+                                            f"🧪 DRY RUN: would {'approve' if approved else 'deny'} confirmation {parts[1]}. No decision recorded.",
+                                        )
+                                    else:
+                                        confirm.resolve(parts[1], approved)
+                                        send_telegram_message(token, chat_id, f"Confirmation received ({parts[1]}).")
                                 continue
                             if text_lower == "/kill":
                                 from assistant.safety_stop import hard_stop

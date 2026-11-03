@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from assistant.self_evolution.auto_implementer import (
     implement_all_approved_gaps,
     implement_capability,
+    preview_capability,
 )
 from assistant.self_evolution.eod_reviewer import (
     approve_gap,
@@ -75,6 +76,7 @@ __all__ = [
     "reject_gap",
     "implement_capability",
     "implement_all_approved_gaps",
+    "preview_capability",
     "record_capability_gap_tool",
     "list_capability_gaps_tool",
     "approve_and_implement_gap_tool",

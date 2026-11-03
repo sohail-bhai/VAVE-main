@@ -36,6 +36,8 @@ class VaveTestCase(unittest.TestCase):
         # Clear context taint and origin
         call_context.clear_taint()
         self._origin_token = call_context.set_origin("voice")
+        self._dry_run_token = call_context.set_dry_run(False)
+        self._previous_process_dry_run = call_context.set_process_dry_run(False)
 
         # Point ChromaDB and drive collection at isolated temp directory
         memory.reset_chroma(self.temp_dir)
@@ -58,6 +60,9 @@ class VaveTestCase(unittest.TestCase):
         guard._bus = self._orig_guard_bus
         audit._audit_path = self._orig_audit_path
         call_context.clear_taint()
+        call_context.set_process_dry_run(self._previous_process_dry_run)
+        if hasattr(self, "_dry_run_token"):
+            call_context.reset_dry_run(self._dry_run_token)
         if hasattr(self, "_origin_token"):
             call_context.reset_origin(self._origin_token)
 

@@ -639,6 +639,22 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                           folder: str = Form(""), overwrite: bool = Form(False)):
         """Take a file from the phone and put it in a shared folder."""
         _writing_allowed()
+        from assistant import guard
+        if guard.dry_run_active():
+            device = getattr(request.state, "device", None)
+            plane.record(
+                f"Rehearsed receiving {file.filename} from "
+                f"{device.name if device else 'this computer'}.",
+                result="dry_run",
+            )
+            return {
+                "ok": True,
+                "dry_run": True,
+                "name": file.filename,
+                "folder": folder,
+                "overwrite": overwrite,
+                "summary": "DRY RUN: upload bytes were not written.",
+            }
         saved = _files_or_404(shared_files.save_upload, folder, file.filename,
                               file.file, overwrite)
 
@@ -651,11 +667,28 @@ def create_app(control=None, executor=None, security=None, notifier=None):
     @app.post("/api/files/folder", status_code=201, tags=["files"])
     def create_folder(request_body: NewFolderRequest):
         _writing_allowed()
+        from assistant import guard
+        if guard.dry_run_active():
+            return {
+                "ok": True,
+                "dry_run": True,
+                "path": request_body.path,
+                "summary": "DRY RUN: folder was not created.",
+            }
         return _files_or_404(shared_files.make_folder, request_body.path)
 
     @app.post("/api/files/move", tags=["files"])
     def move_file(request_body: MoveFileRequest):
         _writing_allowed()
+        from assistant import guard
+        if guard.dry_run_active():
+            return {
+                "ok": True,
+                "dry_run": True,
+                "source": request_body.source,
+                "destination": request_body.destination,
+                "summary": "DRY RUN: file was not moved.",
+            }
         return _files_or_404(shared_files.move, request_body.source,
                              request_body.destination)
 
@@ -667,6 +700,21 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                 status_code=403,
                 detail="Deleting from a phone is switched off. "
                        "Set files_allow_delete in config.json.")
+
+        from assistant import guard
+        if guard.dry_run_active():
+            device = getattr(request.state, "device", None)
+            plane.record(
+                f"Rehearsed deleting {Path(path).name} at the request of "
+                f"{device.name if device else 'this computer'}.",
+                result="dry_run",
+            )
+            return {
+                "ok": True,
+                "dry_run": True,
+                "path": path,
+                "summary": "DRY RUN: file was not deleted.",
+            }
 
         result = _files_or_404(shared_files.delete, path)
         device = getattr(request.state, "device", None)
@@ -698,6 +746,14 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         body.update(extra)
         return body
 
+    def _dry_result(value):
+        return isinstance(value, dict) and bool(value.get("dry_run"))
+
+    def _google_live_for(value):
+        # A rehearsal must not load or refresh OAuth credentials merely to
+        # decorate its response.
+        return False if _dry_result(value) else _google_live()
+
     def _fingerprint(action, arguments):
         """Bind an approval to one specific action.
 
@@ -720,6 +776,10 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         way out, so one approval is one action. Otherwise returns the pending
         approval for the client to show.
         """
+        from assistant import guard
+        if guard.dry_run_active():
+            return None
+
         resource = _fingerprint(action, arguments)
 
         for permission in plane.list_permissions(active_only=True):
@@ -749,6 +809,15 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         returns immediately and the status endpoint reports the outcome.
         """
         from assistant.workspace import auth as workspace_auth
+        from assistant import guard
+
+        if guard.dry_run_active():
+            return {
+                "state": workspace_auth.NEEDS_AUTHORIZATION,
+                "detail": "DRY RUN: would open Google authorization; no browser or token changed.",
+                "connected": False,
+                "dry_run": True,
+            }
 
         state = workspace_auth.connection_state()
         if state["state"] == workspace_auth.LIVE:
@@ -774,6 +843,16 @@ def create_app(control=None, executor=None, security=None, notifier=None):
     def google_disconnect():
         """Forget this computer's Google token. The account is untouched."""
         from assistant.workspace import auth as workspace_auth
+        from assistant import guard
+
+        if guard.dry_run_active():
+            has_token = workspace_auth.has_token()
+            return {
+                "connected": has_token,
+                "state": workspace_auth.LIVE if has_token else workspace_auth.NEEDS_AUTHORIZATION,
+                "detail": "DRY RUN: would disconnect Google; token remains unchanged.",
+                "dry_run": True,
+            }
 
         state = workspace_auth.disconnect()
         plane.record("Disconnected your Google account from this computer.")
@@ -807,8 +886,12 @@ def create_app(control=None, executor=None, security=None, notifier=None):
         try:
             result = _google().execute_capability(
                 "google.gmail.draft", to=body.to, subject=body.subject, body=body.body)
-            plane.record(f"Drafted an email to {body.to}.")
-            return {"live": _google_live(), "draft": result}
+            plane.record(
+                f"Rehearsed drafting an email to {body.to}."
+                if _dry_result(result)
+                else f"Drafted an email to {body.to}."
+            )
+            return {"live": _google_live_for(result), "draft": result}
         except ValueError as err:
             raise HTTPException(status_code=400, detail=str(err))
 
@@ -830,8 +913,13 @@ def create_app(control=None, executor=None, security=None, notifier=None):
 
         try:
             result = _google().execute_capability("google.gmail.send", **arguments)
-            plane.record(f"Sent an email to {body.to}.", result="sent")
-            return {"live": _google_live(), "status": "sent", "message": result}
+            dry = _dry_result(result)
+            plane.record(
+                f"Rehearsed sending an email to {body.to}."
+                if dry else f"Sent an email to {body.to}.",
+                result="dry_run" if dry else "sent",
+            )
+            return {"live": _google_live_for(result), "status": "dry_run" if dry else "sent", "message": result}
         except ValueError as err:
             raise HTTPException(status_code=400, detail=str(err))
 
@@ -857,24 +945,37 @@ def create_app(control=None, executor=None, security=None, notifier=None):
             start_iso=body.start_time_iso or "",
             end_iso=body.start_time_iso or "") if body.start_time_iso else []
         result = _google().execute_capability("google.calendar.write", **arguments)
-        plane.record(f"Added \"{body.summary}\" to your calendar.", result="created")
-        return {"live": _google_live(), "event": result, "conflicts": conflicts}
+        dry = _dry_result(result)
+        plane.record(
+            f"Rehearsed adding \"{body.summary}\" to your calendar."
+            if dry else f"Added \"{body.summary}\" to your calendar.",
+            result="dry_run" if dry else "created",
+        )
+        return {"live": _google_live_for(result), "event": result, "conflicts": conflicts}
 
     @app.post("/api/google/docs", status_code=201, tags=["google"])
     def google_create_doc(body: NewDocRequest):
         """A new document in your own Drive. Nothing is shared by creating it."""
         result = _google().execute_capability(
             "google.docs.create", title=body.title, content=body.content)
-        plane.record(f"Created the document \"{body.title}\".")
-        return {"live": _google_live(), "document": result}
+        plane.record(
+            f"Rehearsed creating the document \"{body.title}\"."
+            if _dry_result(result)
+            else f"Created the document \"{body.title}\"."
+        )
+        return {"live": _google_live_for(result), "document": result}
 
     @app.post("/api/google/slides", status_code=201, tags=["google"])
     def google_create_slides(body: NewDeckRequest):
         """Turn an outline into a presentation."""
         result = _google().execute_capability(
             "google.slides.create", title=body.title, slides=body.slides)
-        plane.record(f"Created the presentation \"{body.title}\".")
-        return {"live": _google_live(), "presentation": result}
+        plane.record(
+            f"Rehearsed creating the presentation \"{body.title}\"."
+            if _dry_result(result)
+            else f"Created the presentation \"{body.title}\"."
+        )
+        return {"live": _google_live_for(result), "presentation": result}
 
     @app.post("/api/google/drive/upload", status_code=201, tags=["google"])
     def google_upload(body: DriveUploadRequest, request: Request):
@@ -893,8 +994,12 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                 "detail": "Approve this, then upload it again."})
 
         result = _google().execute_capability("google.drive.write", **arguments)
-        plane.record(f"Uploaded \"{body.name}\" to your Google Drive.")
-        return {"live": _google_live(), "file": result}
+        plane.record(
+            f"Rehearsed uploading \"{body.name}\" to your Google Drive."
+            if _dry_result(result)
+            else f"Uploaded \"{body.name}\" to your Google Drive."
+        )
+        return {"live": _google_live_for(result), "file": result}
 
     @app.post("/api/google/drive/sync", tags=["google"])
     def google_drive_sync(request: Request, full_reindex: bool = False, limit: int = 50):
@@ -917,8 +1022,12 @@ def create_app(control=None, executor=None, security=None, notifier=None):
 
         res = _google().execute_capability(
             "google.drive.sync", full_reindex=full_reindex, limit=limit)
-        plane.record("Synchronized Google Drive files into semantic index.")
-        return {"live": _google_live(), "sync": res}
+        plane.record(
+            "Rehearsed synchronizing Google Drive files."
+            if _dry_result(res)
+            else "Synchronized Google Drive files into semantic index."
+        )
+        return {"live": _google_live_for(res), "sync": res}
 
     @app.get("/api/google/drive/semantic-search", tags=["google"])
     def google_drive_semantic_search(query: str, limit: int = 5, mime_type: str = None):
@@ -943,8 +1052,12 @@ def create_app(control=None, executor=None, security=None, notifier=None):
                 "detail": "Approve this, then export it again."})
 
         res = _google().execute_capability("google.drive.export", **arguments)
-        plane.record(f"Exported and indexed \"{body.name}\" to Google Drive.")
-        return {"live": _google_live(), "export": res}
+        plane.record(
+            f"Rehearsed exporting \"{body.name}\" to Google Drive."
+            if _dry_result(res)
+            else f"Exported and indexed \"{body.name}\" to Google Drive."
+        )
+        return {"live": _google_live_for(res), "export": res}
 
     # -- secrets -----------------------------------------------------------
     # Values go in and are never handed back. Agents receive secret://name and
@@ -1235,8 +1348,13 @@ def create_app(control=None, executor=None, security=None, notifier=None):
 
         result = home_module.control_device(
             arguments["entity_id"], arguments["action"], arguments["value"])
-        plane.record(f"Controlled home device {arguments['entity_id']}.", result=result)
-        return {"live": True, "status": "done", "result": result}
+        dry = str(result).startswith("DRY RUN:")
+        plane.record(
+            f"Rehearsed controlling home device {arguments['entity_id']}."
+            if dry else f"Controlled home device {arguments['entity_id']}.",
+            result="dry_run" if dry else result,
+        )
+        return {"live": not dry, "status": "dry_run" if dry else "done", "result": result}
 
     # -- emergency stop ----------------------------------------------------
 

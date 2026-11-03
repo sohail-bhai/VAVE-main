@@ -439,6 +439,9 @@ credentials. Back it up separately.
 # Read-only subsystem diagnostics (JSON is available with --json)
 python main.py --doctor
 
+# Rehearse one goal: safe reads may run, consequential actions are simulated
+python main.py --text "send the weekly report email" --dry-run --no-speech
+
 # Run isolated smoke test (stubs desktop side effects)
 python main.py --smoke-test
 
@@ -448,6 +451,40 @@ python main.py --text "what time is it" --no-speech
 `python main.py --doctor --repair-safe` additionally repairs validated config,
 missing runtime directories, and stale Telegram locks. It creates a local
 `config.json.bak`; review diagnostics before using repair mode.
+
+#### 🧪 Dry Run / Rehearsal Mode
+
+Use a one-request prefix:
+
+```text
+rehearse send the weekly report email
+dry run implement login and run tests
+rehearse that
+```
+
+Or toggle persistent mode by voice/text:
+
+```text
+enable dry run mode
+is dry run mode enabled
+disable dry run mode
+```
+
+Persistent config key is `"dry_run_enabled": false`. While active:
+
+- Safe read-only tools may execute so VAVE can inspect and plan.
+- Sensitive, destructive, unknown, and outward-reaching tools return redacted
+  `DRY RUN` results without calling underlying action.
+- Hard-denied operations remain blocked; rehearsal never weakens invariants.
+- Control-plane policy approvals and secret resolution are skipped.
+- Coding workflows and Manager Mode may synthesize plans, but do not launch
+  coding engines, write files, execute tests, or create commits.
+- Self-evolution previews do not change gap status. Google Workspace writes,
+  Home Assistant controls, and remote file upload/move/delete are simulated.
+- Audit/timeline bookkeeping still records simulation so review remains
+  possible. Emergency Stop remains real and always available.
+
+Natural-language planning still needs a configured local Ollama model.
 
 ---
 

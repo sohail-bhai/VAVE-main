@@ -220,8 +220,12 @@ class ProjectsPage(ctk.CTkScrollableFrame):
         self.launch_btn.configure(state="normal", text="🚀 Launch Project")
 
         ok = result.get("ok", False)
-        status_text = "APPROVED" if ok else "NEEDS ATTENTION"
-        status_color = theme.SUCCESS if ok else theme.DANGER
+        if result.get("dry_run"):
+            status_text = "REHEARSAL"
+            status_color = theme.WARNING
+        else:
+            status_text = "APPROVED" if ok else "NEEDS ATTENTION"
+            status_color = theme.SUCCESS if ok else theme.DANGER
         self.status_badge.configure(text=status_text, text_color=status_color)
 
         summary = result.get("summary", "")
@@ -379,6 +383,14 @@ class ProjectsPage(ctk.CTkScrollableFrame):
         if not gap:
             self._refresh_gaps()
             return
+        from assistant import guard
+        if guard.dry_run_active():
+            from assistant.self_evolution import preview_capability
+
+            preview = preview_capability(gap_id)
+            logger.info("%s", preview.get("message", preview.get("error", "")))
+            self._refresh_gaps()
+            return
         if gap.status != "approved":
             approved = approve_gap(gap_id)
             if not approved.get("ok"):
@@ -406,6 +418,13 @@ class ProjectsPage(ctk.CTkScrollableFrame):
         self._refresh_gaps()
 
     def _trigger_reject_gap(self, gap_id: str):
+        from assistant import guard
+        if guard.dry_run_active():
+            logger.info(
+                "DRY RUN: would reject capability gap %s. Registry unchanged.",
+                gap_id,
+            )
+            return
         from assistant.self_evolution import reject_gap
         reject_gap(gap_id)
         self._refresh_gaps()

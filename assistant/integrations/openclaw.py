@@ -84,6 +84,21 @@ def run_openclaw(
             "error": "OpenClaw subcommand is empty or invalid.",
         }
 
+    from assistant import guard
+
+    if guard.dry_run_active():
+        work_dir = os.path.abspath(directory or os.getcwd())
+        return {
+            "ok": True,
+            "dry_run": True,
+            "output": (
+                f"DRY RUN: would run OpenClaw subcommand '{subcommand}' with "
+                f"{len(args or [])} argument(s) in {work_dir}. No process was started."
+            ),
+            "exit_code": 0,
+            "error": "",
+        }
+
     cli = find_openclaw_cli()
     if not cli:
         return {

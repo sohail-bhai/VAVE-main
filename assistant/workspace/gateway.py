@@ -18,6 +18,19 @@ from assistant.workspace.slides import create_google_slides
 
 logger = logging.getLogger(__name__)
 
+_MUTATING_CAPABILITIES = frozenset({
+    "google.drive.write",
+    "google.drive.sync",
+    "google.drive.export",
+    "google.gmail.draft",
+    "google.gmail.send",
+    "google.calendar.write",
+    "google.docs.create",
+    "google.docs.append",
+    "google.sheets.write",
+    "google.slides.create",
+})
+
 SERVICE_LABELS = {
     "drive": "Google Drive",
     "gmail": "Gmail",
@@ -100,6 +113,18 @@ class WorkspaceGateway:
         """Executes a registered capability with provided keyword arguments."""
         if capability not in self._capabilities:
             raise ValueError(f"Unknown Google Workspace capability: '{capability}'. Supported: {list(self._capabilities.keys())}")
+
+        from assistant import guard
+        if guard.dry_run_active() and capability in _MUTATING_CAPABILITIES:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "capability": capability,
+                "summary": (
+                    f"DRY RUN: would execute {capability} with fields "
+                    f"{sorted(kwargs)}. No Google Workspace data changed."
+                ),
+            }
 
         handler = self._capabilities[capability]
         # Arguments can carry the content of a mail or a document, so log the

@@ -144,6 +144,7 @@
     "api_port": 8765,
     "wake_word_enabled": true,
     "speech_enabled": false,
+    "dry_run_enabled": false,
     "ollama_num_gpu": null,
     "opencode_only_for_complex": true
 }

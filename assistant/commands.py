@@ -6,6 +6,8 @@ import urllib.parse
 
 logger = logging.getLogger(__name__)
 
+_last_command = ""
+
 from assistant.speech import speak, listen
 from assistant.config import get_setting, update_setting
 from assistant import guard
@@ -28,6 +30,41 @@ from assistant.system_tasks import (
 from assistant.notes import add_note, read_notes, clear_notes
 from assistant.ai_brain import ask_ai
 from assistant.dev_tools import git_auto_commit_and_push, deep_test_project, scrape_project_ideas, scaffold_code
+
+
+_DRY_RUN_ENABLE_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:enable|turn\s+on|start)\s+(?:dry[ -]?run|rehearsal)\s+mode\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+_DRY_RUN_DISABLE_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:disable|turn\s+off|stop)\s+(?:dry[ -]?run|rehearsal)\s+mode\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+_DRY_RUN_STATUS_PATTERN = re.compile(
+    r"^\s*(?:is\s+)?(?:dry[ -]?run|rehearsal)\s+mode(?:\s+enabled|\s+on)?\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+_DRY_RUN_REQUEST_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:rehearse|dry[ -]?run|simulate|preview)\s+(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _handle_dry_run_control(command):
+    """Handle persistent toggle/status commands. None means not a control."""
+    if _DRY_RUN_ENABLE_PATTERN.match(command):
+        update_setting("dry_run_enabled", True)
+        speak("Dry run mode enabled. Consequential actions will be simulated.")
+        return True
+    if _DRY_RUN_DISABLE_PATTERN.match(command):
+        update_setting("dry_run_enabled", False)
+        speak("Dry run mode disabled. Normal guarded execution is restored.")
+        return True
+    if _DRY_RUN_STATUS_PATTERN.match(command):
+        enabled = guard.dry_run_active()
+        speak(f"Dry run mode is {'enabled' if enabled else 'disabled'}.")
+        return True
+    return None
 
 def _record_usage(pattern_name: str, category: str = "general"):
     """Records recognized command patterns for usage frequency and personalization."""
@@ -1129,10 +1166,33 @@ def execute_command(command, auto_confirm=False):
     Main command router for VAVE Version 1.2.
     Tries every fast-path handler first. Unknown commands fall through to the AI brain.
     """
+    global _last_command
+    command = str(command or "").strip()
+
+    controlled = _handle_dry_run_control(command)
+    if controlled is not None:
+        return controlled
+
+    rehearsal = _DRY_RUN_REQUEST_PATTERN.match(command)
+    if rehearsal:
+        request = rehearsal.group(1).strip()
+        if request.lower() in ("that", "this", "the last command"):
+            request = _last_command
+        if not request:
+            speak("There is no earlier command to rehearse yet.")
+            return True
+        token = call_context.set_dry_run(True)
+        try:
+            speak("Dry run. I will plan this without taking consequential action.")
+            return execute_single_command(request, auto_confirm=True)
+        finally:
+            call_context.reset_dry_run(token)
+
     if is_quit_command(command):
         speak(f"Goodbye {get_setting('user_name', 'Sir')}.")
         return False
 
+    _last_command = command
     return execute_single_command(command, auto_confirm=auto_confirm)
 
 
@@ -1140,6 +1200,10 @@ def execute_single_command(command, auto_confirm=False):
     """
     Routes an individual command to its appropriate handler or the AI brain.
     """
+    if guard.dry_run_active():
+        ask_ai(command, auto_confirm=True)
+        return True
+
     if handle_model_switch_command(command):
         return True
 

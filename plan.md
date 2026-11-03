@@ -106,6 +106,14 @@ flowchart TD
 - [x] Telegram serializes coding/evolution jobs and reports configured model instead of hardcoded GPU claims.
 - [x] GUI worker completion uses `gui.ui_queue`, never Tk calls from worker threads.
 
+### [x] Phase 7: Consequence-Free Dry Run / Rehearsal - COMPLETE
+- [x] Request, process, CLI (`--dry-run`), persistent config, and voice/text controls.
+- [x] Guard simulates sensitive, destructive, unknown, and outward actions while allowing safe reads.
+- [x] Hard-denies remain blocked; control-plane approvals and secret resolution are skipped.
+- [x] Coding workflow and Manager Mode produce plans without engines, writes, tests, or commits.
+- [x] Self-evolution preserves registry state; Workspace writes, Home controls, and remote file mutations simulate at service boundaries.
+- [x] Redacted audit/timeline evidence and dedicated regression coverage.
+
 ---
 
 ## 4. Test Suite Summary
@@ -115,6 +123,6 @@ flowchart TD
 - **Self-Evolution**: 14/14 passed.
 - **Telegram Gateway**: 4/4 passed.
 - **Security Capability Coverage**: 43/43 passed (`tests/test_report_security.py`).
-- **Full suite**: 1085 tests run successfully, including 1 skipped (`python -m unittest discover -s tests`).
+- **Full suite**: 1111 tests run successfully, including 1 skipped (`python -m unittest discover -s tests`).
 - **Smoke Test**: 11/11 passed (`python main.py --smoke-test`).
 - **Syntax**: 0 errors (`python -m compileall -q main.py assistant gui vave_gui.py`).

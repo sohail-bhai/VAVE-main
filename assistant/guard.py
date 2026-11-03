@@ -79,6 +79,18 @@ REACHES_OUTWARD = frozenset({
     "run_openclaw_command", "approve_and_implement_gap",
 })
 
+# These high-risk orchestration entry points implement their own dry-run path:
+# they may plan and inspect, but return before file/process/network mutation.
+# Guard lets only these wrappers execute during rehearsal so users get a real
+# plan instead of a generic one-line simulation.
+DRY_RUN_AWARE_TOOLS = frozenset({
+    "run_coding_workflow",
+    "manage_coding_project",
+    "approve_and_implement_gap",
+    "run_opencode_task",
+    "run_openclaw_command",
+})
+
 def tier_of(tool_name: str) -> str:
     """The risk tier of one tool. Unknown tools are not safe by default."""
     for tier in ("destructive", "sensitive", "safe"):
@@ -302,6 +314,58 @@ def _plane_grant_allows(tool_name: str) -> bool:
     except Exception:
         return False
 
+
+def dry_run_active() -> bool:
+    """Whether current request or process is in consequence-free rehearsal."""
+    if call_context.is_dry_run():
+        return True
+    try:
+        return bool(config.get_setting("dry_run_enabled", False))
+    except Exception:
+        return False
+
+
+def _dry_run_result(tool_name: str, args: dict, tier: str, blocked: str = ""):
+    safe_args = audit.redact(args or {})
+    if blocked:
+        summary = (
+            f"DRY RUN: {tool_name} would remain blocked: {blocked} "
+            "No action was taken."
+        )
+    else:
+        summary = (
+            f"DRY RUN: would run {tool_name} ({tier}) with {safe_args}. "
+            "No action was taken."
+        )
+    return {
+        "ok": not bool(blocked),
+        "dry_run": True,
+        "simulated": not bool(blocked),
+        "would_execute": not bool(blocked),
+        "tool": tool_name,
+        "tier": tier,
+        "args": safe_args,
+        "blocked": blocked,
+        "summary": summary,
+    }
+
+
+def _dry_run_effective_tier(tool_name: str, tier: str) -> str:
+    """Raise stale 'safe' registry entries using capability risk metadata."""
+    if tier != "safe":
+        return tier
+    try:
+        from assistant.control.capabilities import capability_for_tool, risk_for
+
+        risk = risk_for(capability_for_tool(tool_name)).value
+        if risk == "high":
+            return "destructive"
+        if risk == "medium":
+            return "sensitive"
+    except Exception:
+        pass
+    return tier
+
 def coerce_args(func: Callable, kwargs: dict) -> dict:
     import inspect
     try:
@@ -341,6 +405,67 @@ def call(func: Callable, _tool_name: str = None, **kwargs) -> Any:
     
     if _bus:
         _bus.emit(events.EVENT_TOOL_CALL, f"Evaluating {tool_name}", tool=tool_name, origin=origin)
+
+    # Rehearsal executes reads but never an action. Unknown tools default to
+    # sensitive, so they are simulated too. Hard-denied calls remain denied;
+    # dry-run must not imply a forbidden action could later be approved.
+    if dry_run_active():
+        tier = _dry_run_effective_tier(
+            tool_name,
+            _tier_for_call(tool_name, kwargs),
+        )
+        hard_denied, reason = _is_hard_denied(tool_name, kwargs)
+        blocked = reason if hard_denied else ""
+        if _kill_switch:
+            blocked = "VAVE emergency stop is active."
+        if not blocked and tool_name in DRY_RUN_AWARE_TOOLS:
+            coerced = coerce_args(func, kwargs)
+            try:
+                result = func(**coerced)
+            except Exception as error:
+                audit.append({
+                    "event": "tool_call_error",
+                    "audit_id": audit_id,
+                    "tool": tool_name,
+                    "dry_run": True,
+                    "error": str(error),
+                })
+                raise
+            audit.append({
+                "event": "tool_call_dry_run_planned",
+                "audit_id": audit_id,
+                "tool": tool_name,
+                "tier": tier,
+            })
+            if _bus:
+                _bus.emit(
+                    events.EVENT_TOOL_CALL,
+                    f"DRY RUN: {tool_name} produced a plan without executing actions.",
+                    tool=tool_name,
+                    origin=origin,
+                    dry_run=True,
+                )
+            return result
+        if blocked or tier != "safe" or tool_name in REACHES_OUTWARD:
+            result = _dry_run_result(tool_name, kwargs, tier, blocked=blocked)
+            audit.append({
+                "event": "tool_call_dry_run_blocked" if blocked else "tool_call_simulated",
+                "audit_id": audit_id,
+                "tool": tool_name,
+                "tier": tier,
+                "reason": blocked,
+            })
+            if _bus:
+                _bus.emit(
+                    events.EVENT_TOOL_CALL,
+                    result["summary"],
+                    tool=tool_name,
+                    origin=origin,
+                    dry_run=True,
+                    blocked=bool(blocked),
+                )
+            logger.info("Dry run %s %s", "blocked" if blocked else "simulated", tool_name)
+            return result
         
     allowed = _evaluate_policy(tool_name, kwargs, origin)
     

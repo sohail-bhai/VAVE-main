@@ -72,6 +72,7 @@ Primary user-facing capabilities:
 - `gui/tasks.py`: the desktop Web page hands what you type to the control plane and follows the real steps.
 - `assistant/vision.py`, `assistant/dev_tools.py`, `assistant/calendar_sync.py`, `assistant/email_tasks.py`, `assistant/telegram_sync.py`, `assistant/wakeword.py`, `assistant/interrupter.py`: screen OCR, developer automation, Google Calendar, mail, phone bridge, wake word, global interrupt hotkey.
 - `assistant/guard.py`, `assistant/confirm.py`, `assistant/audit.py`, `assistant/overwatch/`: the safety layer. Preserve these.
+- Dry-run is context/process scoped through `assistant/call_context.py` and enforced first in `guard.call()`. Safe reads may execute; consequential tools simulate; hard-denies stay blocked; secrets are never resolved. Direct service boundaries (Workspace, Home Assistant, remote files, coding/project/self-evolution) must preserve this invariant.
 - `docs/control-plane.md`: control plane architecture, endpoints and limitations.
 - `config.json`: user-editable runtime config.
 - `data/notes.txt`: user notes data file.

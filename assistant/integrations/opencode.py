@@ -106,6 +106,21 @@ def run_opencode(
             "error": "OpenCode task prompt is empty.",
         }
 
+    from assistant import guard
+
+    if guard.dry_run_active():
+        work_dir = os.path.abspath(directory or os.getcwd())
+        return {
+            "ok": True,
+            "dry_run": True,
+            "output": (
+                f"DRY RUN: would launch OpenCode in {work_dir} for a "
+                f"{len(prompt)}-character task. No process was started."
+            ),
+            "exit_code": 0,
+            "error": "",
+        }
+
     cli = find_opencode_cli()
     if not cli:
         return {

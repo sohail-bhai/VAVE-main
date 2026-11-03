@@ -2227,7 +2227,10 @@ def query_local_llm_chat(messages, model="qwen2.5:3b", tools=None):
     Queries the local Ollama instance using the /api/chat endpoint, or Featherless AI if configured.
     """
     featherless_key = str(get_setting("featherless_api_key", "") or "").strip()
-    featherless_on = bool(get_setting("featherless_enabled", False))
+    # Rehearsal planning stays local: sending the goal/history to a hosted
+    # model is itself an outward action even if no tool later executes.
+    featherless_on = bool(get_setting("featherless_enabled", False)) \
+        and not guard.dry_run_active()
 
     if featherless_on and featherless_key:
         url = "https://api.featherless.ai/v1/chat/completions"
@@ -2859,6 +2862,18 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
     # to this request only, and short-term memory should not carry it into the
     # next one.
     injected = list(extra_messages or [])
+    if guard.dry_run_active():
+        injected.append({
+            "role": "system",
+            "content": (
+                "REHEARSAL MODE IS ACTIVE. Inspect and plan normally, but every "
+                "action that could change the machine or outside world will be "
+                "simulated by the guard. Call each relevant tool at most once, "
+                "treat a result with dry_run=true as evidence of what WOULD "
+                "happen, and finish with a concise plan headed 'DRY RUN'. Never "
+                "claim an action actually happened."
+            ),
+        })
     if tools is not False:
         site_hint = _site_hint(latest_request)
         if site_hint:
@@ -2984,7 +2999,7 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
 
                 _keep_going()
 
-                if authorize is not None:
+                if authorize is not None and not guard.dry_run_active():
                     allowed, refusal = authorize(func_name)
                     if not allowed:
                         logger.info(f"Tool {func_name} not authorised: {refusal}")
@@ -3000,7 +3015,7 @@ def _agent_loop(conversation, extra_messages=None, auto_confirm=False, max_steps
                     logger.info(f"[VAVE Executing] {func_name}({args_dict})")
 
                     try:
-                        if resolve_secrets is not None:
+                        if resolve_secrets is not None and not guard.dry_run_active():
                             try:
                                 from assistant.control.capabilities import capability_for_tool
                                 tool_cap = capability_for_tool(func_name)
@@ -3329,10 +3344,15 @@ def ask_ai(command, auto_confirm=False):
     # Request-level guard: block destructive natural-language requests
     # before they reach the model.
     dangerous, reason = guard.is_destructive_request(clean_command)
-    if dangerous:
+    if dangerous and not guard.dry_run_active():
         speak(reason)
         audit.append({"event": "destructive_request_blocked", "request": clean_command[:120]})
         return None
+    if dangerous:
+        audit.append({
+            "event": "destructive_request_rehearsed",
+            "request": clean_command[:120],
+        })
 
     # A new request starts clean. Taint belongs to the task that read the
     # page, not to everything the user asks afterwards.
@@ -3408,9 +3428,14 @@ def run_task_step(instruction, context="", auto_confirm=True,
 
     # Request-level guard: block destructive natural-language requests
     dangerous, reason = guard.is_destructive_request(instruction)
-    if dangerous:
+    if dangerous and not guard.dry_run_active():
         audit.append({"event": "destructive_request_blocked", "request": instruction[:120]})
         raise RuntimeError(reason)
+    if dangerous:
+        audit.append({
+            "event": "destructive_request_rehearsed",
+            "request": instruction[:120],
+        })
 
     conversation = [
         {"role": "system", "content": get_system_prompt()},
@@ -3485,7 +3510,8 @@ def run_task_step(instruction, context="", auto_confirm=True,
 # ctrl+a and type over whatever had focus with nothing asked.
 DESTRUCTIVE_TOOLS = [
     "run_terminal_command", "shutdown_laptop", "restart_laptop", "clear_notes",
-    "write_file", "disable_voice_input", "disable_speech_output",
+    "write_file", "scaffold_code", "deep_test_project",
+    "disable_voice_input", "disable_speech_output",
     "gitlab_merge", "gitlab_propose_fix", "github_propose_fix",
     # Coding orchestrators can rewrite many files or delegate to CLIs with
     # auto-approved filesystem access. Voice/model invocation must confirm.
@@ -3544,9 +3570,9 @@ SAFE_TOOLS = [
     "read_unread_emails", "summarize_gmail_inbox", "search_google_drive",
     "sync_google_drive", "semantic_search_google_drive",
     "read_google_drive_file", "ask_document", "propose_new_feature",
-    "scrape_project_ideas", "deep_test_project", "provide_morning_briefing",
+    "scrape_project_ideas", "provide_morning_briefing",
     "gitlab_list_issues", "gitlab_read_issue", "gitlab_find_file",
-    "gitlab_read_file", "remember_about_site", "scaffold_code",
+    "gitlab_read_file", "remember_about_site",
     "github_list_issues", "github_read_issue", "github_find_file",
     "github_read_file",
     "list_home_devices", "get_device_state",

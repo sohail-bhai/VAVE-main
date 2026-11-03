@@ -580,6 +580,10 @@ def run_test_command(command, cwd=".", timeout=None):
     if not command:
         result["output"] = "No test command."
         return result
+    if guard.dry_run_active():
+        result["blocked"] = "dry run"
+        result["output"] = "DRY RUN: test command was not executed."
+        return result
     hard_denial = guard.hard_denial_reason(
         "run_terminal_command",
         {"command": command},
@@ -873,7 +877,13 @@ def _build_report(goal, project_path, plan, cycles, ok, artifacts):
             state = "OK" if item.get("ok") else "FAILED"
             lines.append(f"  {task_id} [{item.get('agent')}]: {state}")
         for test in cycle.get("tests", []):
-            state = "PASS" if test.get("passed") else "FAIL"
+            state = (
+                "SKIP"
+                if test.get("blocked") == "dry run"
+                else "PASS"
+                if test.get("passed")
+                else "FAIL"
+            )
             lines.append(f"  test {state}: {test.get('command')}")
         verdict = str(cycle.get("verdict", "")).strip().splitlines()
         if verdict:
@@ -925,6 +935,55 @@ def run_workflow(goal, project_path=".", max_cycles=3, max_fixes=2,
 
     all_commands = collect_test_commands(plan, project_path, test_command)
     artifacts["test_commands"] = all_commands
+
+    if guard.dry_run_active():
+        simulated = {
+            task["id"]: {
+                "ok": True,
+                "agent": _agent_for_task(task),
+                "output": (
+                    f"DRY RUN: would {task['action']} {task['file']}. "
+                    "No file tool was called."
+                ),
+            }
+            for task in plan
+        }
+        artifacts["cycles"].append({
+            "cycle": 0,
+            "results": simulated,
+            "tests": [
+                {
+                    "command": command,
+                    "passed": False,
+                    "exit_code": None,
+                    "output": "DRY RUN: test command was not executed.",
+                    "timed_out": False,
+                    "blocked": "dry run",
+                }
+                for command in all_commands
+            ],
+            "verdict": "DRY RUN: reviewer not asked to approve simulated work.",
+        })
+        report = _build_report(
+            goal, project_path, plan, 0, True, artifacts
+        ).replace("Final: SUCCESS", "Final: DRY RUN (NO CHANGES)")
+        _emit(
+            event_bus,
+            "Coding workflow dry run finished: no changes",
+            phase="done",
+            ok=True,
+            dry_run=True,
+        )
+        return {
+            "ok": True,
+            "dry_run": True,
+            "report": report,
+            "cycles": 0,
+            "plan": plan,
+            "artifacts": artifacts,
+            "warnings": warnings,
+        }
+
     failures_for_lesson = []
     ok = False
     cycle_number = 0
@@ -1044,7 +1103,7 @@ def run_coding_workflow(goal, project_path=".", max_cycles=3,
     result = run_workflow(goal, project_path=project_path,
                           max_cycles=int(max_cycles),
                           test_command=test_command)
-    if commit and result.get("ok"):
+    if commit and result.get("ok") and not result.get("dry_run"):
         try:
             from assistant.dev_tools import git_auto_commit_and_push
             commit_note = str(git_auto_commit_and_push(push=False))

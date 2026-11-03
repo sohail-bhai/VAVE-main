@@ -146,6 +146,39 @@ class ApprovalTests(GoogleApiTestCase):
         self.assertEqual([], self.plane.list_approvals(pending_only=True))
 
 
+class DryRunGoogleApiTests(GoogleApiTestCase):
+    def setUp(self):
+        super().setUp()
+        from assistant import call_context
+
+        self._dry_token = call_context.set_dry_run(True)
+
+    def tearDown(self):
+        from assistant import call_context
+
+        call_context.reset_dry_run(self._dry_token)
+        super().tearDown()
+
+    def test_send_is_simulated_without_approval_or_outward_handler(self):
+        with mock.patch.object(workspace_auth, "load_saved_credentials") as load:
+            response = self.client.post(
+                "/api/google/gmail/send",
+                json={"to": "a@b.com", "subject": "Hi", "body": "x"},
+            )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("dry_run", response.json()["status"])
+        self.assertEqual([], self.plane.list_approvals(pending_only=True))
+        self.assertIn("dry_run", response.json()["message"])
+        load.assert_not_called()
+
+    def test_connect_does_not_open_authorization_flow(self):
+        with mock.patch.object(workspace_auth, "authorize") as authorize:
+            response = self.client.post("/api/google/connect")
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json()["dry_run"])
+        authorize.assert_not_called()
+
+
 class MakingThingsTests(GoogleApiTestCase):
     def test_a_document_can_be_created(self):
         response = self.client.post("/api/google/docs",

@@ -64,6 +64,21 @@ def run_antigravity_task(
     if not prompt:
         return {"ok": False, "error": "Antigravity task prompt is empty."}
 
+    from assistant import guard
+
+    if guard.dry_run_active():
+        return {
+            "ok": True,
+            "dry_run": True,
+            "output": (
+                f"DRY RUN: would delegate prompt ({len(prompt)} chars) to "
+                f"Antigravity model {model}. No process was started."
+            ),
+            "exit_code": 0,
+            "engine": "antigravity",
+            "model": model,
+        }
+
     cli = get_agentapi_path()
     if not cli:
         return {

@@ -19,6 +19,9 @@ DEFAULT_CONFIG = {
     "voice_volume": 1.0,
     "speech_enabled": True,
     "wake_word_enabled": True,
+    # When enabled, safe reads still run but every sensitive, destructive, or
+    # outward action returns a redacted simulation instead of executing.
+    "dry_run_enabled": False,
     "llm_model": "qwen2.5:7b",
     # Featherless is an optional hosted brain. It is only used when the
     # switch in Settings is on and a key is present, so the local Ollama

@@ -828,6 +828,37 @@ class FileApiTests(ApiTestCase):
         self.assertEqual(200, response.status_code)
         self.assertFalse((self.share / "invoice.pdf").exists())
 
+    def test_dry_run_upload_does_not_write_bytes(self):
+        from assistant import call_context
+
+        token = call_context.set_dry_run(True)
+        try:
+            response = self.client.post(
+                "/api/files/upload",
+                files={"file": ("photo.jpg", b"image bytes", "image/jpeg")},
+                data={"folder": ""},
+            )
+        finally:
+            call_context.reset_dry_run(token)
+        self.assertEqual(201, response.status_code)
+        self.assertTrue(response.json()["dry_run"])
+        self.assertFalse((self.share / "photo.jpg").exists())
+
+    def test_dry_run_delete_keeps_file(self):
+        from assistant import call_context
+
+        self.allow_delete = True
+        token = call_context.set_dry_run(True)
+        try:
+            response = self.client.delete(
+                "/api/files", params={"path": "invoice.pdf"}
+            )
+        finally:
+            call_context.reset_dry_run(token)
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json()["dry_run"])
+        self.assertTrue((self.share / "invoice.pdf").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

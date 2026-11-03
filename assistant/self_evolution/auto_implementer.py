@@ -18,6 +18,24 @@ from assistant.self_evolution.gaps import (
 logger = logging.getLogger(__name__)
 
 
+def preview_capability(gap_id: str, project_path: str = None) -> Dict[str, Any]:
+    """Describe a capability build without changing registry or project state."""
+    gap = get_capability_gap(gap_id)
+    if not gap:
+        return {"ok": False, "error": f"Capability gap '{gap_id}' not found."}
+    return {
+        "ok": True,
+        "dry_run": True,
+        "gap_id": gap_id,
+        "status": gap.status,
+        "message": (
+            f"DRY RUN: would request approval as needed, then implement "
+            f"'{gap.missing_capability}' in {project_path or PROJECT_ROOT}. "
+            "Registry status and project files remain unchanged."
+        ),
+    }
+
+
 def implement_capability(
     gap_id: str,
     project_path: str = None,
@@ -36,6 +54,11 @@ def implement_capability(
                 f"(current status: '{gap.status}')."
             ),
         }
+
+    from assistant import guard
+
+    if guard.dry_run_active():
+        return preview_capability(gap_id, project_path=project_path)
 
     if not update_gap_status(
         gap_id,
@@ -143,6 +166,7 @@ def implement_all_approved_gaps(project_path: str = None, max_loops: int = 3) ->
 
     return {
         "ok": success_count == len(approved_gaps),
+        "dry_run": bool(results) and all(item.get("dry_run") for item in results),
         "total": len(approved_gaps),
         "successful": success_count,
         "results": results,

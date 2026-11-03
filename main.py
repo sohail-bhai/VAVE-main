@@ -46,6 +46,11 @@ def build_parser():
         help="Print responses without using pyttsx3 text-to-speech."
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Rehearse consequential actions without executing them."
+    )
+    parser.add_argument(
         "--host",
         default="127.0.0.1",
         help="API bind address for --server. Use 0.0.0.0 for phone access."
@@ -149,6 +154,11 @@ def main(argv=None):
             )
             return 2
 
+    from assistant import call_context
+    previous_dry_run = call_context.set_process_dry_run(args.dry_run)
+    if args.dry_run:
+        print("DRY RUN: consequential actions will be simulated.")
+
     try:
         from assistant.bootstrap import bootstrap_safety
         bus = bootstrap_safety(start_runtime_services=long_lived)
@@ -207,6 +217,7 @@ def main(argv=None):
                 pass
         if instance_lock is not None:
             instance_lock.release()
+        call_context.set_process_dry_run(previous_dry_run)
 
 if __name__ == "__main__":
     raise SystemExit(main())

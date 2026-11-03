@@ -210,6 +210,17 @@ class ProjectManager:
 
     def delegate_task(self, task: ManagerTask, project_path: str = ".", extra_context: str = "") -> str:
         """Route task to the designated tool engine."""
+        from assistant import guard
+
+        if guard.dry_run_active():
+            engine = (task.engine or "antigravity").lower().strip()
+            task.status = "simulated"
+            task.result = (
+                f"DRY RUN: would delegate '{task.id}' to {engine} in "
+                f"{os.path.abspath(project_path)}. No files were changed."
+            )
+            return task.result
+
         prompt = task.prompt
         if extra_context:
             prompt = f"{prompt}\n\n[MANAGER CRITIQUE FROM PREVIOUS CYCLE]\n{extra_context}"
@@ -454,6 +465,7 @@ class ProjectManager:
                     project_path,
                     ok=bool(result.get("ok")),
                     busy=bool(result.get("busy", False)),
+                    dry_run=bool(result.get("dry_run", False)),
                     cycles=int(result.get("cycles_run", 0) or 0),
                 )
 
@@ -496,6 +508,48 @@ class ProjectManager:
                 "final_evaluation": {},
                 "history": [],
                 "summary": f"Could not synthesize project specification: {exc}",
+            }
+
+        from assistant import guard
+
+        if guard.dry_run_active():
+            cycle_tasks = []
+            for task in spec.tasks:
+                output = self.delegate_task(task, project_path=project_dir)
+                cycle_tasks.append({
+                    "id": task.id,
+                    "engine": task.engine,
+                    "status": task.status,
+                    "output": output,
+                })
+            evaluation = EvaluationResult(
+                approved=False,
+                test_passed=False,
+                remarks=(
+                    "DRY RUN: delegation and test execution were simulated; "
+                    "no acceptance claim was made."
+                ),
+                missing_criteria=["real implementation", "real test evidence"],
+                cycle=0,
+            )
+            return {
+                "ok": True,
+                "dry_run": True,
+                "goal": goal,
+                "cycles_run": 0,
+                "max_cycles": max_loops,
+                "spec": spec.to_dict(),
+                "final_evaluation": evaluation.to_dict(),
+                "history": [{
+                    "cycle": 0,
+                    "tasks": cycle_tasks,
+                    "evaluation": evaluation.to_dict(),
+                }],
+                "summary": (
+                    f"DRY RUN: planned project '{goal}' with {len(spec.tasks)} "
+                    "delegated task(s). No engine, file mutation, or test "
+                    "command was executed."
+                ),
             }
 
         history: List[Dict[str, Any]] = []

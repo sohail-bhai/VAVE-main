@@ -172,6 +172,13 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
 - [x] **Desktop Projects Page**: Manager console and capability review using GUI-safe `ui_queue` callbacks.
 - [x] **Verification**: Full suite 1052 OK (1 skipped), smoke 11/11, compileall clean.
 
+### Stage 16: Consequence-Free Dry Run (Complete)
+- [x] **Scoped Rehearsal**: one-request prefixes, `--dry-run`, persistent config toggle, and process/context propagation.
+- [x] **Fail-Closed Guard**: consequential/unknown/outward tools simulate with redacted arguments; hard-denies remain blocked; safe reads may run.
+- [x] **No Credential/Approval Side Effects**: control-plane authorization and secret resolution are skipped during rehearsal.
+- [x] **Service Boundaries**: coding/project/self-evolution, Google writes, Home control, and remote file mutations all preserve no-action semantics.
+- [x] **Verification**: 26 dry-run/API regressions; full suite 1111 OK (1 skipped), smoke 11/11, compileall clean.
+
 ### Stages 12-14: Upgrade Plan Execution (Phases 0-5 Complete)
 
 Driven by `plan.md`. Completed:
@@ -261,14 +268,14 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 > **CURRENT STATUS: STAGE 15 PROJECT POWERHOUSE & SELF-EVOLUTION COMPLETED**
 
 - **Verification Status**:
-  - **1085 Unit Tests Green**: Suite OK with test isolation and data guards (1 intentional skip).
+  - **1111 Unit Tests Green**: Suite OK with test isolation and data guards (1 intentional skip).
 - **Audit hardening (2026-09-17)**: all 19 findings in `report.md` fixed with
   per-domain regression tests (`test_report_security/reliability/performance/
   architecture/edgecases`, `test_notes`); second audit round (16 findings)
   fixed the same way; HGE tracks 1–4 done; distributed coding workflow added
   2026-10-30; Project Powerhouse hardening completed 2026-11-02; reliability,
-  process-boundary, explicit-approval, and teardown audit completed 2026-11-03;
-  suite **1085 green (1 skipped)**, smoke 11/11.
+  process-boundary, explicit-approval, teardown, and dry-run hardening completed
+  2026-11-03; suite **1111 green (1 skipped)**, smoke 11/11.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -337,12 +344,12 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
    review-driven fixer, lessons journal (`assistant/coding_workflow.py`)
    — suite **1001 green**, smoke 11/11
 10. Live voice test with `python main.py` (YOU need to run this)
-11. ✅ S5 `vave doctor` built; next build when requested: S3 dry-run.
+11. ✅ S5 `vave doctor` and S3 dry-run built; next roadmap choice required.
 
 ### Git State
 - Branch: `sohail`, remote: `https://github.com/sohail-bhai/VAVE-main.git`
-- Local feature commits: `72a6a88` (reliability supervisor, lifecycle, doctor)
-  and `45a1c04` (Project Powerhouse workflows and governance).
+- Recent local history contains reliability/doctor, Project Powerhouse,
+  governance, and consequence-free dry-run milestones; see `git log` for hashes.
 - Machine-specific Telegram identity lives in ignored `config.local.json`;
   shared `config.json` contains no account identifier or credential.
 

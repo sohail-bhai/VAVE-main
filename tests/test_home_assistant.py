@@ -230,6 +230,22 @@ class HomeApiTests(unittest.TestCase):
                                    json={"entity_id": "light.x", "action": "on"})
         self.assertEqual(202, res.status_code)  # approval comes first
 
+    def test_dry_run_control_needs_no_approval_and_calls_no_service(self):
+        from assistant import call_context
+
+        token = call_context.set_dry_run(True)
+        try:
+            res = self.client.post(
+                "/api/home/control",
+                json={"entity_id": "light.bedroom", "action": "on"},
+            )
+        finally:
+            call_context.reset_dry_run(token)
+        self.assertEqual(200, res.status_code)
+        self.assertEqual("dry_run", res.json()["status"])
+        self.assertEqual([], self.plane.list_approvals(pending_only=True))
+        self.assertFalse(any(call["method"] == "POST" for call in self.transport.calls))
+
 
 if __name__ == "__main__":
     unittest.main()

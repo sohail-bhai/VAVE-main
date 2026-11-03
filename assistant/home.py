@@ -186,6 +186,13 @@ def control_device(entity_id, action, value=None, _client_override=None):
     action = str(action or "").strip().lower()
     if not entity_id or "." not in entity_id:
         return "Give me a device like 'light.bedroom' and an action like 'off'."
+    from assistant import guard
+    if guard.dry_run_active():
+        value_text = f" with value {value}" if value is not None else ""
+        return (
+            f"DRY RUN: would set {entity_id} to {action}{value_text}. "
+            "No Home Assistant service was called."
+        )
     domain = entity_id.split(".", 1)[0]
 
     try:
