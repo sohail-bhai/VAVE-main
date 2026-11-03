@@ -164,6 +164,14 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
 - [x] **Centralized Safety Bootstrap**: Created `assistant/bootstrap.py` unifying global event bus, logging, audit ledger, guard, confirm, and overwatch initialization across CLI (`main.py`), GUI (`gui/app.py`), and API Server (`assistant/api/app.py`).
 - [x] **Ollama Context Window Alignment**: Unified `num_ctx` default to `8192` in `ai_brain.py` matching prompt and tool definition requirements.
 
+### Stage 15: Project Powerhouse & Self-Evolution (Complete)
+- [x] **External Coding Engines**: Antigravity, OpenCode, and OpenClaw adapters with configurable paths and shell-free Windows shim resolution.
+- [x] **Smart Project Manager**: Bounded Vision Specs, engine delegation, real guarded test execution, evidence-based critique loops, target-path containment, honest failure propagation, and Emergency Stop checks between calls.
+- [x] **Capability Gap Lifecycle**: JSON registry under `VAVE_DATA_DIR`, explicit approval, atomic `approved -> implementing -> implemented|failed` transitions, retries, and duplicate-run prevention.
+- [x] **Telegram Governance**: `/project`, `/status`, `/gaps`, approve/reject commands, dynamic model status, and one exclusive code-changing job at a time.
+- [x] **Desktop Projects Page**: Manager console and capability review using GUI-safe `ui_queue` callbacks.
+- [x] **Verification**: Full suite 1052 OK (1 skipped), smoke 11/11, compileall clean.
+
 ### Stages 12-14: Upgrade Plan Execution (Phases 0-5 Complete)
 
 Driven by `plan.md`. Completed:
@@ -250,14 +258,17 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 
 ## 4. Current Operational Stage
 
-> **CURRENT STATUS: STAGES 12-14 (UPGRADE PLAN PHASES 0-5) COMPLETED**
+> **CURRENT STATUS: STAGE 15 PROJECT POWERHOUSE & SELF-EVOLUTION COMPLETED**
 
 - **Verification Status**:
-  - **965 Unit Tests Green**: 100% pass across all test suites with test isolation and data guards.
+  - **1085 Unit Tests Green**: Suite OK with test isolation and data guards (1 intentional skip).
 - **Audit hardening (2026-09-17)**: all 19 findings in `report.md` fixed with
   per-domain regression tests (`test_report_security/reliability/performance/
   architecture/edgecases`, `test_notes`); second audit round (16 findings)
-  fixed the same way; HGE tracks 1–4 done; suite **965 green**, smoke 11/11.
+  fixed the same way; HGE tracks 1–4 done; distributed coding workflow added
+  2026-10-30; Project Powerhouse hardening completed 2026-11-02; reliability,
+  process-boundary, explicit-approval, and teardown audit completed 2026-11-03;
+  suite **1085 green (1 skipped)**, smoke 11/11.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -321,11 +332,57 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
    volume/name anchoring, + more)
 8. ✅ HGE tracks 1–4 DONE (auto-resume, OAuth vault, swarm DAG/roles/critic,
    platform parity) — suite **965 green**
-9. Live voice test with `python main.py` (YOU need to run this)
-9. Next builds when requested: S3 dry-run, S5 `vave doctor` (plan §14)
+9. ✅ Distributed coding workflow DONE 2026-10-30: named agent roles,
+   dependency waves, retry-only-failure cycles, honest test execution,
+   review-driven fixer, lessons journal (`assistant/coding_workflow.py`)
+   — suite **1001 green**, smoke 11/11
+10. Live voice test with `python main.py` (YOU need to run this)
+11. ✅ S5 `vave doctor` built; next build when requested: S3 dry-run.
 
 ### Git State
 - Branch: `sohail`, remote: `https://github.com/sohail-bhai/VAVE-main.git`
-- Last commit: Phase 6 remainders (see log)
-- Note: `config.json` left uncommitted (user runtime state); `test_scaffold.py`
-  restored after an over-broad temp cleanup deleted it
+- Local feature commits: `72a6a88` (reliability supervisor, lifecycle, doctor)
+  and `45a1c04` (Project Powerhouse workflows and governance).
+- Machine-specific Telegram identity lives in ignored `config.local.json`;
+  shared `config.json` contains no account identifier or credential.
+
+---
+
+## 7. Distributed Coding Workflow (Session 2026-10-30)
+
+### What Was Built
+- `assistant/coding_workflow.py` orchestrates a named team instead of a single
+  coder: `planner` → `coder` / `test_writer` (parallel dependency waves) →
+  test runner → `reviewer` → `fixer` → retest.
+- Plan validation: JSON extraction, path-escape rejection, de-duplicated ids,
+  unknown-dependency removal, same-file serialization, cycle breaking.
+- Test detection for npm, cargo, go, pytest and unittest, with a
+  `coding_test_command` override and per-run timeout.
+- Honest execution: the command's real exit code and output are recorded;
+  `guard.is_destructive_request` blocks a dangerous command before it runs.
+- Lessons journal (`data/coding_lessons.jsonl`, last 200 entries, redacted)
+  injected into the next planner prompt. Stats via `workflow_stats()`.
+- Later cycles re-run only the failed tasks and their dependents; a
+  review-only rejection is fed to the Fixer instead of repeating identical
+  code.
+- `run_sub_agent(..., model=None, tools=None)` keeps planner/reviewer tool-free
+  and gives coders a small tool schema (faster local-model prefill).
+- New tools: `run_coding_workflow` (sensitive, `coding.write`),
+  `list_coding_agents` / `coding_workflow_stats` (safe, `coding.read`).
+- Voice: "implement …", "fix tests", "list coding agents",
+  "coding workflow stats".
+- Config: `coding_max_parallel_agents` (3), `coding_test_timeout_seconds`
+  (300), `coding_test_command` ("").
+
+### Verification
+- `compileall` pass; full suite **1001 tests OK (1 skipped)**;
+  `main.py --smoke-test` **11/11**.
+
+### Known Limits
+- A parallel wave still needs a local model per agent; `coding_max_parallel_agents`
+  caps how many run at once.
+- The workflow edits project files only; it does not create commits unless
+  `run_coding_workflow(..., commit=True)` is called.
+- Reviewer approval is a model judgement backed by real test output, not a
+  formal proof; every task and test result is in the report for a human to
+  audit.

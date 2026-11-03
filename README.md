@@ -363,6 +363,65 @@ report what actually happened, and switching things is a sensitive,
 approval-held capability (`home.control`) over `GET /api/home/devices` and
 `POST /api/home/control`.
 
+#### 🧑‍💻 Coding Workflow (Distributed Agents)
+Ask for code in plain language and VAVE runs a small engineering team instead
+of a single model:
+1. **Planner** turns the goal into a file-level plan with dependencies.
+2. **Coder** / **TestWriter** agents execute independent tasks in waves.
+3. **Test runner** runs the real test command and records the true output.
+4. **Reviewer** checks the evidence against the goal.
+5. **Fixer** iterates on real failures, then the tests run again.
+
+Say *"implement login for the Flask app"*, ask *"list coding agents"* for the
+roster, or *"coding workflow stats"* for history. Incomplete runs leave a
+redacted lesson in `data/coding_lessons.jsonl`, which the next planner reads:
+```json
+"coding_max_parallel_agents": 3,
+"coding_test_timeout_seconds": 300,
+"coding_test_command": ""
+```
+`coding_test_command` overrides auto-detection (npm, cargo, go, pytest,
+unittest). Test commands run shell-free and must use one of those supported
+runners; shell chaining and redirection are refused. Because the workflow
+changes project files, it runs under the high-risk `coding.write` capability
+and voice/model invocation requires destructive-tier confirmation.
+
+#### 🚀 Manager Mode & Self-Evolution
+Open **Projects** in desktop dashboard to run higher-level Manager Mode. VAVE
+turns goal into bounded Vision Spec, delegates tasks, runs real test command,
+and sends failures plus reviewer remarks into next cycle. Supported engines:
+
+- **Antigravity** — primary external coding engine.
+- **OpenCode** — reserved for complex scaffolding when
+  `opencode_only_for_complex` is enabled.
+- **OpenClaw** — browser, messaging, and gateway work.
+- **VAVE coding workflow** — guarded local fallback.
+
+External Windows `.cmd`/`.bat` launchers are resolved to underlying executable
+instead of passing model text through `cmd.exe`. Engine failures, missing
+deliverables, unsafe target paths, blocked test commands, and malformed review
+responses all fail closed. Emergency Stop halts between external calls; process
+already running finishes first.
+
+When VAVE records missing capability, review it under **Capability Gaps &
+Evolution**. Implementation cannot start from `pending`: user must explicitly
+approve pending gap first. Registry uses atomic state transition
+`approved -> implementing -> implemented|failed`, preventing duplicate builds.
+Agent step exhaustion records redacted, de-duplicated gap automatically. Review
+resulting Git changes before committing.
+
+Optional CLI overrides:
+```json
+"antigravity_cli_path": "",
+"opencode_cli_path": "",
+"openclaw_cli_path": "",
+"opencode_only_for_complex": true
+```
+
+Paired Telegram commands: `/project <goal>`, `/status`, `/gaps`,
+`/approve_gap <id>`, `/approve_all_gaps`, and `/reject_gap <id>`. Only one
+project/evolution job runs at a time, preventing concurrent edits.
+
 #### 🗝️ Credentials
 Secrets live in an encrypted store rather than in `config.json`. Agents receive
 `secret://<name>` and never the value — the control plane resolves it at the
@@ -377,12 +436,18 @@ credentials. Back it up separately.
 
 #### 🛡️ Safe Verification Modes
 ```bash
+# Read-only subsystem diagnostics (JSON is available with --json)
+python main.py --doctor
+
 # Run isolated smoke test (stubs desktop side effects)
 python main.py --smoke-test
 
 # Test single command without speech
 python main.py --text "what time is it" --no-speech
 ```
+`python main.py --doctor --repair-safe` additionally repairs validated config,
+missing runtime directories, and stale Telegram locks. It creates a local
+`config.json.bak`; review diagnostics before using repair mode.
 
 ---
 

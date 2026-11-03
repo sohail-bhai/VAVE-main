@@ -55,6 +55,11 @@ Primary user-facing capabilities:
 - `mobile/pwa/`: the dependency-free PWA the API serves at `/m` (`index.html`, `styles.css`, `app.js`, `manifest.webmanifest`, `sw.js`, icons). Pages are public; every data call carries the device Bearer token, and SSE uses `?token=` because EventSource cannot set headers. `sw.js` caches the shell only, never `/api/*`. See `docs/mobile.md`.
 - `assistant/memory.py`: persistent vector memory backed by ChromaDB.
 - `assistant/swarm.py`: parallel sub-agents and actor-critic research.
+- `assistant/coding_workflow.py`: distributes coding work across named agents (`planner`, `coder`, `test_writer`, `fixer`, `reviewer`) in dependency waves, runs the real test command, reviews the evidence, fixes failures, and journals lessons in `data/coding_lessons.jsonl`. Tool entry points: `run_coding_workflow`, `list_coding_agents`, `coding_workflow_stats`.
+- `assistant/integrations/`: guarded process adapters for Antigravity, OpenCode, and OpenClaw. Windows command shims are unwrapped to their underlying executable; never reintroduce a `cmd.exe` fallback for model-provided arguments.
+- `assistant/project_manager/`: Vision Spec synthesis, bounded multi-engine delegation, real test execution, fail-closed critique, and emergency-stop-aware iteration.
+- `assistant/self_evolution/`: persistent capability-gap review and explicit approval workflow. Implementation requires atomic `approved -> implementing` transition; pending gaps must never execute directly.
+- `assistant/reliability/`: health models, circuit breakers, singleton process locks, deterministic thread lifecycle, background supervisor, and `vave doctor` diagnostics. Doctor is read-only unless `--repair-safe` is explicit.
 - `assistant/browser/`: a real Chromium driven through Playwright. `session.py` (one persistent window, numbered elements), `actions.py` (the tools the model calls). See `docs/web-agent.md`.
 - `assistant/files.py`: the folders in `file_shares` reachable from a paired phone. Every path is resolved before it is checked, so `..` and symlinks out of a share are refused. See `docs/remote-files.md`.
 - `assistant/web_api.py`: `web_api_get` and `web_api_call` reach any service with a REST API, resolving a named credential from the secret store. Prefer this over a per-service module.
@@ -193,6 +198,8 @@ Dependencies include:
 - `customtkinter`
 
 PyAudio can be difficult to install on Windows. The README suggests `pipwin install pyaudio` if normal installation fails.
+
+Ollama models MUST always be stored on F: drive (`F:\ollama\models`), never on C: drive. The environment variable `OLLAMA_MODELS` is set to `F:\ollama\models` for the user.
 
 ## Verification
 
