@@ -73,6 +73,11 @@ CATALOG = {
     "memory.read": (RiskLevel.LOW, "Read what VAVE remembers"),
     "memory.write": (RiskLevel.MEDIUM, "Remember something new"),
     "web.search": (RiskLevel.LOW, "Search the web"),
+
+    # -- Coding -----------------------------------------------------------
+    # Reading the roster is harmless; letting agents change project files is not.
+    "coding.read": (RiskLevel.LOW, "Inspect coding agents and workflow history"),
+    "coding.write": (RiskLevel.HIGH, "Run coding agents that change project files"),
 }
 
 # The tools in ai_brain map onto the same capability names, so the voice path
@@ -191,6 +196,16 @@ TOOL_CAPABILITIES = {
     "run_actor_critic_research": "web.search",
     "run_swarm_dag": "web.search",
     "run_actor_critic": "web.search",
+    "run_coding_workflow": "coding.write",
+    "manage_coding_project": "coding.write",
+    "list_coding_agents": "coding.read",
+    "coding_workflow_stats": "coding.read",
+    "run_opencode_task": "coding.write",
+    "list_opencode_models": "coding.read",
+    "run_openclaw_command": "system.shell.run",
+    "record_capability_gap": "memory.write",
+    "list_capability_gaps": "coding.read",
+    "approve_and_implement_gap": "coding.write",
 
     # Desktop lifecycle and input. Reads and trivial queries ride LOW
     # capabilities so everyday requests keep working; anything that kills,

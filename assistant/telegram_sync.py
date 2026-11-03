@@ -25,9 +25,72 @@ _telegram_active = False
 _command_queue: "queue.Queue" = queue.Queue()
 _worker_thread = None
 
+# Coding engines mutate shared files. Only one managed project or self-
+# evolution build may run at a time, even when commands arrive back-to-back.
+_autonomy_lock = threading.Lock()
+
 # One-time Telegram Pairing PIN state
 _telegram_pairing_code = None
 _telegram_pairing_expiry = 0
+
+
+def _start_autonomy_job(target, name):
+    """Start one exclusive background coding job; return False when busy."""
+    if not _autonomy_lock.acquire(blocking=False):
+        return False
+
+    def _wrapped():
+        try:
+            target()
+        finally:
+            _autonomy_lock.release()
+
+    try:
+        call_context.spawn_thread(
+            target=_wrapped,
+            daemon=True,
+            name=name,
+        )
+    except Exception:
+        _autonomy_lock.release()
+        raise
+    return True
+
+
+def _telegram_status_text():
+    """Build honest status text without speaking on the desktop."""
+    import datetime
+
+    current_time = datetime.datetime.now().strftime("%I:%M %p")
+    battery_text = "not available"
+    try:
+        import psutil
+
+        battery = psutil.sensors_battery()
+        if battery is not None:
+            battery_text = f"{battery.percent}%"
+            if battery.power_plugged:
+                battery_text += " (charging)"
+    except Exception:
+        pass
+    model = str(
+        get_setting("llm_model_smart", "")
+        or get_setting("llm_model", "")
+        or "not configured"
+    )
+    from assistant.self_evolution import list_capability_gaps
+    from assistant.project_manager import is_manager_busy
+
+    pending_count = len(list_capability_gaps(status="pending"))
+    busy = "Busy" if _autonomy_lock.locked() or is_manager_busy() else "Ready"
+    return (
+        "📊 VAVE System Status\n"
+        f"• Time: {current_time}\n"
+        f"• Battery: {battery_text}\n"
+        f"• Pending Gaps: {pending_count}\n"
+        f"• Manager Model: {model}\n"
+        f"• Project Manager: {busy}"
+    )
 
 def issue_telegram_pairing_code() -> str:
     """Issue a 6-digit one-time pairing code valid for 10 minutes."""
@@ -286,7 +349,8 @@ def _transcribe_telegram_voice(token, file_id):
         return None
 
 def _telegram_worker():
-    global _telegram_active
+    global _telegram_active, _telegram_pairing_code
+    call_context.set_origin("telegram")
 
     from assistant.control.secrets import resolve_setting
     token = resolve_setting(get_setting("telegram_bot_token", ""))
@@ -295,6 +359,8 @@ def _telegram_worker():
     if not token:
         logger.info("[VAVE] Telegram bot token not configured, or its secret "
                     "could not be resolved. Remote execution disabled.")
+        _telegram_active = False
+        _release_lock()
         return
         
     logger.info(f"[VAVE] Connecting to Telegram Bot from PID {os.getpid()}...")
@@ -309,11 +375,12 @@ def _telegram_worker():
     
     while _telegram_active:
         try:
-            # Use Long Polling (timeout=30s) so it doesn't spam the API
-            url = f"https://api.telegram.org/bot{token}/getUpdates?offset={offset}&timeout=30"
+            # Short bounded long-poll keeps shutdown deterministic while still
+            # avoiding a busy API loop.
+            url = f"https://api.telegram.org/bot{token}/getUpdates?offset={offset}&timeout=2"
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=40) as response:
+            with urllib.request.urlopen(req, timeout=4) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 
                 if result.get("ok"):
@@ -420,18 +487,203 @@ def _telegram_worker():
                                 send_telegram_message(
                                     token,
                                     chat_id,
-                                    "VAVE Telegram Bridge Commands:\n"
+                                    "🚀 VAVE Project Powerhouse Commands:\n"
+                                    "- /project <goal> (Synthesizes VisionSpec, delegates to OpenCode/Swarm/OpenClaw & loops critique)\n"
+                                    "- /status (System health & project progress)\n"
+                                    "- /gaps (Review logged capability gaps for End-of-Day review)\n"
+                                    "- /approve_gap <id> (Approve & trigger autonomous self-implementation)\n"
+                                    "- /approve_all_gaps (Batch approve & implement all pending gaps)\n"
+                                    "- /reject_gap <id> (Dismiss capability gap)\n\n"
+                                    "Desktop & AI Controls:\n"
                                     "- Ask any question (uses local Ollama AI brain)\n"
-                                    "- Send a photo (analyzed with local moondream vision AI)\n"
+                                    "- Send a photo (analyzed with local vision AI)\n"
                                     "- Send a voice note (transcribed and executed)\n"
-                                    "- 'screenshot' or 'send screenshot' (receives desktop snapshot)\n"
-                                    "- 'time' or 'date' (check system clock)\n"
-                                    "- 'battery' (hardware battery status)\n"
-                                    "- 'take a note <text>' (save persistent note)\n"
-                                    "- 'read notes' (view notes)\n"
-                                    "- Tap [Approve] / [Deny] buttons or '/yes <id>' / '/no <id>'\n"
+                                    "- 'screenshot' (receives desktop snapshot)\n"
+                                    "- 'time', 'date', 'battery', 'read notes'\n"
+                                    "- Tap [Approve] / [Deny] or '/yes <id>' / '/no <id>'\n"
                                     "- '/kill' (emergency kill switch)"
                                 )
+                                continue
+
+                            # Project Powerhouse: Autonomous Multi-Tool Management
+                            if text_lower == "/project" or text_lower.startswith("/project "):
+                                goal_text = text_clean[8:].strip()
+                                if not goal_text:
+                                    send_telegram_message(token, chat_id, "Usage: /project <goal description>")
+                                    continue
+
+                                def _run_bg_project(g_text=goal_text):
+                                    try:
+                                        from assistant.project_manager import ProjectManager
+
+                                        pm = ProjectManager()
+                                        res = pm.run_managed_project(g_text)
+                                        cycles = res.get("cycles_run", 0)
+                                        if res.get("ok"):
+                                            send_telegram_message(
+                                                token,
+                                                chat_id,
+                                                f"✅ Managed Project Completed in {cycles} cycle(s)!\n\n{res.get('summary')}",
+                                            )
+                                        else:
+                                            send_telegram_message(
+                                                token,
+                                                chat_id,
+                                                f"⚠️ Managed Project stopped without approval ({cycles} cycles).\n\n{res.get('summary')}",
+                                            )
+                                    except Exception:
+                                        logger.exception("Telegram project execution failed")
+                                        send_telegram_message(
+                                            token,
+                                            chat_id,
+                                            "❌ Project execution failed. Check desktop logs for details.",
+                                        )
+
+                                if _start_autonomy_job(_run_bg_project, "telegram-project"):
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        f"🚀 Managed Project Dispatched\nGoal: {goal_text}\n\nSynthesizing VisionSpec, orchestrating coding engines, and running critique loops...",
+                                    )
+                                else:
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        "⚠️ Another managed project or evolution build is already running.",
+                                    )
+                                continue
+
+                            # Self-Evolution & EOD Review Commands
+                            if text_lower in ["/gaps", "gaps"]:
+                                from assistant.self_evolution import generate_eod_summary
+                                send_telegram_message(token, chat_id, generate_eod_summary())
+                                continue
+
+                            if text_lower.startswith("/approve_gap "):
+                                gap_id_target = text_clean.split(" ", 1)[1].strip()
+                                if _autonomy_lock.locked():
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        "⚠️ Another managed project or evolution build is already running.",
+                                    )
+                                    continue
+                                from assistant.self_evolution import (
+                                    approve_gap,
+                                    get_capability_gap,
+                                    implement_capability,
+                                )
+                                gap = get_capability_gap(gap_id_target)
+                                app_res = (
+                                    {"ok": True}
+                                    if gap and gap.status == "approved"
+                                    else approve_gap(gap_id_target)
+                                )
+                                if not app_res.get("ok"):
+                                    send_telegram_message(token, chat_id, f"❌ {app_res.get('error')}")
+                                else:
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        f"⚙️ *Autonomous Evolution Started*\nBuilding & verifying capability for `{gap_id_target}`..."
+                                    )
+                                    def _run_bg_impl(gid=gap_id_target):
+                                        try:
+                                            impl_res = implement_capability(gid)
+                                            if impl_res.get("ok"):
+                                                send_telegram_message(
+                                                    token,
+                                                    chat_id,
+                                                    f"🎉 Self-Evolution Succeeded for {gid}!\n{impl_res.get('message')}"
+                                                )
+                                            else:
+                                                send_telegram_message(
+                                                    token,
+                                                    chat_id,
+                                                    f"❌ Self-Evolution Failed for {gid}:\n{impl_res.get('message')}"
+                                                )
+                                        except Exception:
+                                            logger.exception("Self-evolution execution failed")
+                                            send_telegram_message(
+                                                token,
+                                                chat_id,
+                                                "❌ Evolution build failed. Check desktop logs for details.",
+                                            )
+                                    if not _start_autonomy_job(_run_bg_impl, "telegram-evolution"):
+                                        send_telegram_message(
+                                            token,
+                                            chat_id,
+                                            "⚠️ Another managed project or evolution build is already running. Gap remains approved.",
+                                        )
+                                continue
+
+                            if text_lower in ["/approve_all_gaps", "approve all gaps"]:
+                                if _autonomy_lock.locked():
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        "⚠️ Another managed project or evolution build is already running.",
+                                    )
+                                    continue
+                                from assistant.self_evolution import list_capability_gaps, approve_gap, implement_all_approved_gaps
+                                pending_gaps = list_capability_gaps(status="pending")
+                                if not pending_gaps:
+                                    send_telegram_message(token, chat_id, "No pending capability gaps to approve.")
+                                else:
+                                    for g in pending_gaps:
+                                        approve_gap(g.id)
+                                    send_telegram_message(
+                                        token,
+                                        chat_id,
+                                        f"⚙️ Approved {len(pending_gaps)} gap(s). Beginning batch autonomous implementation..."
+                                    )
+                                    def _run_bg_all_impl():
+                                        try:
+                                            res = implement_all_approved_gaps()
+                                            send_telegram_message(
+                                                token,
+                                                chat_id,
+                                                f"Batch evolution completed: {res.get('successful')}/{res.get('total')} succeeded."
+                                            )
+                                        except Exception:
+                                            logger.exception("Batch evolution execution failed")
+                                            send_telegram_message(
+                                                token,
+                                                chat_id,
+                                                "❌ Batch evolution failed. Check desktop logs for details.",
+                                            )
+                                    if not _start_autonomy_job(
+                                        _run_bg_all_impl,
+                                        "telegram-evolution-batch",
+                                    ):
+                                        send_telegram_message(
+                                            token,
+                                            chat_id,
+                                            "⚠️ Another managed project or evolution build is already running. Gaps remain approved.",
+                                        )
+                                continue
+
+                            if text_lower.startswith("/reject_gap "):
+                                gap_id_target = text_clean.split(" ", 1)[1].strip()
+                                from assistant.self_evolution import reject_gap
+                                res = reject_gap(gap_id_target)
+                                send_telegram_message(
+                                    token,
+                                    chat_id,
+                                    res.get("message") or f"❌ {res.get('error', 'Could not reject gap.')}",
+                                )
+                                continue
+
+                            if text_lower in ("/approve_gap", "/reject_gap"):
+                                send_telegram_message(
+                                    token,
+                                    chat_id,
+                                    f"Usage: {text_lower} <gap id>",
+                                )
+                                continue
+
+                            if text_lower in ["/status", "status"]:
+                                send_telegram_message(token, chat_id, _telegram_status_text())
                                 continue
 
                             if text_lower.startswith("/yes ") or text_lower.startswith("/no "):
@@ -524,12 +776,50 @@ def start_telegram_sync():
     if _worker_thread is None or not _worker_thread.is_alive():
         _worker_thread = call_context.spawn_thread(
             target=_command_worker, daemon=True, name="telegram-commands")
+        try:
+            from assistant.reliability import lifecycle
+
+            lifecycle.register_thread(
+                "telegram_commands",
+                _worker_thread,
+                stop_telegram_sync,
+            )
+        except Exception:
+            pass
 
     if _telegram_thread is None or not _telegram_thread.is_alive():
-        _telegram_thread = threading.Thread(target=_telegram_worker, daemon=True)
+        _telegram_thread = threading.Thread(
+            target=_telegram_worker,
+            daemon=True,
+            name="telegram-poller",
+        )
         _telegram_thread.start()
+        try:
+            from assistant.reliability import lifecycle
+
+            lifecycle.register_thread(
+                "telegram_poller",
+                _telegram_thread,
+                stop_telegram_sync,
+            )
+        except Exception:
+            pass
 
 def stop_telegram_sync():
-    global _telegram_active
+    global _telegram_active, _telegram_thread, _worker_thread
     _telegram_active = False
     _release_lock()
+    current = threading.current_thread()
+    worker, poller = _worker_thread, _telegram_thread
+    _worker_thread = None
+    _telegram_thread = None
+    for thread in (worker, poller):
+        if thread is not None and thread is not current and thread.is_alive():
+            thread.join(timeout=5)
+    try:
+        from assistant.reliability import lifecycle
+
+        lifecycle.unregister("telegram_commands")
+        lifecycle.unregister("telegram_poller")
+    except Exception:
+        pass

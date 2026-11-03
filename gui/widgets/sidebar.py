@@ -51,6 +51,7 @@ class Sidebar(ctk.CTkFrame):
         # 3. Navigation Items
         self.nav_items = [
             ("home", "Home", "home"),
+            ("projects", "Projects", "sparkle"),
             ("devices", "My Devices", "devices"),
             ("files", "My Files", "files"),
             ("google", "Google", "google"),

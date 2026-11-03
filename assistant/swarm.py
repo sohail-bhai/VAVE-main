@@ -68,8 +68,24 @@ def _parse_swarm_args(raw_args):
             pass
     return {}
 
+def _allowed_tool_names(tools):
+    """Names this sub-agent may execute, or None for legacy unrestricted use."""
+    if tools is None:
+        return None
+    if tools is False:
+        return set()
+    allowed = set()
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get("function", {}).get("name")
+        if name:
+            allowed.add(str(name))
+    return allowed
+
+
 def run_sub_agent(role_prompt, task, max_steps=15, event_bus=None,
-                  agent_id=""):
+                  agent_id="", model=None, tools=None, prepare_call=None):
     from assistant.ai_brain import query_local_llm_chat, AVAILABLE_FUNCTIONS
     role_prompt = role_prompt_for(role_prompt)
     name = agent_id or str(task)[:40]
@@ -84,8 +100,11 @@ def run_sub_agent(role_prompt, task, max_steps=15, event_bus=None,
         {"role": "user", "content": f"YOUR TASK: {task}\nExecute it using your tools. Once finished, return your final answer in plain text."}
     ]
     outcome = None
+    chosen_model = model or get_setting("llm_model", "qwen2.5:3b")
+    extra = {"tools": tools} if tools is not None else {}
+    allowed_tools = _allowed_tool_names(tools)
     for step in range(max_steps):
-        response = query_local_llm_chat(history, model=get_setting("llm_model", "qwen2.5:3b"))
+        response = query_local_llm_chat(history, model=chosen_model, **extra)
         if not response:
             outcome = "Agent failed."
             break
@@ -94,10 +113,19 @@ def run_sub_agent(role_prompt, task, max_steps=15, event_bus=None,
             for tool in response["tool_calls"]:
                 func_name = tool["function"]["name"]
                 args_dict = _parse_swarm_args(tool.get("function", {}).get("arguments", {}))
+                if allowed_tools is not None and func_name not in allowed_tools:
+                    history.append({
+                        "role": "tool",
+                        "content": "Denied: this tool is not available to this sub-agent.",
+                        "name": func_name,
+                    })
+                    continue
                 if func_name in AVAILABLE_FUNCTIONS:
                     func_to_call = AVAILABLE_FUNCTIONS[func_name]
-                    logger.info(f"[Sub-Agent Executing] {func_name}({args_dict})")
                     try:
+                        if prepare_call is not None:
+                            args_dict = prepare_call(func_name, args_dict)
+                        logger.info(f"[Sub-Agent Executing] {func_name}({args_dict})")
                         args_dict = guard.coerce_args(func_to_call, args_dict)
                         result = str(guard.call(func_to_call,
                                                 _tool_name=func_name,

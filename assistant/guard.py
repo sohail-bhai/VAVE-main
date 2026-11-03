@@ -75,6 +75,8 @@ REACHES_OUTWARD = frozenset({
     "control_device",
     "create_google_doc", "create_google_slides",
     "create_google_calendar_event", "schedule_meeting", "write_clipboard",
+    "run_coding_workflow", "manage_coding_project", "run_opencode_task",
+    "run_openclaw_command", "approve_and_implement_gap",
 })
 
 def tier_of(tool_name: str) -> str:
@@ -458,3 +460,9 @@ def is_destructive_request(text: str) -> tuple:
         )
 
     return False, ""
+
+
+def hard_denial_reason(tool_name: str, args: dict) -> str:
+    """Return invariant refusal text without prompting or running a tool."""
+    denied, reason = _is_hard_denied(tool_name, args or {})
+    return reason if denied else ""

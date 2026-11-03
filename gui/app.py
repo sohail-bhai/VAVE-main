@@ -34,6 +34,7 @@ from gui.widgets.notifications_modal import NotificationsModal
 from gui.widgets.approval_modal import ApprovalModal
 
 from gui.pages.home_page import HomePage
+from gui.pages.projects_page import ProjectsPage
 from gui.pages.devices_page import DevicesPage
 from gui.pages.files_page import FilesPage
 from gui.pages.google_page import GooglePage
@@ -64,6 +65,7 @@ class VaveDashboardApp(ctk.CTk):
         self.controller = AssistantController(
             event_bus=self.event_bus,
             speech_enabled=True,
+            start_background_services=True,
         )
 
         self.listener_thread = None
@@ -177,6 +179,7 @@ class VaveDashboardApp(ctk.CTk):
                                      on_navigate=self.navigate_to,
                                      on_execute_command=self.handle_user_command,
                                      on_voice_toggle=self.toggle_voice_listening),
+            "projects": lambda: ProjectsPage(self.page_container),
             "devices": lambda: DevicesPage(self.page_container),
             "files": lambda: FilesPage(self.page_container),
             "google": lambda: GooglePage(self.page_container),
@@ -388,4 +391,14 @@ class VaveDashboardApp(ctk.CTk):
 
     def _on_close(self):
         self.listening_active = False
+        try:
+            self.controller.stop()
+        except Exception:
+            pass
+        try:
+            from assistant.bootstrap import shutdown_runtime
+
+            shutdown_runtime()
+        except Exception:
+            pass
         self.destroy()

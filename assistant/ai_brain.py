@@ -150,6 +150,16 @@ AVAILABLE_FUNCTIONS = {
     "run_actor_critic_research": __import__('assistant.swarm', fromlist=['']).run_actor_critic_research,
     "run_swarm_dag": __import__('assistant.swarm', fromlist=['']).run_swarm_dag,
     "run_actor_critic": __import__('assistant.swarm', fromlist=['']).run_actor_critic,
+    "run_coding_workflow": __import__('assistant.coding_workflow', fromlist=['']).run_coding_workflow,
+    "manage_coding_project": __import__('assistant.project_manager', fromlist=['']).manage_coding_project,
+    "list_coding_agents": __import__('assistant.coding_workflow', fromlist=['']).list_coding_agents,
+    "coding_workflow_stats": __import__('assistant.coding_workflow', fromlist=['']).coding_workflow_stats_text,
+    "run_opencode_task": __import__('assistant.integrations', fromlist=['']).run_opencode_task,
+    "list_opencode_models": __import__('assistant.integrations', fromlist=['']).list_opencode_models_tool,
+    "run_openclaw_command": __import__('assistant.integrations', fromlist=['']).run_openclaw_command,
+    "record_capability_gap": __import__('assistant.self_evolution', fromlist=['']).record_capability_gap_tool,
+    "list_capability_gaps": __import__('assistant.self_evolution', fromlist=['']).list_capability_gaps_tool,
+    "approve_and_implement_gap": __import__('assistant.self_evolution', fromlist=['']).approve_and_implement_gap_tool,
     "disable_voice_input": system_tasks.disable_voice_input,
     "enable_voice_input": system_tasks.enable_voice_input,
     "disable_speech_output": system_tasks.disable_speech_output,
@@ -474,6 +484,18 @@ TOOL_GROUPS = {
         ("spawn_parallel_agents", "run_swarm_dag", "run_actor_critic",
          "run_actor_critic_research"),
     ),
+    "coding": (
+        ("code", "implement", "write code", "add feature", "refactor",
+         "fix bug", "fix tests", "write tests", "debug", "coding task",
+         "programming", "develop", "build", "scaffold", "generate code",
+         "code review", "test driven", "tdd", "coding agent", "coding workflow"),
+        ("manage_coding_project", "run_coding_workflow", "list_coding_agents", "coding_workflow_stats",
+         "run_opencode_task", "list_opencode_models", "run_openclaw_command",
+         "record_capability_gap", "list_capability_gaps", "approve_and_implement_gap",
+         "scaffold_code", "write_file", "read_file",
+         "run_terminal_command", "git_auto_commit_and_push",
+         "run_swarm_dag", "run_actor_critic", "deep_test_project"),
+    ),
 }
 
 # Direct semantic tool mappings: query intents mapped straight to exact tools
@@ -503,6 +525,8 @@ SEMANTIC_TOOL_ALIASES = (
     (re.compile(r"\b(screenshot.*telegram|telegram.*screenshot|screenshot to phone|send me a screenshot)\b"), ("send_telegram_screenshot", "take_screenshot")),
     (re.compile(r"\b(telegram|message)\b"), ("send_telegram_update",)),
     (re.compile(r"\b(notify|notification|alert me|show a notification)\b"), ("notify_user",)),
+    (re.compile(r"\b(capability gaps?|missing capabilities|self[ -]evolution)\b"),
+     ("list_capability_gaps", "record_capability_gap", "approve_and_implement_gap")),
     (re.compile(r"\b(pause|resume|next track|skip song|previous track|play song|media)\b"), ("media_control",)),
     (re.compile(r"\b(snap|snap window|maximize|minimize|center window|split screen|tile|organize workspace|side by side)\b"), ("snap_window", "organize_workspace", "list_windows")),
 )
@@ -1187,6 +1211,139 @@ LLM_TOOLS = WEB_TOOLS + [
                     "max_iterations": {"type": "integer", "description": "Critic rounds before giving up (default 3)."}
                 },
                 "required": ["goal"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_capability_gap",
+            "description": "Logs an unsupported task, missing tool, or failed action as a capability gap for End-of-Day review and autonomous self-evolution.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_description": {"type": "string", "description": "The user request or task that could not be completed reliably."},
+                    "missing_capability": {"type": "string", "description": "Concise title of the missing tool or feature (e.g. 'Telegram File Uploader', 'Docker Container Manager')."},
+                    "reason": {"type": "string", "description": "Why current tools failed or were insufficient."},
+                    "proposed_solution": {"type": "string", "description": "Technical design or blueprint for how VAVE should implement this capability."}
+                },
+                "required": ["task_description", "missing_capability", "reason", "proposed_solution"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_capability_gaps",
+            "description": "Lists logged capability gaps pending user approval or review.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "description": "Filter by status: 'pending', 'approved', 'implemented', 'failed', or 'all' (default: 'pending')."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "approve_and_implement_gap",
+            "description": "Implements and verifies a capability gap that the user already approved in the GUI or Telegram. Never approves a pending gap.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "gap_id": {"type": "string", "description": "The unique ID of the capability gap to implement."}
+                },
+                "required": ["gap_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_coding_project",
+            "description": "Smart AI Project Manager mode. Takes a project goal, synthesizes a Vision Specification with strict acceptance criteria and automated test commands, divides work across OpenCode CLI, VAVE Swarm, and OpenClaw, evaluates outputs, and loops critique remarks back until approved.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "The high-level project goal or feature specification."},
+                    "project_path": {"type": "string", "description": "Path to the project root directory (default: current directory)."},
+                    "max_loops": {"type": "integer", "description": "Maximum Manager critique and loopback cycles (default 3)."}
+                },
+                "required": ["goal"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_coding_workflow",
+            "description": "Executes a full coding workflow: Planner creates a file-level plan, parallel Coder agents implement tasks in dependency waves, tests run automatically, a Verifier reviews the evidence, and a Fixer iterates until tests pass. Returns a report with every agent's output.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "The coding goal (e.g. 'add user authentication to the Flask app', 'refactor the API layer', 'fix failing tests in test_auth.py')."},
+                    "project_path": {"type": "string", "description": "Path to the project root (default: current directory)."},
+                    "max_cycles": {"type": "integer", "description": "Maximum Plan-Code-Test-Fix cycles (default 3)."},
+                    "test_command": {"type": "string", "description": "Optional test command. Auto-detected when omitted."},
+                    "commit": {"type": "boolean", "description": "Commit the changes when the workflow succeeds (default false)."}
+                },
+                "required": ["goal"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_coding_agents",
+            "description": "Lists every registered coding agent role and coding app the workflow can distribute work to.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "coding_workflow_stats",
+            "description": "Shows coding workflow history: runs, successes, and the most common recorded failure reasons.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_opencode_task",
+            "description": "Delegates a full software development, refactoring, or scaffolding task to the local OpenCode desktop CLI.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "The coding task instruction."},
+                    "directory": {"type": "string", "description": "Working directory (default: current directory)."},
+                    "model": {"type": "string", "description": "Optional model override."}
+                },
+                "required": ["prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_opencode_models",
+            "description": "Lists all AI models available to the local OpenCode engine.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_openclaw_command",
+            "description": "Runs a command on the local OpenClaw / MoltbotDen agent gateway.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subcommand": {"type": "string", "description": "Subcommand to run (e.g. 'status', 'ping', 'agents')."},
+                    "args": {"type": "string", "description": "Optional command arguments string."}
+                },
+                "required": ["subcommand"]
             }
         }
     },
@@ -3095,6 +3252,31 @@ def _memory_message(query):
     }
 
 
+def _record_runtime_capability_gap(request, reason, tools_run):
+    """Persist one de-duplicated gap when agent exhausts its action budget."""
+    try:
+        from assistant.self_evolution import record_capability_gap
+
+        used = [str(name) for name in (tools_run or []) if name]
+        tool_summary = ", ".join(list(dict.fromkeys(used))[-6:]) or "no usable tool"
+        return record_capability_gap(
+            task_description=str(request or "")[:2000],
+            missing_capability="Reliable completion after agent step exhaustion",
+            reason=(
+                f"{str(reason or 'Agent exhausted its step budget.')[:1500]} "
+                f"Tools attempted: {tool_summary}."
+            ),
+            proposed_solution=(
+                "Review the failed tool trace, add or repair the narrowest "
+                "required capability, and add a regression test that proves "
+                "the original request completes within the step budget."
+            ),
+        )
+    except Exception as exc:
+        logger.debug("Could not record runtime capability gap: %s", exc)
+        return None
+
+
 # What short-term memory may cost. Ten messages sounds small until three of
 # them are 2000-character tool results and the model is left with no room for
 # the tool schemas, so the budget is in characters as well as in turns.
@@ -3186,6 +3368,9 @@ def ask_ai(command, auto_confirm=False):
         steps = reply.get("steps", 0)
         reason = reply.get("reason", "")
 
+    if outcome == "out_of_steps":
+        _record_runtime_capability_gap(clean_command, reason, tools)
+
     try:
         from assistant import task_journal
         task_journal.record_task_attempt(
@@ -3274,6 +3459,7 @@ def run_task_step(instruction, context="", auto_confirm=True,
             pass
 
         if outcome == "out_of_steps":
+            _record_runtime_capability_gap(instruction, reason, tools)
             return {
                 "ok": False,
                 "output": output,
@@ -3301,6 +3487,13 @@ DESTRUCTIVE_TOOLS = [
     "run_terminal_command", "shutdown_laptop", "restart_laptop", "clear_notes",
     "write_file", "disable_voice_input", "disable_speech_output",
     "gitlab_merge", "gitlab_propose_fix", "github_propose_fix",
+    # Coding orchestrators can rewrite many files or delegate to CLIs with
+    # auto-approved filesystem access. Voice/model invocation must confirm.
+    "run_coding_workflow", "manage_coding_project",
+    "approve_and_implement_gap", "run_opencode_task",
+    # Generic OpenClaw subcommands can run remote agents, browser actions, or
+    # messaging workflows. Treat that command bridge like a shell.
+    "run_openclaw_command",
 ]
 
 SENSITIVE_TOOLS = [
@@ -3358,6 +3551,7 @@ SAFE_TOOLS = [
     "github_read_file",
     "list_home_devices", "get_device_state",
     "notify_user",
+    "list_coding_agents", "coding_workflow_stats", "list_opencode_models", "record_capability_gap", "list_capability_gaps",
 ]
 for t in SAFE_TOOLS:
     guard.register_name("safe", t)

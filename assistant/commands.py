@@ -123,22 +123,22 @@ def handle_settings_command(command):
 def handle_model_switch_command(command):
     """
     Hardcoded model switcher to bypass the LLM.
-    Example: 'switch to high performance', 'switch to normal mode', or 'switch model qwen2.5:3b'
-    Three tiers: fast (qwen2.5:3b), smart (qwen3:4b), deep (phi4).
+    Example: 'switch to high performance', 'switch to normal mode', or 'switch model qwen2.5:7b'
+    Three tiers: fast (qwen2.5:7b), smart (qwen2.5:14b), deep (deepseek-r1:14b).
     """
     if "switch to high performance" in command or "switch to deep" in command:
-        update_setting("llm_model", "phi4")
-        speak("Switched to deep reasoning model (phi4).")
+        update_setting("llm_model", "deepseek-r1:14b")
+        speak("Switched to deep reasoning model (deepseek-r1:14b).")
         return True
 
     if "switch to smart" in command:
-        update_setting("llm_model", "qwen3:4b")
-        speak("Switched to smart model (qwen3:4b).")
+        update_setting("llm_model", "qwen2.5:14b")
+        speak("Switched to smart model (qwen2.5:14b).")
         return True
 
     if "switch to normal mode" in command or "switch to fast" in command:
-        update_setting("llm_model", "qwen2.5:3b")
-        speak("Switched to fast model (qwen2.5:3b).")
+        update_setting("llm_model", "qwen2.5:7b")
+        speak("Switched to fast model (qwen2.5:7b).")
         return True
 
     if "switch to auto" in command or "auto mode" in command:
@@ -917,6 +917,24 @@ _SWARM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_CODING_WORKFLOW_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:code\s+this|implement|write\s+code|add\s+feature|refactor|fix\s+tests?|write\s+tests?|coding\s+task|programming|start\s+coding)\b",
+    re.IGNORECASE,
+)
+
+_CODING_AGENTS_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:list|show|what|which|name)\s+"
+    r"(?:the\s+|all\s+|my\s+)?coding\s+(?:agents?|apps?|roles?|team)\s*"
+    r"(?:are\s+registered|do\s+you\s+have)?\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+_CODING_STATS_PATTERN = re.compile(
+    r"^\s*(?:please\s+)?(?:coding\s+workflow\s+stats|how\s+is\s+the\s+coding\s+workflow"
+    r"|how\s+many\s+coding\s+(?:runs|workflows))\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
 _DOC_INGEST_PATTERN = re.compile(
     r"^\s*(?:please\s+)?(?:ingest\s+document|read\s+textbook|read\s+pdf)\b",
     re.IGNORECASE,
@@ -1230,6 +1248,23 @@ def execute_single_command(command, auto_confirm=False):
         return True
 
     if _SWARM_PATTERN.match(command):
+        ask_ai(command, auto_confirm=True)
+        return True
+
+    # Coding workflows: route to the coding orchestrator, or answer cheap reads.
+    if _CODING_AGENTS_PATTERN.match(command):
+        _record_usage("coding_agents", category="system")
+        from assistant.coding_workflow import list_coding_agents
+        speak(list_coding_agents())
+        return True
+
+    if _CODING_STATS_PATTERN.match(command):
+        _record_usage("coding_workflow_stats", category="system")
+        from assistant.coding_workflow import coding_workflow_stats_text
+        speak(coding_workflow_stats_text())
+        return True
+
+    if _CODING_WORKFLOW_PATTERN.match(command):
         ask_ai(command, auto_confirm=True)
         return True
 
