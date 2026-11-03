@@ -381,6 +381,7 @@ class SettingsPage(ctk.CTkScrollableFrame):
         ctk.CTkFrame(card, height=10, fg_color="transparent").pack()
 
     def _render_helpers(self):
+        self._render_ollama_models_card()
         self._render_featherless_card()
 
         card = ctk.CTkFrame(self.content_container, fg_color=theme.CARD_BG, corner_radius=theme.RADIUS, border_width=1, border_color=theme.CARD_BORDER)
@@ -411,6 +412,153 @@ class SettingsPage(ctk.CTkScrollableFrame):
             ).pack(side="right", padx=8)
 
         ctk.CTkFrame(card, height=10, fg_color="transparent").pack()
+
+    def _render_ollama_models_card(self):
+        """Machine-local Ollama model directory with folder picker."""
+        from pathlib import Path
+        from assistant.config import get_setting, normalize_ollama_models_dir
+
+        configured = get_setting("ollama_models_dir", r"F:\ollama\models")
+        model_dir = normalize_ollama_models_dir(configured)
+        path = Path(model_dir) if model_dir else None
+        manifest_count = (
+            sum(1 for item in (path / "manifests").rglob("*") if item.is_file())
+            if path is not None and (path / "manifests").is_dir()
+            else 0
+        )
+        status = (
+            f"Folder ready · {manifest_count} model manifest(s)"
+            if path is not None and path.is_dir()
+            else "Folder not found"
+        )
+
+        card = ctk.CTkFrame(
+            self.content_container,
+            fg_color=theme.CARD_BG,
+            corner_radius=theme.RADIUS,
+            border_width=1,
+            border_color=theme.CARD_BORDER,
+        )
+        card.pack(fill="x", pady=(4, 12))
+        ctk.CTkLabel(
+            card,
+            text="Local Ollama Model Directory",
+            font=theme.font(14, "bold"),
+            text_color=theme.TEXT_PRIMARY,
+        ).pack(anchor="w", padx=16, pady=(14, 4))
+        ctk.CTkLabel(
+            card,
+            text=(
+                "Saved only on this computer. Restart Ollama after changing "
+                "the folder so its running server inherits the location."
+            ),
+            font=theme.font(11),
+            text_color=theme.TEXT_MUTED,
+            anchor="w",
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        entry_row = ctk.CTkFrame(card, fg_color="transparent")
+        entry_row.pack(fill="x", padx=16, pady=(0, 8))
+        self.ollama_models_entry = ctk.CTkEntry(
+            entry_row,
+            font=("Consolas", 11),
+            fg_color=theme.MAIN_BG,
+            border_color=theme.CARD_BORDER,
+            corner_radius=8,
+            height=32,
+        )
+        self.ollama_models_entry.insert(0, str(configured or model_dir))
+        self.ollama_models_entry.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(
+            entry_row,
+            text="Browse",
+            font=theme.font(11),
+            fg_color=theme.CARD_BG,
+            hover_color=theme.CARD_HOVER,
+            text_color=theme.TEXT_PRIMARY,
+            border_width=1,
+            border_color=theme.CARD_BORDER,
+            corner_radius=8,
+            width=72,
+            height=32,
+            command=self._browse_ollama_models_dir,
+        ).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(
+            entry_row,
+            text="Save & Apply",
+            font=theme.font(11, "bold"),
+            fg_color=theme.ACCENT,
+            hover_color=theme.ACCENT_HOVER,
+            text_color=theme.ON_ACCENT,
+            corner_radius=8,
+            width=98,
+            height=32,
+            command=self._save_ollama_models_dir,
+        ).pack(side="left", padx=(8, 0))
+
+        ctk.CTkLabel(
+            card,
+            text=f"● {status}",
+            font=theme.font(10, "bold"),
+            text_color=(
+                theme.SUCCESS
+                if path is not None and path.is_dir() and manifest_count
+                else theme.WARNING
+            ),
+            anchor="w",
+        ).pack(anchor="w", padx=16, pady=(0, 14))
+
+    def _browse_ollama_models_dir(self):
+        from tkinter import filedialog
+
+        current = self.ollama_models_entry.get().strip()
+        selected = filedialog.askdirectory(
+            parent=self,
+            title="Choose Ollama model directory",
+            initialdir=current or None,
+            mustexist=True,
+        )
+        if selected:
+            self.ollama_models_entry.delete(0, "end")
+            self.ollama_models_entry.insert(0, selected)
+
+    def _save_ollama_models_dir(self):
+        from pathlib import Path
+        from assistant.config import (
+            apply_ollama_models_dir,
+            normalize_ollama_models_dir,
+            update_setting,
+        )
+
+        raw = self.ollama_models_entry.get().strip()
+        try:
+            model_dir = normalize_ollama_models_dir(raw)
+        except (OSError, ValueError):
+            model_dir = ""
+        path = Path(model_dir) if model_dir else None
+        if path is None or not path.is_absolute() or not path.is_dir():
+            store.add_system_log(
+                "Choose an existing Ollama model directory before saving",
+                "waiting",
+            )
+            return
+
+        try:
+            update_setting("ollama_models_dir", str(path))
+            result = apply_ollama_models_dir(str(path), persist_user=True)
+        except Exception as error:
+            store.add_system_log(
+                f"Could not save Ollama model directory: {error}",
+                "error",
+            )
+            return
+
+        message = f"Saved Ollama model directory: {result['path']}"
+        if result.get("restart_required"):
+            message += ". Restart Ollama to apply it to the running server"
+        store.add_system_log(message, "completed")
+        self._render_content()
 
     def _render_featherless_card(self):
         """Turn the hosted Featherless brain on or off, and hold its key.

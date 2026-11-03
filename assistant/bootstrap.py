@@ -6,6 +6,7 @@ the safety boundary (guard, audit, confirm, overwatch) is always initialized.
 
 import os
 import atexit
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,8 @@ from assistant import audit
 from assistant import guard
 from assistant import confirm
 from assistant import overwatch
+
+logger = logging.getLogger(__name__)
 
 _bootstrapped = False
 _shutdown_registered = False
@@ -34,6 +37,16 @@ def bootstrap_safety(event_bus: Optional[events.EventBus] = None,
         events.set_global_event_bus(bus)
 
     logging_setup.configure_logging(event_bus=bus)
+
+    try:
+        from assistant.config import apply_ollama_models_dir
+
+        apply_ollama_models_dir()
+    except Exception:
+        logger.debug(
+            "Could not apply configured Ollama model directory.",
+            exc_info=True,
+        )
 
     if audit_path is not None:
         log_path = Path(audit_path)

@@ -177,7 +177,7 @@ The user states high-level goals in natural language (via voice, desktop GUI, Te
 - [x] **Fail-Closed Guard**: consequential/unknown/outward tools simulate with redacted arguments; hard-denies remain blocked; safe reads may run.
 - [x] **No Credential/Approval Side Effects**: control-plane authorization and secret resolution are skipped during rehearsal.
 - [x] **Service Boundaries**: coding/project/self-evolution, Google writes, Home control, and remote file mutations all preserve no-action semantics.
-- [x] **Verification**: 26 dry-run/API regressions; full suite 1111 OK (1 skipped), smoke 11/11, compileall clean.
+- [x] **Verification**: 26 dry-run/API regressions; full suite 1118 OK (1 skipped), smoke 11/11, compileall clean.
 
 ### Stages 12-14: Upgrade Plan Execution (Phases 0-5 Complete)
 
@@ -268,14 +268,14 @@ Live-testing found real bugs; each was diagnosed with logs/probes and fixed:
 > **CURRENT STATUS: STAGE 15 PROJECT POWERHOUSE & SELF-EVOLUTION COMPLETED**
 
 - **Verification Status**:
-  - **1111 Unit Tests Green**: Suite OK with test isolation and data guards (1 intentional skip).
+  - **1118 Unit Tests Green**: Suite OK with test isolation and data guards (1 intentional skip).
 - **Audit hardening (2026-09-17)**: all 19 findings in `report.md` fixed with
   per-domain regression tests (`test_report_security/reliability/performance/
   architecture/edgecases`, `test_notes`); second audit round (16 findings)
   fixed the same way; HGE tracks 1–4 done; distributed coding workflow added
   2026-10-30; Project Powerhouse hardening completed 2026-11-02; reliability,
   process-boundary, explicit-approval, teardown, and dry-run hardening completed
-  2026-11-03; suite **1111 green (1 skipped)**, smoke 11/11.
+  2026-11-03; suite **1118 green (1 skipped)**, smoke 11/11.
   - **Clean Compilation**: 0 syntax/lint errors (`python -m compileall`).
   - **Smoke Test Verified**: 11/11 passed (`python main.py --smoke-test`).
   - **One-Shot CLI Verified**: Tested with speech suppressed.
@@ -317,6 +317,8 @@ build deterministic evaluations before the unified grounded world model.
 - No default physical microphone; typed/GUI/API/Telegram operation is primary.
 - F: contains complete blobs/manifests for `qwen2.5:7b`, `qwen2.5:14b`, and
   `deepseek-r1:14b` (~22.7 GB total).
+- `ollama_models_dir` is machine-local, defaults to `F:\ollama\models` on this
+  desktop, and is editable under Settings → AI Helpers for laptop use.
 - Current Ollama 0.40.13 server rejects all three as bad manifests while
   starting through the C: junction. Blobs exist; do not delete them. Repair
   and benchmark through roadmap Phase 0.

@@ -195,7 +195,7 @@ sequenceDiagram
 ### Prerequisites
 - **OS**: Windows 10/11 (or macOS / Linux with core feature set)
 - **Python**: 3.10 to 3.12 recommended
-- **Local AI Engine**: [Ollama](https://ollama.ai) installed with `ollama run qwen2.5:3b`
+- **Local AI Engine**: [Ollama](https://ollama.ai) with at least one configured model, e.g. `ollama pull qwen2.5:7b`
 
 ### 1. Installation
 
@@ -235,7 +235,11 @@ Personalize names, models, and safety levels directly in `config.json`:
 {
   "user_name": "Sohail",
   "assistant_name": "Vave",
-  "llm_model": "qwen2.5:3b",
+  "llm_model": "qwen2.5:7b",
+  "llm_model_fast": "qwen2.5:7b",
+  "llm_model_smart": "qwen2.5:14b",
+  "llm_model_deep": "deepseek-r1:14b",
+  "ollama_models_dir": "F:\\ollama\\models",
   "wake_word_enabled": true,
   "safety": {
     "voice": { "confirm_destructive": true },
@@ -251,6 +255,13 @@ Personalize names, models, and safety levels directly in `config.json`:
   }
 }
 ```
+
+Model storage is machine-specific. In **Settings → AI Helpers → Local Ollama
+Model Directory**, choose an existing folder and click **Save & Apply**. VAVE
+stores this override in ignored `config.local.json`, applies `OLLAMA_MODELS` to
+its process and Windows user environment, and asks you to restart Ollama. This
+lets a desktop use `F:\ollama\models` while a laptop uses a different drive
+without creating Git conflicts or moving model data automatically.
 
 ### 3. Launching VAVE
 

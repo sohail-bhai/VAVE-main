@@ -119,6 +119,11 @@ def main(argv=None):
 
     args = build_parser().parse_args(expanded)
 
+    # Apply this computer's machine-local model directory before doctor,
+    # bootstrap, model discovery, or any child process can inspect it.
+    from assistant.config import apply_ollama_models_dir
+    apply_ollama_models_dir()
+
     if (args.doctor_json or args.repair_safe) and not args.doctor:
         build_parser().error("--json and --repair-safe require --doctor")
 

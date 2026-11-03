@@ -3,7 +3,7 @@
 Status: **ACTIVE IMPLEMENTATION PLAN**
 Created: **2026-11-03**
 Target: **bounded Level-3 autonomy**
-Current verified baseline: **1,111 tests OK (1 skipped), smoke 11/11**
+Current verified baseline: **1,118 tests OK (1 skipped), smoke 11/11**
 
 This file is the source of truth for evolving VAVE from a capable desktop
 assistant into a dependable Jarvis-like autonomous agent. Update checkboxes only
@@ -177,6 +177,19 @@ Rules:
 
 Priority: **P0 / start here**
 Dependency: none
+
+### 0.0 Portable model-directory configuration — complete
+
+- [x] Add validated `ollama_models_dir` setting with this desktop defaulting to
+  `F:\ollama\models`.
+- [x] Keep per-computer override in ignored `config.local.json` so laptop and
+  desktop paths never conflict in Git.
+- [x] Add Settings → AI Helpers folder picker and Save & Apply action.
+- [x] Apply path to current process and Windows user `OLLAMA_MODELS` without
+  moving or deleting model files.
+- [x] Tell user to restart Ollama; never restart it silently.
+- [x] Make doctor validate configured directory and distinguish on-disk
+  manifests from models visible to running server.
 
 ### 0.1 Repair Ollama model registration
 
@@ -596,8 +609,8 @@ Priority: **P2**
 |---|---|---|
 | Foundation: control plane, safety, browser, memory | Complete | Existing suite and docs |
 | Project Powerhouse and self-evolution | Complete | Existing suite and `plan.md` |
-| Consequence-free dry-run | Complete | 1,111-test baseline |
-| Phase 0: Runtime/model readiness | **Next** | Ollama manifests currently rejected |
+| Consequence-free dry-run | Complete | Included in 1,118-test baseline |
+| Phase 0: Runtime/model readiness | **In progress** | Portable model-directory setting complete; Ollama restart/repair next |
 | Phase 1: Evaluation harness | Not started | — |
 | Phase 2: Grounded world model | Not started | — |
 | Phase 3: Verified action/recovery | Not started | — |
@@ -615,12 +628,15 @@ Priority: **P2**
 
 Work only on Phase 0:
 
-1. Repair Ollama server path/manifest registration without deleting blobs.
-2. Confirm all three model tags appear.
-3. Benchmark 7B and both 14B models on RX 7600 XT.
-4. Choose measured fast/smart/deep policy and context size.
-5. Make doctor treat missing microphone according to enabled voice mode.
-6. Re-run full suite, smoke, compileall, and doctor.
-7. Record results here before starting Phase 1.
+1. Open Settings → AI Helpers, confirm the model directory, click Save & Apply,
+   then restart Ollama.
+2. Repair Ollama server path/manifest registration without deleting blobs if
+   the restart still rejects manifests.
+3. Confirm all three model tags appear.
+4. Benchmark 7B and both 14B models on RX 7600 XT.
+5. Choose measured fast/smart/deep policy and context size.
+6. Make doctor treat missing microphone according to enabled voice mode.
+7. Re-run full suite, smoke, compileall, and doctor.
+8. Record results here before starting Phase 1.
 
 Do not start grounding, scheduler, or proactive work until this gate passes.

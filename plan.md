@@ -128,6 +128,6 @@ flowchart TD
 - **Self-Evolution**: 14/14 passed.
 - **Telegram Gateway**: 4/4 passed.
 - **Security Capability Coverage**: 43/43 passed (`tests/test_report_security.py`).
-- **Full suite**: 1111 tests run successfully, including 1 skipped (`python -m unittest discover -s tests`).
+- **Full suite**: 1118 tests run successfully, including 1 skipped (`python -m unittest discover -s tests`).
 - **Smoke Test**: 11/11 passed (`python main.py --smoke-test`).
 - **Syntax**: 0 errors (`python -m compileall -q main.py assistant gui vave_gui.py`).

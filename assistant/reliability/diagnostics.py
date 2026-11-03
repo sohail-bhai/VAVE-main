@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import platform
 import shutil
 import sqlite3
 import sys
@@ -147,50 +146,63 @@ def check_disk_space():
 
 
 def check_model_storage():
-    if platform.system().lower() != "windows":
-        return HealthCheck(
-            "model_storage",
-            CheckStatus.SKIPPED,
-            "F: model-storage policy applies on Windows",
-        )
-    expected = Path(r"F:\ollama\models")
-    configured = os.environ.get("OLLAMA_MODELS", "").strip()
+    configured = config.normalize_ollama_models_dir()
     if not configured:
         return HealthCheck(
             "model_storage",
             CheckStatus.FAILED,
-            "OLLAMA_MODELS is not set to F:\\ollama\\models",
+            "no Ollama model directory is configured",
             critical=True,
-            details={"expected": str(expected)},
+            repairable=True,
         )
-    actual = Path(configured)
-    try:
-        matches = actual.resolve() == expected.resolve()
-    except OSError:
-        matches = str(actual).casefold() == str(expected).casefold()
-    if not matches:
+
+    target = Path(configured)
+    if not target.is_dir():
         return HealthCheck(
             "model_storage",
             CheckStatus.FAILED,
-            "Ollama models are configured outside required F: location",
+            "configured Ollama model directory does not exist",
             critical=True,
-            details={"configured": str(actual), "expected": str(expected)},
+            repairable=True,
+            details={"path": str(target)},
         )
-    if not actual.is_dir():
+
+    manifests = list((target / "manifests").rglob("*")) \
+        if (target / "manifests").is_dir() else []
+    manifest_count = sum(1 for item in manifests if item.is_file())
+    environment = os.environ.get("OLLAMA_MODELS", "").strip()
+    env_matches = bool(environment) and (
+        os.path.normcase(config.normalize_ollama_models_dir(environment))
+        == os.path.normcase(str(target.resolve()))
+    )
+    details = {
+        "path": str(target),
+        "manifest_count": manifest_count,
+        "environment_matches": env_matches,
+    }
+    if not env_matches:
         return HealthCheck(
             "model_storage",
             CheckStatus.WARNING,
-            "configured model directory does not exist yet",
+            "process OLLAMA_MODELS differs from configured model directory",
             critical=True,
             repairable=True,
-            details={"path": str(actual)},
+            details=details,
+        )
+    if manifest_count == 0:
+        return HealthCheck(
+            "model_storage",
+            CheckStatus.WARNING,
+            "model directory exists but contains no manifests",
+            critical=True,
+            details=details,
         )
     return HealthCheck(
         "model_storage",
         CheckStatus.OK,
-        "Ollama models remain on F: drive",
+        f"configured directory contains {manifest_count} model manifest(s)",
         critical=True,
-        details={"path": str(actual)},
+        details=details,
     )
 
 
@@ -223,6 +235,24 @@ def check_ollama():
     }
     required.discard("")
     missing = sorted(model for model in required if model not in installed)
+    model_dir = Path(config.normalize_ollama_models_dir())
+    manifest_count = (
+        sum(1 for item in (model_dir / "manifests").rglob("*") if item.is_file())
+        if (model_dir / "manifests").is_dir()
+        else 0
+    )
+    if not installed and manifest_count:
+        return HealthCheck(
+            "ollama",
+            CheckStatus.WARNING,
+            "Ollama is online but sees no models while manifests exist on disk",
+            critical=True,
+            details={
+                "model_directory": str(model_dir),
+                "manifest_count": manifest_count,
+                "action": "Restart Ollama after applying the configured directory; repair manifests if still rejected.",
+            },
+        )
     if missing:
         return HealthCheck(
             "ollama",

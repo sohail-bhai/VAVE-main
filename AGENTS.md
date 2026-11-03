@@ -201,7 +201,11 @@ Dependencies include:
 
 PyAudio can be difficult to install on Windows. The README suggests `pipwin install pyaudio` if normal installation fails.
 
-Ollama models MUST always be stored on F: drive (`F:\ollama\models`), never on C: drive. The environment variable `OLLAMA_MODELS` is set to `F:\ollama\models` for the user.
+This desktop defaults Ollama models to `F:\ollama\models`. The location is
+machine-local and configurable at Settings → AI Helpers through
+`ollama_models_dir`; it is saved in ignored `config.local.json` and applied to
+`OLLAMA_MODELS`. A laptop may choose another existing directory. Never move or
+delete model files automatically, and never commit one machine's override.
 
 Current hardware (verified 2026-11-03): AMD Ryzen 7 7700 (8C/16T),
 16 GB DDR5-5200, AMD Radeon RX 7600 XT with 16 GB dedicated VRAM

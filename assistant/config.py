@@ -44,6 +44,9 @@ DEFAULT_CONFIG = {
     # Where Ollama is listening. Point this elsewhere for a second instance
     # (a CPU-only one, say) or for Ollama on another machine.
     "ollama_url": "http://localhost:11434",
+    # Machine-local model storage. Settings writes this override to
+    # config.local.json so a laptop and desktop can share the repository.
+    "ollama_models_dir": r"F:\ollama\models",
     # A model running on the CPU needs longer to read a long prompt than one
     # on a GPU. A timeout is indistinguishable from "no model", so be generous.
     "llm_timeout_seconds": 300,
@@ -228,6 +231,10 @@ SECRET_KEYS = frozenset({
     "gitlab_token", "openai_api_key", "anthropic_api_key",
 })
 
+# Machine-specific values also stay out of shared config writes. They are not
+# secrets, but committing one computer's drive layout breaks another computer.
+LOCAL_SETTING_KEYS = SECRET_KEYS | frozenset({"ollama_models_dir"})
+
 _config_cache = None
 _config_mtime = 0
 _local_mtime = 0
@@ -249,6 +256,7 @@ _STRING_LIMITS = {
     "llm_model_deep": 200,
     "featherless_model": 300,
     "ollama_url": 2048,
+    "ollama_models_dir": 2048,
     "browser_cdp_url": 2048,
     "home_assistant_url": 2048,
     "telegram_chat_id": 128,
@@ -679,9 +687,79 @@ def get_setting(key, default=None):
     config = load_config()
     return config.get(key, default)
 
+
+def normalize_ollama_models_dir(value=None):
+    """Return configured model directory as an absolute expanded path."""
+    if value is None:
+        value = get_setting(
+            "ollama_models_dir",
+            DEFAULT_CONFIG["ollama_models_dir"],
+        )
+    text = os.path.expandvars(os.path.expanduser(str(value or "").strip()))
+    if not text:
+        return ""
+    return str(Path(text).resolve())
+
+
+def apply_ollama_models_dir(value=None, persist_user=False):
+    """Apply model path to this process and optionally Windows user env.
+
+    Existing Ollama processes cannot inherit a changed environment. Callers
+    surface ``restart_required`` rather than killing or restarting Ollama.
+    """
+    path = normalize_ollama_models_dir(value)
+    if not path:
+        raise ValueError("Ollama model directory cannot be empty.")
+
+    previous = os.environ.get("OLLAMA_MODELS", "")
+    os.environ["OLLAMA_MODELS"] = path
+    persisted = False
+    if persist_user and os.name == "nt":
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            "Environment",
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
+            winreg.SetValueEx(
+                key,
+                "OLLAMA_MODELS",
+                0,
+                winreg.REG_SZ,
+                path,
+            )
+        persisted = True
+        try:
+            import ctypes
+
+            result = ctypes.c_ulong()
+            ctypes.windll.user32.SendMessageTimeoutW(
+                0xFFFF,
+                0x001A,
+                0,
+                "Environment",
+                0x0002,
+                5000,
+                ctypes.byref(result),
+            )
+        except Exception:
+            logger.debug("Could not broadcast Ollama environment change.", exc_info=True)
+
+    return {
+        "path": path,
+        "exists": Path(path).is_dir(),
+        "persisted": persisted,
+        "restart_required": bool(
+            persist_user
+            or os.path.normcase(previous) != os.path.normcase(path)
+        ),
+    }
+
 def update_setting(key, value):
     """Change one setting. Credentials go to the untracked local file."""
-    if key in SECRET_KEYS:
+    if key in LOCAL_SETTING_KEYS:
         return _update_local_setting(key, value)
 
     with _config_lock:
@@ -691,8 +769,8 @@ def update_setting(key, value):
         config[key] = value
         # The cache holds values merged from config.local.json; writing it back
         # wholesale would copy a credential into the shared file.
-        for secret in SECRET_KEYS:
-            config.pop(secret, None)
+        for local_key in LOCAL_SETTING_KEYS:
+            config.pop(local_key, None)
         config, issues = validate_config(config)
         rejected = [item for item in issues if item.get("path") == key]
         if rejected and config.get(key) != value:
