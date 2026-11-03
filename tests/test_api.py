@@ -234,6 +234,19 @@ class ActivityApiTests(ApiTestCase):
         messages = [event["message"] for event in self.client.get("/api/activity").json()]
         self.assertEqual("Second thing", messages[0])
 
+    def test_activity_timestamp_ties_use_insertion_order(self):
+        from assistant.control.models import ActivityEvent
+
+        self.plane.store.save_event(
+            ActivityEvent(message="First tied thing", timestamp=123.0)
+        )
+        self.plane.store.save_event(
+            ActivityEvent(message="Second tied thing", timestamp=123.0)
+        )
+
+        messages = [event["message"] for event in self.client.get("/api/activity").json()]
+        self.assertEqual("Second tied thing", messages[0])
+
     def test_websocket_sends_history_then_live_events(self):
         self.plane.record("Earlier thing")
 

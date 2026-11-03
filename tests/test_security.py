@@ -252,6 +252,24 @@ class SecretStorageTests(unittest.TestCase):
         # And nothing was written to the shared file.
         save.assert_not_called()
 
+    def test_telegram_chat_identity_is_written_to_the_local_file(self):
+        import json
+        import pathlib
+        import tempfile
+
+        import assistant.config as config
+
+        with tempfile.TemporaryDirectory() as folder:
+            local = pathlib.Path(folder) / "config.local.json"
+            with mock.patch.object(config, "LOCAL_CONFIG_FILE", local), \
+                 mock.patch.object(config, "save_config") as save:
+                config.update_setting("telegram_chat_id", "123456789")
+
+            written = json.loads(local.read_text(encoding="utf-8"))
+
+        self.assertEqual("123456789", written["telegram_chat_id"])
+        save.assert_not_called()
+
     def test_an_ordinary_setting_still_goes_to_the_shared_file(self):
         import assistant.config as config
 

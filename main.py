@@ -35,6 +35,11 @@ def build_parser():
         action="store_true",
         help="Run the control plane API so a paired phone can send remote tasks."
     )
+    mode.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Check configuration, AI, audio, storage, browser, and runtime health."
+    )
     parser.add_argument(
         "--no-speech",
         action="store_true",
@@ -51,6 +56,17 @@ def build_parser():
         default=8765,
         help="API port for --server."
     )
+    parser.add_argument(
+        "--json",
+        dest="doctor_json",
+        action="store_true",
+        help="Emit machine-readable output for --doctor."
+    )
+    parser.add_argument(
+        "--repair-safe",
+        action="store_true",
+        help="Apply non-destructive repairs before reporting doctor results."
+    )
     return parser
 
 
@@ -61,6 +77,7 @@ _SUBCOMMANDS = {
     "serve": ["--server"],
     "once": ["--once"],
     "smoke": ["--smoke-test"],
+    "doctor": ["--doctor"],
 }
 
 
@@ -97,55 +114,99 @@ def main(argv=None):
 
     args = build_parser().parse_args(expanded)
 
+    if (args.doctor_json or args.repair_safe) and not args.doctor:
+        build_parser().error("--json and --repair-safe require --doctor")
+
+    if args.doctor:
+        from assistant.reliability.diagnostics import doctor_cli
+
+        return doctor_cli(
+            json_output=args.doctor_json,
+            repair_safe=args.repair_safe,
+        )
+
     if args.smoke_test:
         # Configure logging first; the smoke test reports results through logging.
         logging_setup.configure_logging()
         passed = run_smoke_tests()
         return 0 if passed else 1
 
-    from assistant.bootstrap import bootstrap_safety
-    bus = bootstrap_safety()
+    long_lived = bool(args.gui or args.server or not (args.text or args.once))
+    role = "gui" if args.gui else "server" if args.server else "voice"
+    instance_lock = None
+    if long_lived:
+        from assistant.reliability.instance import InstanceLock
 
-    if args.gui:
-        from vave_gui import main as gui_main
-        return gui_main()
-
-    if args.server:
-        try:
-            from assistant.api.app import main as api_main
-        except ModuleNotFoundError as error:
-            if error.name in {"fastapi", "uvicorn", "python_multipart"}:
-                print(
-                    "VAVE API dependencies are missing in this Python environment.\n"
-                    "Use the project venv or install requirements:\n\n"
-                    "    source venv/bin/activate\n"
-                    "    python main.py --server --host 0.0.0.0 --port 8765\n\n"
-                    "or:\n\n"
-                    "    python -m pip install -r requirements.txt"
+        instance_lock = InstanceLock(role)
+        if not instance_lock.acquire():
+            print(
+                f"VAVE {role} is already running"
+                + (
+                    f" under PID {instance_lock.owner_pid}."
+                    if instance_lock.owner_pid
+                    else "."
                 )
-                return 1
-            raise
-        return api_main(["--host", args.host, "--port", str(args.port)])
+            )
+            return 2
 
-    controller = AssistantController(event_bus=bus, speech_enabled=not args.no_speech)
+    try:
+        from assistant.bootstrap import bootstrap_safety
+        bus = bootstrap_safety(start_runtime_services=long_lived)
 
-    if args.text:
-        print(f"Running text command once: {args.text}")
-        controller.handle_text_command(args.text)
+        if args.gui:
+            from vave_gui import main as gui_main
+            return gui_main(acquire_lock=False)
+
+        if args.server:
+            try:
+                from assistant.api.app import main as api_main
+            except ModuleNotFoundError as error:
+                if error.name in {"fastapi", "uvicorn", "python_multipart"}:
+                    print(
+                        "VAVE API dependencies are missing in this Python environment.\n"
+                        "Use the project venv or install requirements:\n\n"
+                        "    source venv/bin/activate\n"
+                        "    python main.py --server --host 0.0.0.0 --port 8765\n\n"
+                        "or:\n\n"
+                        "    python -m pip install -r requirements.txt"
+                    )
+                    return 1
+                raise
+            return api_main(["--host", args.host, "--port", str(args.port)])
+
+        controller = AssistantController(
+            event_bus=bus,
+            speech_enabled=not args.no_speech,
+            start_background_services=long_lived,
+        )
+
+        if args.text:
+            print(f"Running text command once: {args.text}")
+            controller.handle_text_command(args.text)
+            return 0
+
+        if args.once:
+            print("One-listen mode: listening for one command.")
+            controller.run_once()
+            return 0
+
+        # Long-lived modes pick up where a previous process stopped. One-shots
+        # above return before this on purpose.
+        from assistant.bootstrap import resume_interrupted_tasks
+        resume_interrupted_tasks()
+
+        controller.run_forever()
         return 0
+    finally:
+        if long_lived:
+            try:
+                from assistant.bootstrap import shutdown_runtime
 
-    if args.once:
-        print("One-listen mode: listening for one command.")
-        controller.run_once()
-        return 0
-
-    # Long-lived modes pick up where a previous process stopped. One-shots
-    # above return before this on purpose.
-    from assistant.bootstrap import resume_interrupted_tasks
-    resume_interrupted_tasks()
-
-    controller.run_forever()
-    return 0
+                shutdown_runtime()
+            except Exception:
+                pass
+        if instance_lock is not None:
+            instance_lock.release()
 
 if __name__ == "__main__":
     raise SystemExit(main())

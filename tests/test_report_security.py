@@ -214,12 +214,17 @@ class Sec02SsrfRedirectTests(unittest.TestCase):
             threading.Thread(target=server.serve_forever, daemon=True)
             for server in (target, redirector)
         ]
-        for thread in threads:
+        def stop_server(server, thread):
+            # server_close() must not race serve_forever() on Windows.  Closing
+            # first invalidates the selector socket and leaks WinError 10038
+            # from the background thread after the test itself has passed.
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
+
+        for server, thread in zip((target, redirector), threads):
             thread.start()
-        self.addCleanup(target.shutdown)
-        self.addCleanup(target.server_close)
-        self.addCleanup(redirector.shutdown)
-        self.addCleanup(redirector.server_close)
+            self.addCleanup(stop_server, server, thread)
 
         req = urllib.request.Request(
             f"http://127.0.0.1:{redirector.server_port}/go")

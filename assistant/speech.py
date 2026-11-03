@@ -1,7 +1,9 @@
 import logging
 logger = logging.getLogger(__name__)
 
+import os
 import sys
+import tempfile
 from assistant.config import get_setting
 
 MIC_CALIBRATED = False
@@ -56,7 +58,7 @@ def _notify(callback, *args):
     try:
         callback(*args)
     except Exception as error:
-        logger.info("Speech callback error:", error)
+        logger.info("Speech callback error: %s", error)
 
 
 def _emit_listen_status(message, status_callback=None):
@@ -90,8 +92,6 @@ def _apply_voice_settings(engine):
     engine.setProperty("rate", int(get_setting("voice_rate", 170)))
     engine.setProperty("volume", float(get_setting("voice_volume", 1.0)))
 
-
-import asyncio
 
 def _get_engine():
     # Deprecated
@@ -136,28 +136,47 @@ def _get_piper_voice():
 
 import queue
 import threading
-import uuid
 
 _speech_queue = queue.Queue()
 _speech_thread = None
+_edge_breaker = None
+
+
+def _get_edge_breaker():
+    global _edge_breaker
+    if _edge_breaker is None:
+        from assistant.reliability.circuit_breaker import CircuitBreaker
+
+        _edge_breaker = CircuitBreaker(
+            failure_threshold=get_setting("reliability_failure_threshold", 3),
+            recovery_seconds=get_setting("reliability_recovery_seconds", 300),
+        )
+    return _edge_breaker
 
 def _audio_worker():
-    import os
     import asyncio
     
     while True:
         item = _speech_queue.get()
         if item is None:
+            _speech_queue.task_done()
             break
         text, start_cb, end_cb = item
         start_cb(text)
-        
-        file_id = str(uuid.uuid4())
-        
+        temp_paths = []
+
         try:
+            from assistant.reliability.circuit_breaker import CircuitOpen
+
+            breaker = _get_edge_breaker()
+            if not breaker.allow():
+                raise CircuitOpen("cloud speech circuit is open")
             import edge_tts
             import pygame
-            temp_audio = f"temp_speech_{file_id}.mp3"
+            handle = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+            temp_audio = handle.name
+            handle.close()
+            temp_paths.append(temp_audio)
             
             async def _generate():
                 communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
@@ -171,29 +190,39 @@ def _audio_worker():
             
             while pygame.mixer.music.get_busy():
                 pygame.time.Clock().tick(10)
-                
+            breaker.record_success()
             pygame.mixer.quit()
-            try:
-                os.remove(temp_audio)
-            except:
-                pass
-                
+
         except Exception as e:
-            logger.info(f"[VAVE] Cloud voice unreachable ({e}). Falling back to offline voice...")
+            try:
+                from assistant.reliability.circuit_breaker import CircuitOpen
+
+                breaker = _get_edge_breaker()
+                if not isinstance(e, CircuitOpen):
+                    breaker.record_failure()
+                    snapshot = breaker.snapshot()
+                    if snapshot["failures"] == 1 or snapshot["state"] == "open":
+                        logger.info(
+                            "[VAVE] Cloud voice unavailable (%s; circuit=%s). "
+                            "Using offline voice.",
+                            type(e).__name__,
+                            snapshot["state"],
+                        )
+            except Exception:
+                logger.info("[VAVE] Cloud voice unavailable. Using offline voice.")
             try:
                 voice = _get_piper_voice()
                 if voice:
                     import wave
                     import winsound
-                    temp_wav = f"temp_speech_{file_id}.wav"
+                    handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                    temp_wav = handle.name
+                    handle.close()
+                    temp_paths.append(temp_wav)
                     with wave.open(temp_wav, 'wb') as wav_file:
                         voice.synthesize_wav(text, wav_file)
-                        
+
                     winsound.PlaySound(temp_wav, winsound.SND_FILENAME)
-                    try:
-                        os.remove(temp_wav)
-                    except:
-                        pass
                 else:
                     # Hard fallback to built-in Windows pyttsx3
                     from assistant.config import get_setting
@@ -205,28 +234,77 @@ def _audio_worker():
                     engine.say(text)
                     engine.runAndWait()
             except Exception as error:
-                logger.info("Speech output error:", error)
+                logger.info("Speech output error: %s", error)
         
         finally:
+            try:
+                import pygame
+
+                if pygame.mixer.get_init():
+                    pygame.mixer.quit()
+            except Exception:
+                pass
+            for path in temp_paths:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
             end_cb(text)
             _speech_queue.task_done()
 
 def start_speech_thread():
     global _speech_thread
     if _speech_thread is None or not _speech_thread.is_alive():
-        _speech_thread = threading.Thread(target=_audio_worker, daemon=True)
+        _speech_thread = threading.Thread(
+            target=_audio_worker,
+            daemon=True,
+            name="vave-speech-output",
+        )
         _speech_thread.start()
+        try:
+            from assistant.reliability import lifecycle
+
+            lifecycle.register_thread("speech_output", _speech_thread, stop_speech_thread)
+        except Exception:
+            pass
+
+
+def stop_speech_thread():
+    """Interrupt, stop, and join speech worker."""
+    global _speech_thread
+    interrupt_speech()
+    thread, _speech_thread = _speech_thread, None
+    if thread is not None and thread.is_alive():
+        _speech_queue.put(None)
+        if thread is not threading.current_thread():
+            thread.join(timeout=5)
+    try:
+        from assistant.reliability import lifecycle
+
+        lifecycle.unregister("speech_output")
+    except Exception:
+        pass
 
 def interrupt_speech():
     """Instantly clears the speech queue and stops any currently playing audio."""
-    import pygame
-    
-    # 1. Clear the queue
-    with _speech_queue.mutex:
-        _speech_queue.queue.clear()
+    # 1. Clear queued speech while keeping Queue.task_done accounting valid.
+    while True:
+        try:
+            queued = _speech_queue.get_nowait()
+        except queue.Empty:
+            break
+        if queued is not None:
+            try:
+                _, _, end_cb = queued
+                end_cb(queued[0])
+            except Exception:
+                pass
+        _speech_queue.task_done()
         
     # 2. Stop playing audio
     try:
+        import pygame
+
         if pygame.mixer.get_init():
             pygame.mixer.music.stop()
     except Exception:
@@ -303,7 +381,7 @@ def listen(
     except Exception as error:
         _emit_speech_error("Speech recognition package is not available.", error, error_callback)
         speak("Speech recognition is not available in this Python environment.")
-        logger.info("Speech recognition import error:", error)
+        logger.info("Speech recognition import error: %s", error)
         return ""
 
     if max_phrase_time is None:
@@ -361,7 +439,7 @@ def listen(
     except Exception as error:
         _emit_speech_error("Microphone error occurred.", error, error_callback)
         speak("Microphone error occurred.")
-        logger.info("Error:", error)
+        logger.info("Microphone error: %s", error)
         return ""
 
     finally:

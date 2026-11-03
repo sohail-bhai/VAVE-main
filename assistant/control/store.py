@@ -600,7 +600,10 @@ class ControlStore:
         params = []
         if unread_only:
             sql += " WHERE read = 0"
-        sql += " ORDER BY timestamp DESC LIMIT ?"
+        # Timestamps are floating-point wall-clock values and can tie on fast
+        # consecutive inserts (especially on Windows). rowid preserves SQLite
+        # insertion order, making newest-first deterministic for equal times.
+        sql += " ORDER BY timestamp DESC, rowid DESC LIMIT ?"
         params.append(limit)
         return [dict(row) for row in self._rows(sql, tuple(params))]
 
@@ -714,7 +717,8 @@ class ControlStore:
             params.extend(types)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY timestamp DESC LIMIT ?"
+        # Use insertion order when two events share one wall-clock timestamp.
+        sql += " ORDER BY timestamp DESC, rowid DESC LIMIT ?"
         params.append(limit)
         return [_to_event(row) for row in self._rows(sql, tuple(params))]
 

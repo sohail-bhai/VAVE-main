@@ -143,6 +143,7 @@ def run_smoke_tests():
                     controller = AssistantController(
                         configure_speech_hooks=False,
                         speech_enabled=False,
+                        start_background_services=False,
                     )
                     controller.handle_text_command(command_text)
 

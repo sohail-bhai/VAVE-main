@@ -5,6 +5,7 @@ the safety boundary (guard, audit, confirm, overwatch) is always initialized.
 """
 
 import os
+import atexit
 from pathlib import Path
 from typing import Optional
 
@@ -16,14 +17,16 @@ from assistant import confirm
 from assistant import overwatch
 
 _bootstrapped = False
+_shutdown_registered = False
 
 
 def bootstrap_safety(event_bus: Optional[events.EventBus] = None,
                      audit_path: Optional[Path] = None,
                      max_bytes: int = 5_000_000,
-                     backup_count: int = 20) -> events.EventBus:
+                     backup_count: int = 20,
+                     start_runtime_services: bool = True) -> events.EventBus:
     """Configures the global event bus, logging, audit ledger, and safety subsystems."""
-    global _bootstrapped
+    global _bootstrapped, _shutdown_registered
 
     bus = event_bus or events.get_global_event_bus()
     if bus is None:
@@ -49,11 +52,26 @@ def bootstrap_safety(event_bus: Optional[events.EventBus] = None,
     # The health sweep only touches a control plane that already exists and
     # sleeps before its first run, so short-lived processes pay nothing and a
     # sweep failure can never block startup.
-    try:
-        from assistant import health_sweep
-        health_sweep.start()
-    except Exception:
-        pass
+    if start_runtime_services:
+        try:
+            from assistant import health_sweep
+            health_sweep.start()
+        except Exception:
+            pass
+
+    # Runtime supervisor is intentionally lightweight and sleeps before its
+    # first check. Full microphone/network probes run only via `vave doctor`.
+    if start_runtime_services:
+        try:
+            from assistant.reliability import supervisor
+
+            supervisor.start()
+        except Exception:
+            pass
+
+    if not _shutdown_registered:
+        atexit.register(shutdown_runtime)
+        _shutdown_registered = True
 
     _bootstrapped = True
     return bus
@@ -87,4 +105,26 @@ def resume_interrupted_tasks() -> int:
 def reset_bootstrap() -> None:
     """Resets bootstrap state for testing."""
     global _bootstrapped
+    try:
+        from assistant.reliability import supervisor
+
+        supervisor.reset_for_tests()
+    except Exception:
+        pass
+    try:
+        from assistant import health_sweep
+
+        health_sweep.stop()
+    except Exception:
+        pass
     _bootstrapped = False
+
+
+def shutdown_runtime() -> None:
+    """Stop managed background workers. Safe to call repeatedly."""
+    try:
+        from assistant.reliability import lifecycle
+
+        lifecycle.shutdown_all(join_timeout=5)
+    except Exception:
+        pass

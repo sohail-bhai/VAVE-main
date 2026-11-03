@@ -51,6 +51,12 @@ def start(interval_seconds=None):
         _thread = threading.Thread(target=_loop, args=(interval_seconds,),
                                    daemon=True, name="vave-health-sweep")
         _thread.start()
+        try:
+            from assistant.reliability import lifecycle
+
+            lifecycle.register_thread("health_sweep", _thread, stop)
+        except Exception:
+            pass
         return True
 
 
@@ -62,6 +68,12 @@ def stop():
         thread, _thread = _thread, None
     if thread is not None:
         thread.join(timeout=5)
+    try:
+        from assistant.reliability import lifecycle
+
+        lifecycle.unregister("health_sweep")
+    except Exception:
+        pass
 
 
 def running():

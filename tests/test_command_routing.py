@@ -428,10 +428,13 @@ class ModelEscalationTests(unittest.TestCase):
         self.smart = get_setting("llm_model_smart", "qwen3.5:9b")
         self._unavailable = dict(ai_brain._unavailable_models)
         ai_brain._unavailable_models.clear()
+        self._orig_installed = ai_brain.installed_models
+        ai_brain.installed_models = lambda: None
 
     def tearDown(self):
         self.ai_brain._unavailable_models.clear()
         self.ai_brain._unavailable_models.update(self._unavailable)
+        self.ai_brain.installed_models = self._orig_installed
 
     def test_atomic_desktop_work_stays_on_the_fast_model(self):
         # Measured: the small model handles these well and answers in a

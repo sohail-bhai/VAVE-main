@@ -26,12 +26,14 @@ class AssistantController:
     events so a CustomTkinter UI can later poll without touching audio internals.
     """
 
-    def __init__(self, event_bus=None, configure_speech_hooks=True, speech_enabled=True):
+    def __init__(self, event_bus=None, configure_speech_hooks=True,
+                 speech_enabled=True, start_background_services=False):
         self.events = event_bus or EventBus()
         self.state = AssistantState.IDLE
         self._running = False
         self._listening = False
         self._state_before_speaking = None
+        self._background_services_started = bool(start_background_services)
         
         # Override passed speech_enabled if it exists in config
         config_speech = get_setting("speech_enabled", speech_enabled)
@@ -45,21 +47,22 @@ class AssistantController:
                 speech_finished_callback=self._on_speech_finished,
             )
             
-        # Register Graceful Interrupter Hotkey
-        try:
-            from assistant.interrupter import setup_interrupter
-            setup_interrupter()
-        except ImportError:
-            pass
+        if self._background_services_started:
+            # Register Graceful Interrupter Hotkey
+            try:
+                from assistant.interrupter import setup_interrupter
+                setup_interrupter()
+            except ImportError:
+                pass
 
-        # Register Wake-Word Engine
-        try:
-            from assistant.wakeword import start_wakeword_engine, pause_wakeword
-            start_wakeword_engine(self._on_wakeword_detected)
-            if not get_setting("wake_word_enabled", True):
-                pause_wakeword()
-        except ImportError:
-            pass
+            # Register Wake-Word Engine
+            try:
+                from assistant.wakeword import start_wakeword_engine, pause_wakeword
+                start_wakeword_engine(self._on_wakeword_detected)
+                if not get_setting("wake_word_enabled", True):
+                    pause_wakeword()
+            except ImportError:
+                pass
 
         # Pre-import control plane modules on the main thread to prevent thread import race conditions
         try:
@@ -69,16 +72,17 @@ class AssistantController:
         except Exception:
             pass
 
-        # Register Telegram Remote Sync
-        try:
-            from assistant.telegram_sync import start_telegram_sync
-            start_telegram_sync()
-        except ImportError:
-            pass
+        if self._background_services_started:
+            # Register Telegram Remote Sync
+            try:
+                from assistant.telegram_sync import start_telegram_sync
+                start_telegram_sync()
+            except ImportError:
+                pass
 
-        # Auto-resume interrupted control plane tasks
-        if get_setting("auto_resume_tasks", True):
-            self._start_task_auto_resume()
+            # Auto-resume interrupted control plane tasks
+            if get_setting("auto_resume_tasks", True):
+                self._start_task_auto_resume()
 
     def _start_task_auto_resume(self):
         def _runner():
@@ -142,6 +146,19 @@ class AssistantController:
 
     def stop(self):
         self._running = False
+        if self._background_services_started:
+            try:
+                from assistant.wakeword import stop_wakeword_engine
+
+                stop_wakeword_engine()
+            except Exception:
+                pass
+            try:
+                from assistant.telegram_sync import stop_telegram_sync
+
+                stop_telegram_sync()
+            except Exception:
+                pass
         self.set_state(AssistantState.STOPPED)
 
     def greet(self):
@@ -196,7 +213,7 @@ class AssistantController:
                 error=str(error),
                 command=command,
             )
-            logger.info("Command processing error:", error)
+            logger.info("Command processing error: %s", error)
             traceback.print_exc()
             snippet = str(command or "")[:50]
             if snippet:

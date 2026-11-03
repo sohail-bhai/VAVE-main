@@ -41,6 +41,28 @@ OAUTH_SECRET_SCOPES = "google.*"
 
 _services_cache: Dict[str, Any] = {}
 _lock = threading.Lock()
+_refresh_breaker = None
+_refresh_permanent_failure = False
+
+
+def _get_refresh_breaker():
+    global _refresh_breaker
+    if _refresh_breaker is None:
+        from assistant.config import get_setting
+        from assistant.reliability.circuit_breaker import CircuitBreaker
+
+        _refresh_breaker = CircuitBreaker(
+            failure_threshold=get_setting("reliability_failure_threshold", 3),
+            recovery_seconds=get_setting("reliability_recovery_seconds", 300),
+        )
+    return _refresh_breaker
+
+
+def _reset_refresh_circuit():
+    global _refresh_permanent_failure
+    _refresh_permanent_failure = False
+    if _refresh_breaker is not None:
+        _refresh_breaker.record_success()
 
 
 def get_project_root() -> str:
@@ -187,11 +209,33 @@ def _creds_from_json(token_json):
 
 def _try_refresh(creds, request):
     """Refresh in place, persisting to vault and file. None on failure."""
+    global _refresh_permanent_failure
+    breaker = _get_refresh_breaker()
+    if _refresh_permanent_failure or not breaker.allow():
+        logger.debug("Google credential refresh suppressed by circuit breaker.")
+        return None
     try:
         creds.refresh(request)
     except Exception as error:
-        logger.warning("Could not refresh Google credentials: %s", error)
+        text = str(error)
+        if "invalid_grant" in text.lower():
+            _refresh_permanent_failure = True
+            breaker.trip()
+            logger.warning(
+                "Google credentials were revoked or expired permanently; "
+                "refresh disabled until the user reconnects."
+            )
+        else:
+            breaker.record_failure()
+            snapshot = breaker.snapshot()
+            if snapshot["failures"] == 1 or snapshot["state"] == "open":
+                logger.warning(
+                    "Could not refresh Google credentials (%s; circuit=%s).",
+                    type(error).__name__,
+                    snapshot["state"],
+                )
         return None
+    breaker.record_success()
     try:
         _save_token_secret(creds.to_json())
     except Exception as error:
@@ -283,6 +327,7 @@ def authorize(open_browser: bool = True) -> Dict[str, str]:
             access_type="offline", prompt="consent")
         _write_token(creds)
         _save_token_secret(creds.to_json())
+        _reset_refresh_circuit()
     except Exception as error:
         logger.error("Google authorization failed: %s", error)
         return {"state": NEEDS_AUTHORIZATION, "detail": f"Sign-in failed: {error}"}
@@ -302,6 +347,7 @@ def disconnect() -> Dict[str, str]:
             pass
     with _lock:
         _services_cache.clear()
+    _reset_refresh_circuit()
     return connection_state()
 
 

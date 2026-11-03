@@ -9,6 +9,7 @@ import time
 _wakeword_thread = None
 _wakeword_active = False
 _wakeword_callback = None
+_wakeword_stop = threading.Event()
 
 def _load_wakeword_model():
     """Build an openwakeword model, or return None with a plain-English reason.
@@ -55,13 +56,19 @@ def _load_wakeword_model():
 
 def _wakeword_worker():
     global _wakeword_active
+    audio = None
     try:
         owwModel = _load_wakeword_model()
         if owwModel is None:
             return
 
         from assistant.config import get_setting
+        from assistant.reliability.circuit_breaker import CircuitBreaker
         threshold = float(get_setting("wakeword_threshold", 0.6))
+        breaker = CircuitBreaker(
+            failure_threshold=get_setting("reliability_failure_threshold", 3),
+            recovery_seconds=get_setting("reliability_recovery_seconds", 300),
+        )
 
         audio = pyaudio.PyAudio()
         FORMAT = pyaudio.paInt16
@@ -69,16 +76,21 @@ def _wakeword_worker():
         RATE = 16000
         CHUNK = 1280
 
-        while True:
+        while not _wakeword_stop.is_set():
             if not _wakeword_active:
-                time.sleep(0.5)
+                _wakeword_stop.wait(0.5)
+                continue
+            if not breaker.allow():
+                _wakeword_stop.wait(1.0)
                 continue
 
+            mic_stream = None
             try:
                 mic_stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+                breaker.record_success()
                 logger.info("[VAVE] Wake word listening started.")
 
-                while _wakeword_active:
+                while _wakeword_active and not _wakeword_stop.is_set():
                     data = np.frombuffer(mic_stream.read(CHUNK, exception_on_overflow=False), dtype=np.int16)
                     prediction = owwModel.predict(data)
 
@@ -90,6 +102,7 @@ def _wakeword_worker():
                             # We MUST close stream before callback so the main microphone can be used by speech_recognition
                             mic_stream.stop_stream()
                             mic_stream.close()
+                            mic_stream = None
 
                             _wakeword_callback()
 
@@ -98,27 +111,57 @@ def _wakeword_worker():
                         break
 
                 # If _wakeword_active became false during the inner loop
-                if not mic_stream.is_stopped():
-                    mic_stream.stop_stream()
-                    mic_stream.close()
-
             except Exception as e:
-                logger.info(f"[WakeWord Error] Microphone error: {e}")
-                time.sleep(2)
+                breaker.record_failure()
+                snapshot = breaker.snapshot()
+                if snapshot["failures"] == 1 or snapshot["state"] == "open":
+                    logger.warning(
+                        "[WakeWord] Microphone unavailable: %s (circuit=%s, failures=%s)",
+                        e,
+                        snapshot["state"],
+                        snapshot["failures"],
+                    )
+                delay = min(30.0, float(2 ** min(snapshot["failures"], 5)))
+                _wakeword_stop.wait(delay)
+            finally:
+                if mic_stream is not None:
+                    try:
+                        if not mic_stream.is_stopped():
+                            mic_stream.stop_stream()
+                        mic_stream.close()
+                    except Exception:
+                        pass
 
     except ImportError:
         logger.info("[VAVE] openwakeword not installed. Hands-free mode disabled.")
     except Exception as e:
         logger.info(f"[VAVE] Failed to start wake word engine: {e}")
+    finally:
+        if audio is not None:
+            try:
+                audio.terminate()
+            except Exception:
+                pass
 
 def start_wakeword_engine(callback):
     global _wakeword_thread, _wakeword_active, _wakeword_callback
     _wakeword_callback = callback
     _wakeword_active = True
+    _wakeword_stop.clear()
     
     if _wakeword_thread is None or not _wakeword_thread.is_alive():
-        _wakeword_thread = threading.Thread(target=_wakeword_worker, daemon=True)
+        _wakeword_thread = threading.Thread(
+            target=_wakeword_worker,
+            daemon=True,
+            name="vave-wakeword",
+        )
         _wakeword_thread.start()
+        try:
+            from assistant.reliability import lifecycle
+
+            lifecycle.register_thread("wakeword", _wakeword_thread, stop_wakeword_engine)
+        except Exception:
+            pass
 
 def pause_wakeword():
     global _wakeword_active
@@ -127,3 +170,23 @@ def pause_wakeword():
 def resume_wakeword():
     global _wakeword_active
     _wakeword_active = True
+
+
+def stop_wakeword_engine():
+    """Stop and join wake-word worker. Safe when it was never started."""
+    global _wakeword_thread, _wakeword_active
+    _wakeword_active = False
+    _wakeword_stop.set()
+    thread, _wakeword_thread = _wakeword_thread, None
+    if (
+        thread is not None
+        and thread is not threading.current_thread()
+        and thread.is_alive()
+    ):
+        thread.join(timeout=5)
+    try:
+        from assistant.reliability import lifecycle
+
+        lifecycle.unregister("wakeword")
+    except Exception:
+        pass
