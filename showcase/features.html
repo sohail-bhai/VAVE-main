@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111112">
+  <meta name="description" content="Explore VAVE’s local AI agent, desktop and browser tools, persistent memory, control plane, and human approval workflow.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Inside VAVE — Features, workflow & architecture">
+  <meta property="og:description" content="Explore VAVE’s local AI agent, desktop and browser tools, persistent memory, control plane, and human approval workflow.">
+  <meta property="og:url" content="https://sohail-bhai.github.io/VAVE-main/features.html">
+  <meta property="og:image" content="https://sohail-bhai.github.io/VAVE-main/assets/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://sohail-bhai.github.io/VAVE-main/features.html">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+  <title>Inside VAVE — Features, workflow & architecture</title>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="VAVE home"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m4 6 12 22L28 6h-7l-5 10-5-10Z" fill="#ffaf7a"/></svg>VAVE<small>DESKTOP AI</small></a>
+      <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#menu"></use></svg></button>
+      <nav class="site-nav" id="site-nav" aria-label="Main navigation">
+        <a href="index.html">Overview</a>
+        <a href="features.html" aria-current="page">Inside VAVE</a>
+        <a href="get-started.html">Get started</a>
+        <a href="https://github.com/sohail-bhai/VAVE-main/tree/codex/vave-showcase" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+        <a class="button small" href="get-started.html#download">Get VAVE <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="container">
+    <section class="page-hero" aria-labelledby="page-title">
+      <div class="eyebrow">Inside VAVE / 01</div>
+      <h1 id="page-title">A system for doing.<br><span class="accent">Not just answering.</span></h1>
+      <p>Models are one part of the picture. VAVE brings planning, tools, context, and permissions into a shared control plane.</p>
+      <nav class="page-index" aria-label="On this page"><a href="#capabilities">Capabilities</a><a href="#workflow">Workflow</a><a href="#architecture">Architecture</a><a href="#project-status">Project status</a></nav>
+    </section>
+    <section class="section" id="capabilities" aria-labelledby="capabilities-title">
+      <div class="section-header"><div><div class="eyebrow">The building blocks</div><h2 id="capabilities-title">Different layers.<br>One intention.</h2></div><p>Implemented modules form the foundation. Available features depend on your models, permissions, and integrations.</p></div>
+      <div class="feature-grid">
+        <article class="feature-card" id="local-ai" data-reveal><span class="card-number">01 / REASON</span><div class="icon-chip"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#cpu"></use></svg></div><h3>Local AI, actual tool calls.</h3><p>The Ollama-backed loop selects registered functions and processes their results. Task execution enters through the control plane, with cancellation and authorization hooks between calls.</p><span class="pill">Ollama · Python</span><br><a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/blob/codex/vave-showcase/assistant/ai_brain.py" target="_blank" rel="noopener noreferrer">Read the implementation <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></article>
+        <article class="feature-card" id="tools" data-reveal><span class="card-number">02 / ACT</span><div class="icon-chip"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#globe"></use></svg></div><h3>Your desktop. The real web.</h3><p>Launch apps, handle notes, inspect screen content, and use a Playwright-driven Chromium browser. REST tools reach connected services through named credentials.</p><span class="pill">Desktop · Browser · APIs</span><br><a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/tree/codex/vave-showcase/assistant/browser" target="_blank" rel="noopener noreferrer">Explore browser tools <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></article>
+        <article class="feature-card" id="memory" data-reveal><span class="card-number">03 / REMEMBER</span><div class="icon-chip"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#layers"></use></svg></div><h3>Carry useful context forward.</h3><p>ChromaDB-backed vector memory persists across sessions. Per-domain notes, a redacted task journal, and coding lessons capture useful context in their own stores.</p><span class="pill">Vector memory · Task journal</span><br><a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/blob/codex/vave-showcase/assistant/memory.py" target="_blank" rel="noopener noreferrer">Explore persistent memory <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></article>
+        <article class="feature-card" id="safety" data-reveal><span class="card-number">04 / GOVERN</span><div class="icon-chip"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#shield"></use></svg></div><h3>Boundaries built into execution.</h3><p>Capability policy can allow, ask, or deny an action. Guarded calls, scoped file access, encrypted credentials, dry-run support, and emergency stop give the user control.</p><span class="pill">Permissions · Approvals · Audit</span><br><a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/blob/codex/vave-showcase/assistant/control/policy.py" target="_blank" rel="noopener noreferrer">Read the policy engine <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></article>
+        <article class="feature-card" data-reveal><span class="card-number">05 / CONNECT</span><div class="icon-chip"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#phone"></use></svg></div><h3>One core, more ways in.</h3><p>Typed desktop commands and optional voice share the assistant. Paired-phone clients and Telegram connect through service boundaries; Google Workspace uses configured credentials.</p><span class="pill">Desktop · Phone · Workspace</span><br><a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/blob/codex/vave-showcase/docs/mobile.md" target="_blank" rel="noopener noreferrer">Explore phone access <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></article>
+        <article class="feature-card" data-reveal><span class="card-number">06 / COORDINATE</span><div class="icon-chip"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#code"></use></svg></div><h3>Helpers with a shared purpose.</h3><p>Coding workflows coordinate planning, implementation, tests, fixes, and review in dependency waves. External coding-engine adapters sit behind guarded process boundaries.</p><span class="pill">Coding workflows · Adapters</span><br><a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/blob/codex/vave-showcase/assistant/coding_workflow.py" target="_blank" rel="noopener noreferrer">Explore coding coordination <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></article>
+      </div>
+    </section>
+    <section class="section" id="workflow" aria-labelledby="workflow-title">
+      <div class="section-header"><div><div class="eyebrow">How work moves</div><h2 id="workflow-title">From “can you…”<br>to a visible result.</h2></div><a class="text-link" href="index.html#walkthrough">Try the illustrative walkthrough <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></div>
+      <ol class="flow-list">
+        <li class="flow-row"><span class="flow-number">01</span><h3>State the goal.</h3><p>Enter a typed request, use optional voice, or send a request through a paired client. Coordination belongs in the service layer.</p></li>
+        <li class="flow-row"><span class="flow-number">02</span><h3>Create bounded steps.</h3><p>The control plane plans work and stores task state. The executor sends each step to the AI agent with its relevant context.</p></li>
+        <li class="flow-row"><span class="flow-number">03</span><h3>Check permission.</h3><p>Capabilities and policy determine whether an action is allowed, denied, or held for human approval. Credentials resolve inside the control plane.</p></li>
+        <li class="flow-row"><span class="flow-number">04</span><h3>Use the right tools.</h3><p>The agent calls desktop, browser, file, or service tools. Execution can check cancellation between calls; a call already running may finish first.</p></li>
+        <li class="flow-row"><span class="flow-number">05</span><h3>Return the evidence.</h3><p>Tool results, task state, and activity events make work observable. Failures and approval holds remain visible instead of being treated as completed work.</p></li>
+      </ol>
+    </section>
+    <section class="section" id="architecture" aria-labelledby="architecture-title">
+      <div class="section-header"><div><div class="eyebrow">Under the interface</div><h2 id="architecture-title">A control plane.<br>Not a pile of scripts.</h2></div><p>The desktop dashboard and phone clients share coordination through the same service boundary.</p></div>
+      <div class="architecture" role="img" aria-label="Desktop, optional voice, and paired phone connect to the VAVE control plane, which coordinates an Ollama agent, tools, memory, and policy.">
+        <div class="architecture-interfaces"><span><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#terminal"></use></svg>Desktop</span><span><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#spark"></use></svg>Optional voice</span><span><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#phone"></use></svg>Paired phone</span></div>
+        <div class="architecture-connector"></div>
+        <div class="architecture-core"><div class="eyebrow" style="justify-content:center;margin-bottom:12px">Shared coordination</div><h3>VAVE control plane</h3><p>Tasks &amp; state · Capability policy · Approvals · Executor</p></div>
+        <div class="architecture-connector"></div>
+        <div class="architecture-tools"><span>Local AI<small>Ollama agent loop</small></span><span>Action tools<small>Desktop · Web · APIs</small></span><span>Context<small>Memory · Journal</small></span><span>Safety<small>Guard · Secrets · Audit</small></span></div>
+      </div>
+      <p class="architecture-caption">A simplified architecture map. <a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/blob/codex/vave-showcase/docs/control-plane.md" target="_blank" rel="noopener noreferrer">Read the full technical guide <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></p>
+    </section>
+    <section class="section" id="project-status" aria-labelledby="status-title">
+      <div class="section-header"><div><div class="eyebrow">An honest snapshot</div><h2 id="status-title">Built today.<br>Growing tomorrow.</h2></div><p>VAVE is an actively developed desktop project. Broader autonomy is governed by a phased roadmap and acceptance gates.</p></div>
+      <div class="status-panel">
+        <article class="status-card"><h3>Implemented foundation</h3><ul><li>Ollama agent loop and tool registry</li><li>Desktop dashboard and typed commands</li><li>Tasks, policy, approvals, and cancellation</li><li>Browser tools, memory, and service integrations</li><li>Guard, credential store, and audit layer</li></ul></article>
+        <article class="status-card"><h3>Practical limits &amp; next steps</h3><ul><li>Local AI needs a working Ollama model</li><li>Windows is the primary desktop target</li><li>Workspace and phone features need setup</li><li>Long-running calls stop between tool calls</li><li>Runtime readiness and deeper verified autonomy remain roadmap work</li></ul></article>
+      </div>
+      <div class="notice">Local-first describes the AI core. Browser actions, cloud integrations, and Google speech recognition can use the network. <a class="text-link" href="https://github.com/sohail-bhai/VAVE-main/blob/codex/vave-showcase/docs/jarvis-autonomy-roadmap.md" target="_blank" rel="noopener noreferrer">Explore the roadmap <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></div>
+    </section>
+    <section class="closing" aria-labelledby="feature-closing-title"><div><h2 id="feature-closing-title">Go from curious<br>to hands-on.</h2><p>Start with the source and a clean Windows setup.</p></div><a class="button" href="get-started.html">Get started <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></a></section>
+  </main>
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <a class="brand" href="index.html" aria-label="VAVE home"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m4 6 12 22L28 6h-7l-5 10-5-10Z" fill="#ffaf7a"/></svg>VAVE</a>
+        <p>Built by Sohail &amp; team. Open source, open possibilities.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="features.html#workflow">How it works</a>
+        <a href="get-started.html">Documentation</a>
+        <a href="https://github.com/sohail-bhai/VAVE-main/tree/codex/vave-showcase" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </nav>
+    </div>
+  </footer>
+  <div class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

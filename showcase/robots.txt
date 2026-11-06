@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sohail-bhai.github.io/VAVE-main/sitemap.xml

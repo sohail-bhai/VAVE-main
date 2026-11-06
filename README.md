@@ -1,5 +1,17 @@
 # ⚡ VAVE: The Personal AI Control Plane
 
+**Project showcase:** [Explore VAVE](https://sohail-bhai.github.io/VAVE-main/).
+Responsive overview, features/workflow, and Windows setup pages live in the
+repository's [`showcase/`](showcase/README.md) folder. Preview a repository checkout with
+`python build_release.py --output-dir showcase/downloads`, then
+`python -m http.server 4173 --bind 127.0.0.1 --directory showcase`.
+Open `http://127.0.0.1:4173`. The site includes an explicitly illustrative
+walkthrough and a clean source download; Python, Ollama, and models install
+separately. GitHub Pages publishing is prepared in
+`.github/workflows/showcase.yml`. Create an app source release with
+`python build_release.py` (output: `dist/releases/`). The source ZIP contains
+the desktop app and PWA; website sources remain in the repository.
+
 <div align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -18,7 +30,7 @@
 
 ---
 
-![VAVE AI Control Plane Dashboard](assets/vave_dashboard_mockup.jpg)    
+![VAVE dashboard design concept](assets/jarvis_dashboard_mockup.jpg)
 
 </div>
 
@@ -62,7 +74,7 @@ VAVE is architected as a modular, resilient, and framework-agnostic control fabr
 
 <div align="center">
 
-![VAVE Technical Architecture Diagram](assets/vave_architecture_diagram.jpg)
+![VAVE technical architecture concept](assets/jarvis_architecture_diagram.jpg)
 
 </div>
 
@@ -97,7 +109,7 @@ Autonomous agents should never have blanket access to your life or filesystem.
 
 <div align="center">
 
-![Zero-Trust Human Approval Modal](assets/vave_approval_flow.jpg)
+![Human approval design concept](assets/jarvis_approval_flow.jpg)
 
 </div>
 

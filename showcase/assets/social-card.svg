@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs><radialGradient id="glow"><stop stop-color="#ffaf7a" stop-opacity=".09"/><stop offset="1" stop-color="#111112" stop-opacity="0"/></radialGradient></defs>
+  <style>@font-face{font-family:Space Grotesk;src:url('fonts/space-grotesk-latin.woff2')}text{font-family:'Space Grotesk','Segoe UI',sans-serif}</style>
+  <rect width="1200" height="630" fill="#111112"/>
+  <circle cx="920" cy="300" r="370" fill="url(#glow)"/>
+  <path d="m70 55 15 27 15-27h-9l-6 12-6-12Z" fill="#ffaf7a"/>
+  <text x="114" y="79" font-size="29" fill="#f4f1eb" font-weight="600">VAVE</text>
+  <text x="70" y="171" font-size="13" fill="#b0a39a" letter-spacing="3">YOUR PERSONAL AI CONTROL PLANE</text>
+  <text x="67" y="280" font-size="82" fill="#f4f1eb" letter-spacing="-5">One goal.</text>
+  <text x="67" y="372" font-size="82" fill="#f4f1eb" letter-spacing="-5">Everything</text>
+  <text x="67" y="464" font-size="82" fill="#ffaf7a" letter-spacing="-5">in motion.</text>
+  <g fill="none" stroke="#ffaf7a" stroke-opacity=".19"><circle cx="920" cy="310" r="215"/><circle cx="920" cy="310" r="153"/><circle cx="920" cy="310" r="98" stroke-dasharray="4 6"/></g>
+  <rect x="859" y="249" width="122" height="122" rx="26" fill="#2b221d" stroke="#815637" transform="rotate(-7 920 310)"/>
+  <path d="m888 284 32 55 32-55h-20l-12 25-12-25Z" fill="#ffaf7a"/>
+  <rect x="871" y="82" width="104" height="35" rx="8" fill="#201d1b" stroke="#584130"/><text x="923" y="105" text-anchor="middle" font-size="13" fill="#e0c5b0">Local AI</text>
+  <rect x="1020" y="298" width="119" height="35" rx="8" fill="#201d1b" stroke="#584130"/><text x="1079" y="321" text-anchor="middle" font-size="13" fill="#e0c5b0">Real tools</text>
+  <rect x="850" y="506" width="143" height="35" rx="8" fill="#201d1b" stroke="#584130"/><text x="921" y="529" text-anchor="middle" font-size="13" fill="#e0c5b0">Human control</text>
+  <circle cx="753" cy="174" r="5" fill="#ffaf7a"/>
+  <path d="M70 557h1060" stroke="#303032"/>
+  <text x="70" y="593" font-size="13" fill="#9d9792" letter-spacing="1">OPEN-SOURCE DESKTOP AI</text>
+  <text x="1130" y="593" text-anchor="end" font-size="13" fill="#bdb0a5">github.com/sohail-bhai/VAVE-main</text>
+</svg>

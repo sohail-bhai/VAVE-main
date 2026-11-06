@@ -1,0 +1,55 @@
+name: Publish VAVE showcase
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, sohail, codex/vave-showcase]
+    paths:
+      - 'showcase/**'
+      - 'build_release.py'
+      - 'assistant/**'
+      - 'gui/**'
+      - 'docs/**'
+      - 'tests/**'
+      - 'assets/**'
+      - 'main.py'
+      - 'vave_gui.py'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/showcase.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: vave-showcase-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify release packaging
+        run: python -m unittest discover -s tests -p test_build_release.py -v
+      - name: Build clean source download
+        run: python build_release.py --output-dir showcase/downloads
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: showcase
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4

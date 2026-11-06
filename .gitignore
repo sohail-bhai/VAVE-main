@@ -47,3 +47,7 @@ config.json.bak
 
 # Packaging artifacts
 vave.egg-info/
+
+# Generated showcase downloads (rebuilt by the Pages workflow)
+showcase/downloads/*.zip
+showcase/downloads/release.json
