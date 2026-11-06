@@ -33,6 +33,37 @@ hosting path changes, update canonical/Open Graph URLs, sitemap.xml, robots.txt,
 and links before deploying. Source ZIPs and release metadata are generated;
 they are excluded from Git to avoid storing stale releases.
 
+## Publish with Vercel
+
+The repository-root `vercel.json` selects a static site, skips installing the
+desktop assistant dependencies, runs `python3 build_showcase.py`, and publishes
+only `showcase/`. The build generates the source ZIP and release metadata.
+
+From the repository root, deploy the current branch using the CLI:
+
+```powershell
+npx vercel login
+npx vercel --prod
+```
+
+Create a project such as `vave`, keep the root directory `./`, and let the
+checked-in configuration supply the build settings. Vercel's build image
+provides Python; the assistant, microphone, and Ollama do not run on Vercel.
+`.vercelignore` excludes private runtime files from local CLI uploads.
+
+For Git-based auto-deployment, import `sohail-bhai/VAVE-main`. Set the production
+branch to `codex/vave-showcase` under Settings → Environments → Production →
+Branch Tracking, then create a deployment from that branch. The default `main`
+branch currently does not contain this showcase. Keep the root directory `./`,
+framework **Other**, and output directory **showcase**.
+
+`build_showcase.py` updates canonical URLs, Open Graph URLs, robots.txt, and the
+sitemap using `VERCEL_PROJECT_PRODUCTION_URL` (or `VERCEL_URL` as a fallback).
+Set `SHOWCASE_SITE_URL` to a full public URL such as `https://vave.example.com`
+when using a custom domain. These updates occur in the build workspace; source
+links still point to the GitHub project. Use the public production URL for
+applications and verify it in a signed-out browser.
+
 ## Release contents
 
 `build_release.py` includes allowed application, test, documentation, and asset

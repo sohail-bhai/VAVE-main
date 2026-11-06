@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo 'Static showcase: no dependencies to install'",
+  "buildCommand": "python3 build_showcase.py",
+  "outputDirectory": "showcase"
+}

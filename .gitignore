@@ -51,3 +51,6 @@ vave.egg-info/
 # Generated showcase downloads (rebuilt by the Pages workflow)
 showcase/downloads/*.zip
 showcase/downloads/release.json
+
+# Vercel CLI project links, local cache, and pulled environment variables
+.vercel/
