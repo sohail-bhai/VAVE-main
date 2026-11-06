@@ -15,7 +15,7 @@ class ReleasePackagingTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.write("pyproject.toml", '[project]\nversion = "1.3.0"\n')
         self.write("main.py", "print('public source')\n")
         self.write("requirements.txt", "customtkinter\n")
