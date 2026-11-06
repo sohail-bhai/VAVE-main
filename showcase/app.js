@@ -199,7 +199,7 @@ if (demo) {
 }
 
 if (document.querySelector("[data-release-version]")) {
-  fetch(new URL("downloads/release.json", document.baseURI))
+  fetch(new URL("downloads/release.json", document.baseURI), { cache: "no-cache" })
     .then((response) => {
       if (!response.ok) throw new Error("Release metadata unavailable");
       return response.json();
@@ -208,6 +208,11 @@ if (document.querySelector("[data-release-version]")) {
       document.querySelector("[data-release-version]").textContent = release.version;
       document.querySelector("[data-release-checksum]").textContent = release.sha256;
       document.querySelector("[data-release-size]").textContent = (release.size_bytes / 1048576).toFixed(1) + " MB · Source ZIP";
+      const download = document.querySelector(".download-meta a[download]");
+      const url = new URL("downloads/" + encodeURIComponent(release.file), document.baseURI);
+      url.searchParams.set("sha", release.sha256);
+      download.href = url.href;
+      download.download = release.file;
     })
     .catch(() => { /* Direct file previews retain usable fallback copy. */ });
 }

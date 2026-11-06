@@ -1,5 +1,7 @@
 # ⚡ VAVE: The Personal AI Control Plane
 
+> **Built by Builders, For Builders.**
+
 **Project showcase:** [Explore VAVE](https://sohail-bhai.github.io/VAVE-main/).
 Responsive overview, features/workflow, and Windows setup pages live in the
 repository's [`showcase/`](showcase/README.md) folder. Preview a repository checkout with

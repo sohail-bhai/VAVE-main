@@ -1,5 +1,7 @@
 # VAVE project showcase
 
+Brand tagline: **Built by Builders, For Builders.**
+
 Three dependency-free static pages: overview and interactive explanation,
 features/workflow/architecture, and a Windows source-download/setup guide.
 The browser walkthrough is explicitly illustrative; it does not operate the
