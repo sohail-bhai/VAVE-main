@@ -57,6 +57,11 @@ Branch Tracking, then create a deployment from that branch. The default `main`
 branch currently does not contain this showcase. Keep the root directory `./`,
 framework **Other**, and output directory **showcase**.
 
+After changing Branch Tracking, a new push to that branch triggers a production
+build. To deploy immediately from the dashboard, use Deployments → Create
+Deployment and enter `codex/vave-showcase`. Redeploy on an existing deployment
+reuses its original commit.
+
 `build_showcase.py` updates canonical URLs, Open Graph URLs, robots.txt, and the
 sitemap using `VERCEL_PROJECT_PRODUCTION_URL` (or `VERCEL_URL` as a fallback).
 Set `SHOWCASE_SITE_URL` to a full public URL such as `https://vave.example.com`
